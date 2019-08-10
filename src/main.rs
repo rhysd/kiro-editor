@@ -22,6 +22,11 @@ impl InputRawMode {
         termios.c_oflag &= !OPOST;
         // Ensure character size is 8bits
         termios.c_cflag |= CS8;
+        // Do not wait for next byte with blocking since reading 0 byte is permitted
+        termios.c_cc[VMIN] = 0;
+        // Set read timeout to 1/10 second it enables 100ms timeout on read()
+        termios.c_cc[VTIME] = 1;
+        // Apply terminal configurations
         tcsetattr(fd, TCSAFLUSH, &mut termios)?;
 
         Ok(InputRawMode { fd, orig })
@@ -36,12 +41,14 @@ impl Drop for InputRawMode {
 }
 
 fn main() -> io::Result<()> {
-    let stdin = io::stdin();
-
+    let mut stdin = io::stdin();
     let _raw = InputRawMode::new(&stdin)?;
+    let mut one_byte: [u8; 1] = [0];
 
-    for b in stdin.bytes() {
-        let c = b? as char;
+    loop {
+        let size = stdin.read(&mut one_byte)?;
+        debug_assert!(size == 0);
+        let c = if size > 0 { one_byte[0] as char } else { '\0' };
 
         if c.is_control() {
             print!("{}\r\n", c as i32);
