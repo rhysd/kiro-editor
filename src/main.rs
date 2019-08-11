@@ -2,15 +2,19 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
-use std::fmt;
 use std::io::{self, Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::AsRawFd;
+use std::str;
 
 struct StdinRawMode {
     stdin: io::Stdin,
     orig: termios::Termios,
 }
+
+// TODO: Separate editor into frontend and backend. In frontend, it handles actual screen and user input.
+// It interacts with backend by responding to request from frontend. Frontend focues on core editor
+// logic. This is useful when adding a new frontend (e.g. wasm).
 
 impl StdinRawMode {
     fn new() -> io::Result<StdinRawMode> {
@@ -39,8 +43,8 @@ impl StdinRawMode {
         Ok(StdinRawMode { stdin, orig })
     }
 
-    fn input_keys(self) -> InputKeys {
-        InputKeys { stdin: self }
+    fn input_keys(self) -> InputSequences {
+        InputSequences { stdin: self }
     }
 }
 
@@ -72,69 +76,111 @@ enum SpecialKey {
     Down,
 }
 
-#[derive(PartialEq)]
-enum Key {
+#[derive(PartialEq, Debug)]
+enum InputSeq {
     Unidentified,
-    // Special(SpecialKey),
-    // TODO: Add Utf8(char),
-    Ascii(u8, bool), // Char code and ctrl mod
+    // SpecialKey(SpecialKey),
+    // TODO: Add Utf8Key(char),
+    Key(u8, bool), // Char code and ctrl mod
+    Cursor(usize, usize),
 }
 
-impl Key {
-    fn decode_ascii(b: u8) -> Key {
-        match b {
-            0x20..=0x7f => Key::Ascii(b, false),
-            // Note: 0x01~0x1f keys are keys with ctrl mod. Ctrl mod masks key with 0b11111.
-            // Here unmask it with 0b1100000. It only works with 0x61~0x7f
-            0x01..=0x1f => Key::Ascii(b | 0b1100000, true),
-            _ => Key::Unidentified,
-        }
-    }
-}
-
-impl fmt::Debug for Key {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Key::Unidentified => write!(f, "Key(Unidentified)"),
-            Key::Ascii(ch, true) => write!(f, "Key(Ctrl+{:?}, 0x{:x})", ch as char, ch),
-            Key::Ascii(ch, ..) => write!(f, "Key({:?}, 0x{:x})", ch as char, ch),
-        }
-    }
-}
-
-struct InputKeys {
+struct InputSequences {
     stdin: StdinRawMode,
 }
 
-impl InputKeys {
-    fn read_byte_with_timeout(&mut self) -> io::Result<u8> {
+impl InputSequences {
+    fn read(&mut self) -> io::Result<u8> {
         let mut one_byte: [u8; 1] = [0];
         self.stdin.read(&mut one_byte)?;
         Ok(one_byte[0])
     }
+
+    fn read_blocking(&mut self) -> io::Result<u8> {
+        let mut one_byte: [u8; 1] = [0];
+        loop {
+            if self.stdin.read(&mut one_byte)? > 0 {
+                return Ok(one_byte[0]);
+            }
+        }
+    }
+
+    fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
+        match b {
+            // (Maybe) Escape sequence
+            0x1b => {
+                let b = self.read_blocking()?;
+                // TODO: Escape key input by user does not work properly at this moment.
+                if b != b'[' {
+                    return self.decode(b);
+                }
+
+                let mut buf = vec![];
+                let cmd = loop {
+                    let b = self.read_blocking()?;
+                    match b {
+                        b'R' => break b,
+                        _ => buf.push(b),
+                    }
+                };
+
+                let args = buf.split(|b| *b == b';');
+                match cmd {
+                    b'R' => {
+                        // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
+                        let mut i = args
+                            .map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
+                        match (i.next(), i.next()) {
+                            (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::Cursor(r, c)),
+                            _ => Ok(InputSeq::Unidentified),
+                        }
+                    }
+                    _ => Ok(InputSeq::Unidentified),
+                }
+            }
+            // Ascii key inputs
+            0x20..=0x7f => Ok(InputSeq::Key(b, false)),
+            // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
+            // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
+            0x01..=0x1f => Ok(InputSeq::Key(b | 0b1100000, true)),
+            _ => Ok(InputSeq::Unidentified), // TODO: 0x80..=0xff => { ... } Handle UTF-8
+        }
+    }
+
+    fn read_seq(&mut self) -> io::Result<InputSeq> {
+        let b = self.read()?;
+        self.decode(b)
+    }
 }
 
-impl Iterator for InputKeys {
-    type Item = io::Result<Key>;
+impl Iterator for InputSequences {
+    type Item = io::Result<InputSeq>;
 
-    // Read next byte from stdin with timeout 100ms. If nothing was read, it returns 0.
+    // Read next byte from stdin with timeout 100ms. If nothing was read, it returns InputSeq::Unidentified.
+    // This method never returns None so for loop never ends
     fn next(&mut self) -> Option<Self::Item> {
-        Some(self.read_byte_with_timeout().map(Key::decode_ascii))
+        Some(self.read_seq())
     }
 }
 
 struct Editor {
     // Editor state goes here
+    screen_rows: usize,
+    screen_cols: usize,
 }
 
 impl Editor {
-    fn new() -> Editor {
-        Editor {}
+    fn new(size: Option<(usize, usize)>) -> Editor {
+        let (screen_cols, screen_rows) = size.unwrap_or((0, 0));
+        Editor {
+            screen_cols,
+            screen_rows,
+        }
     }
 
     fn write_rows<W: Write>(&self, mut w: W) -> io::Result<()> {
         // Draw screen
-        for _ in 0..24 {
+        for _ in 0..self.screen_rows {
             w.write(b"~\r\n")?;
         }
         Ok(())
@@ -155,27 +201,57 @@ impl Editor {
         stdout.flush()
     }
 
-    fn process_keypress(&mut self, key: Key) -> io::Result<bool> {
-        match key {
-            Key::Ascii(b'q', true) => Ok(true),
+    fn process_sequence(&mut self, seq: InputSeq) -> io::Result<bool> {
+        match seq {
+            InputSeq::Key(b'q', true) => Ok(true),
             _ => Ok(false),
         }
     }
 
-    fn run<I>(&mut self, input: I) -> io::Result<()>
+    fn ensure_screen_size<I>(&mut self, mut input: I) -> io::Result<I>
     where
-        I: Iterator<Item = io::Result<Key>>,
+        I: Iterator<Item = io::Result<InputSeq>>,
     {
-        for key in input {
-            self.refresh_screen()?;
-            if self.process_keypress(key?)? {
+        if self.screen_cols > 0 && self.screen_rows > 0 {
+            return Ok(input);
+        }
+
+        // By moving cursor at the bottom-right corner by 'B' and 'C' commands, get the size of
+        // current screen. \x1b[9999;9999H is not available since it does not guarantee cursor
+        // stops on the corner. Finaly command 'n' queries cursor position.
+        let mut stdout = io::stdout();
+        stdout.write(b"\x1b[9999C\x1b[9999B\x1b[6n")?;
+        stdout.flush()?;
+
+        // Wait for response from terminal discarding other sequences
+        for seq in &mut input {
+            if let InputSeq::Cursor(r, c) = seq? {
+                self.screen_cols = c;
+                self.screen_rows = r;
                 break;
             }
         }
+
+        Ok(input)
+    }
+
+    fn run<I>(&mut self, input: I) -> io::Result<()>
+    where
+        I: Iterator<Item = io::Result<InputSeq>>,
+    {
+        let input = self.ensure_screen_size(input)?;
+
+        for seq in input {
+            self.refresh_screen()?;
+            if self.process_sequence(seq?)? {
+                break;
+            }
+        }
+
         self.refresh_screen() // Finally refresh screen on exit
     }
 }
 
 fn main() -> io::Result<()> {
-    Editor::new().run(StdinRawMode::new()?.input_keys())
+    Editor::new(term_size::dimensions_stdout()).run(StdinRawMode::new()?.input_keys())
 }
