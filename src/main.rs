@@ -34,6 +34,10 @@ impl StdinRawMode {
 
         Ok(StdinRawMode { stdin, orig })
     }
+
+    fn input_keys(&mut self) -> InputKeys {
+        InputKeys { stdin: self }
+    }
 }
 
 impl Drop for StdinRawMode {
@@ -67,49 +71,75 @@ enum SpecialKey {
 #[derive(PartialEq)]
 enum Key {
     Unidentified,
-    Ascii(u8),
     // Special(SpecialKey),
     // TODO: Add Utf8(char),
+    Ascii(u8, bool), // Char code and ctrl mod
 }
 
 impl Key {
-    fn ctrl(c: u8) -> Key {
-        Key::Ascii(c & 0x1f)
+    fn decode_ascii(b: u8) -> Key {
+        match b {
+            0x20..=0x7f => Key::Ascii(b, false),
+            // Note: 0x01~0x1f keys are keys with ctrl mod. Ctrl mod masks key with 0b11111.
+            // Here unmask it with 0b1100000. It only works with 0x61~0x7f
+            0x01..=0x1f => Key::Ascii(b | 0b1100000, true),
+            _ => Key::Unidentified,
+        }
     }
 }
 
 impl fmt::Debug for Key {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
+        match *self {
             Key::Unidentified => write!(f, "Key(Unidentified)"),
-            Key::Ascii(code) => {
-                let c = *code as char;
-                if c.is_control() {
-                    write!(f, "Key(0x{:x})", *code)
-                } else {
-                    write!(f, "Key('{}', 0x{:x})", c, *code)
-                }
-            }
+            Key::Ascii(ch, true) => write!(f, "Key(Ctrl+{:?}, 0x{:x})", ch as char, ch),
+            Key::Ascii(ch, ..) => write!(f, "Key({:?}, 0x{:x})", ch as char, ch),
         }
     }
 }
 
-fn main() -> io::Result<()> {
-    let mut stdin = StdinRawMode::new()?;
-    let mut one_byte: [u8; 1] = [0];
+struct InputKeys<'a> {
+    stdin: &'a mut StdinRawMode,
+}
 
-    loop {
-        let size = stdin.read(&mut one_byte)?;
-        debug_assert!(size == 0 || size == 1);
-        let c = if size > 0 { one_byte[0] } else { b'\0' };
-        let k = Key::Ascii(c);
+impl<'a> InputKeys<'a> {
+    fn read_next_byte(&mut self) -> io::Result<u8> {
+        let mut one_byte: [u8; 1] = [0];
+        self.stdin.read(&mut one_byte)?;
+        Ok(one_byte[0])
+    }
+}
 
-        print!("{:?}\r\n", k);
+impl<'a> Iterator for InputKeys<'a> {
+    type Item = io::Result<Key>;
 
-        if k == Key::ctrl(b'q') {
-            break;
-        }
+    // Read next byte from stdin with timeout 100ms. If nothing was read, it returns 0.
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.read_next_byte().map(Key::decode_ascii))
+    }
+}
+
+struct Editor {
+    stdin: StdinRawMode,
+}
+
+impl Editor {
+    fn new() -> io::Result<Editor> {
+        StdinRawMode::new().map(|stdin| Editor { stdin })
     }
 
-    Ok(())
+    fn run(&mut self) -> io::Result<()> {
+        for input in self.stdin.input_keys() {
+            let key = input?;
+            print!("{:?}\r\n", key);
+            if key == Key::Ascii(b'q', true) {
+                break; // Exit successfully
+            }
+        }
+        Ok(())
+    }
+}
+
+fn main() -> io::Result<()> {
+    Editor::new()?.run()
 }
