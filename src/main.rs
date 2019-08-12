@@ -181,17 +181,32 @@ impl Editor {
     }
 
     fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        let mut first_line = true;
-        // Draw screen
-        for _ in 0..self.screen_rows {
-            if first_line {
-                first_line = false;
+        for y in 0..self.screen_rows {
+            if y == self.screen_rows / 3 {
+                let msg_buf = format!("Kilo editor -- version {}", VERSION);
+                let mut welcome = msg_buf.as_str();
+                if welcome.len() > self.screen_cols {
+                    welcome = &welcome[..self.screen_cols];
+                }
+                let padding = (self.screen_cols - welcome.len()) / 2;
+                if padding > 0 {
+                    buf.write(b"~")?;
+                    for _ in 0..padding - 1 {
+                        buf.write(b" ")?;
+                    }
+                }
+                buf.write(welcome.as_bytes())?;
             } else {
+                buf.write(b"~")?;
+            }
+
+            // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
+            buf.write(b"\x1b[K")?;
+
+            // Avoid adding newline at the end of buffer
+            if y < self.screen_rows - 1 {
                 buf.write(b"\r\n")?;
             }
-            buf.write(b"~")?;
-            // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
-            buf.write("\x1b[K")?;
         }
         Ok(())
     }
