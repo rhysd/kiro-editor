@@ -7,6 +7,8 @@ use std::ops::{Deref, DerefMut};
 use std::os::unix::io::AsRawFd;
 use std::str;
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 struct StdinRawMode {
     stdin: io::Stdin,
     orig: termios::Termios,
@@ -178,26 +180,38 @@ impl Editor {
         }
     }
 
-    fn write_rows<W: Write>(&self, mut w: W) -> io::Result<()> {
+    fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
+        let mut first_line = true;
         // Draw screen
         for _ in 0..self.screen_rows {
-            w.write(b"~\r\n")?;
+            if first_line {
+                first_line = false;
+            } else {
+                buf.write(b"\r\n")?;
+            }
+            buf.write(b"~")?;
+            // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
+            buf.write("\x1b[K")?;
         }
         Ok(())
     }
 
     fn refresh_screen(&self) -> io::Result<()> {
-        let mut stdout = io::BufWriter::new(io::stdout());
+        let mut buf = Vec::with_capacity((self.screen_rows + 1) * self.screen_cols);
         // \x1b[: Escape sequence header
-        // 2: Argument of 'J' command to reset entire screen
-        // J: Command to erase screen http://vt100.net/docs/vt100-ug/chapter3.html#ED
-        stdout.write(b"\x1b[2J")?;
+        // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
+        buf.write(b"\x1b[?25l")?;
         // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
-        stdout.write(b"\x1b[H")?;
+        buf.write(b"\x1b[H")?;
 
-        self.write_rows(&mut stdout)?;
+        self.write_rows(&mut buf)?;
 
-        stdout.write(b"\x1b[H")?;
+        buf.write(b"\x1b[H")?;
+        // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
+        buf.write(b"\x1b[?25h")?;
+
+        let mut stdout = io::stdout();
+        stdout.write(&buf)?;
         stdout.flush()
     }
 
