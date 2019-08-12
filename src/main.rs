@@ -249,7 +249,8 @@ impl Editor {
 
     fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         for y in 0..self.screen_rows {
-            if y >= self.row.len() {
+            let file_row = y + self.rowoff;
+            if file_row >= self.row.len() {
                 if self.row.is_empty() && y == self.screen_rows / 3 {
                     let msg_buf = format!("Kilo editor -- version {}", VERSION);
                     let welcome = self.trim_line(&msg_buf);
@@ -265,7 +266,7 @@ impl Editor {
                     buf.write(b"~")?;
                 }
             } else {
-                let line = self.trim_line(&self.row[y].text);
+                let line = self.trim_line(&self.row[file_row].text);
                 buf.write(line.as_bytes())?;
             }
 
@@ -282,6 +283,7 @@ impl Editor {
 
     fn redraw_screen(&self) -> io::Result<()> {
         let mut buf = Vec::with_capacity((self.screen_rows + 1) * self.screen_cols);
+
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
         buf.write(b"\x1b[?25l")?;
@@ -291,7 +293,9 @@ impl Editor {
         self.write_rows(&mut buf)?;
 
         // Move cursor
-        write!(buf, "\x1b[{};{}H", self.cy + 1, self.cx + 1)?;
+        let cursor_row = self.cy - self.rowoff + 1;
+        let cursor_col = self.cx + 1;
+        write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
 
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
@@ -319,26 +323,48 @@ impl Editor {
         Ok(())
     }
 
-    fn move_cursor(&mut self, dir: CursorDir, delta: usize) {
+    fn scroll(&mut self) {
+        // Adjust file row position when cursor is outside screen
+        if self.cy < self.rowoff {
+            // Scroll up when cursor is above the top of window
+            self.rowoff = self.cy;
+        }
+        if self.cy >= self.rowoff + self.screen_rows {
+            // Scroll down when cursor is below the bottom of screen
+            self.rowoff = self.cy - self.screen_rows + 1;
+        }
+    }
+
+    fn move_cursor(&mut self, dir: CursorDir) {
         match dir {
-            CursorDir::Up => self.cy = self.cy.saturating_sub(delta),
-            CursorDir::Down => self.cy = cmp::min(self.cy + delta, self.screen_rows - 1),
-            CursorDir::Left => self.cx = self.cx.saturating_sub(delta),
-            CursorDir::Right => self.cx = cmp::min(self.cx + delta, self.screen_cols - 1),
+            CursorDir::Up => self.cy = self.cy.saturating_sub(1),
+            CursorDir::Down => {
+                if self.cy < self.row.len() - 1 {
+                    self.cy += 1;
+                }
+            }
+            CursorDir::Left => self.cx = self.cx.saturating_sub(1),
+            CursorDir::Right => self.cx = cmp::min(self.cx + 1, self.screen_cols - 1),
         }
     }
 
     fn process_sequence(&mut self, seq: InputSeq) -> io::Result<bool> {
         let mut exit = false;
         match seq {
-            InputSeq::Key(b'w', false) | InputSeq::UpKey => self.move_cursor(CursorDir::Up, 1),
-            InputSeq::Key(b'a', false) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left, 1),
-            InputSeq::Key(b's', false) | InputSeq::DownKey => self.move_cursor(CursorDir::Down, 1),
-            InputSeq::Key(b'd', false) | InputSeq::RightKey => {
-                self.move_cursor(CursorDir::Right, 1)
+            InputSeq::Key(b'w', false) | InputSeq::UpKey => self.move_cursor(CursorDir::Up),
+            InputSeq::Key(b'a', false) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left),
+            InputSeq::Key(b's', false) | InputSeq::DownKey => self.move_cursor(CursorDir::Down),
+            InputSeq::Key(b'd', false) | InputSeq::RightKey => self.move_cursor(CursorDir::Right),
+            InputSeq::PageUpKey => {
+                for _ in 0..self.screen_rows {
+                    self.move_cursor(CursorDir::Up);
+                }
             }
-            InputSeq::PageUpKey => self.move_cursor(CursorDir::Up, self.screen_rows),
-            InputSeq::PageDownKey => self.move_cursor(CursorDir::Down, self.screen_rows),
+            InputSeq::PageDownKey => {
+                for _ in 0..self.screen_rows {
+                    self.move_cursor(CursorDir::Down)
+                }
+            }
             InputSeq::HomeKey => self.cx = 0,
             InputSeq::EndKey => self.cx = self.screen_cols - 1,
             InputSeq::DeleteKey => unimplemented!("delete key press"),
@@ -382,6 +408,7 @@ impl Editor {
         let input = self.ensure_screen_size(input)?;
 
         for seq in input {
+            self.scroll();
             self.redraw_screen()?;
             if self.process_sequence(seq?)? {
                 break;
