@@ -3,9 +3,11 @@
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
 use std::cmp;
-use std::io::{self, Read, Write};
+use std::fs;
+use std::io::{self, BufRead, Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::AsRawFd;
+use std::path::Path;
 use std::str;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -198,6 +200,11 @@ impl Iterator for InputSequences {
     }
 }
 
+#[derive(Default)]
+struct Row {
+    text: String,
+}
+
 enum CursorDir {
     Left,
     Right,
@@ -213,6 +220,8 @@ struct Editor {
     // Screen size
     screen_rows: usize,
     screen_cols: usize,
+    num_rows: usize,
+    row: Row,
 }
 
 impl Editor {
@@ -223,27 +232,40 @@ impl Editor {
             cy: 0,
             screen_cols,
             screen_rows,
+            num_rows: 0,
+            row: Default::default(),
+        }
+    }
+
+    fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> &'a str {
+        let line = line.as_ref();
+        if line.len() > self.screen_cols {
+            &line[..self.screen_cols]
+        } else {
+            line
         }
     }
 
     fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         for y in 0..self.screen_rows {
-            if y == self.screen_rows / 3 {
-                let msg_buf = format!("Kilo editor -- version {}", VERSION);
-                let mut welcome = msg_buf.as_str();
-                if welcome.len() > self.screen_cols {
-                    welcome = &welcome[..self.screen_cols];
-                }
-                let padding = (self.screen_cols - welcome.len()) / 2;
-                if padding > 0 {
-                    buf.write(b"~")?;
-                    for _ in 0..padding - 1 {
-                        buf.write(b" ")?;
+            if y >= self.num_rows {
+                if y == self.screen_rows / 3 {
+                    let msg_buf = format!("Kilo editor -- version {}", VERSION);
+                    let welcome = self.trim_line(&msg_buf);
+                    let padding = (self.screen_cols - welcome.len()) / 2;
+                    if padding > 0 {
+                        buf.write(b"~")?;
+                        for _ in 0..padding - 1 {
+                            buf.write(b" ")?;
+                        }
                     }
+                    buf.write(welcome.as_bytes())?;
+                } else {
+                    buf.write(b"~")?;
                 }
-                buf.write(welcome.as_bytes())?;
             } else {
-                buf.write(b"~")?;
+                let line = self.trim_line(&self.row.text);
+                buf.write(line.as_bytes())?;
             }
 
             // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
@@ -286,6 +308,24 @@ impl Editor {
         // Set cursor position to left-top corner
         stdout.write(b"\x1b[H")?;
         stdout.flush()
+    }
+
+    fn open_file<P: AsRef<Path>>(&mut self, file: P) -> io::Result<()> {
+        let file = fs::File::open(file)?;
+        let mut reader = io::BufReader::new(file);
+        reader.read_line(&mut self.row.text)?;
+
+        // Trim new line at end
+        loop {
+            let c = self.row.text.chars().last();
+            if c != Some('\r') && c != Some('\n') {
+                break;
+            }
+            self.row.text.pop();
+        }
+
+        self.num_rows = 1;
+        Ok(())
     }
 
     fn move_cursor(&mut self, dir: CursorDir, delta: usize) {
@@ -362,5 +402,9 @@ impl Editor {
 }
 
 fn main() -> io::Result<()> {
-    Editor::new(term_size::dimensions_stdout()).run(StdinRawMode::new()?.input_keys())
+    let mut editor = Editor::new(term_size::dimensions_stdout());
+    if let Some(arg) = std::env::args().skip(1).next() {
+        editor.open_file(arg)?;
+    }
+    editor.run(StdinRawMode::new()?.input_keys())
 }
