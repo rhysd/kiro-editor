@@ -2,6 +2,7 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
+use std::cmp;
 use std::io::{self, Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::os::unix::io::AsRawFd;
@@ -77,6 +78,11 @@ enum SpecialKey {
     Right,
     Up,
     Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Delete,
 }
 
 #[derive(PartialEq, Debug)]
@@ -122,17 +128,26 @@ impl InputSequences {
                     b => return self.decode(b), // TODO: First escape character is squashed. Buffer it
                 };
 
-                // Now \1xb[ is a header of escape sequence. Eat it until end with blocking
+                // Now confirmed \1xb[ which is a header of escape sequence. Eat it until the end
+                // of sequence with blocking
                 let mut buf = vec![];
                 let cmd = loop {
                     let b = self.read_blocking()?;
                     match b {
-                        b'R' | b'A' | b'B' | b'C' | b'D' => break b,
+                        b'R' | b'A' | b'B' | b'C' | b'D' | b'~' | b'F' | b'H' => break b,
+                        b'O' => {
+                            buf.push(b'O');
+                            let b = self.read_blocking()?;
+                            match b {
+                                b'F' | b'H' => break b, // OF/OH are the same as F/H
+                                _ => buf.push(b),
+                            };
+                        }
                         _ => buf.push(b),
                     }
                 };
 
-                let args = buf.split(|b| *b == b';');
+                let mut args = buf.split(|b| *b == b';');
                 match cmd {
                     b'R' => {
                         // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
@@ -147,7 +162,20 @@ impl InputSequences {
                     b'B' => Ok(InputSeq::SpecialKey(SpecialKey::Down)),
                     b'C' => Ok(InputSeq::SpecialKey(SpecialKey::Right)),
                     b'D' => Ok(InputSeq::SpecialKey(SpecialKey::Left)),
-                    _ => Ok(InputSeq::Unidentified),
+                    b'~' => {
+                        // e.g. \x1b[5~
+                        match args.next() {
+                            Some(b"5") => Ok(InputSeq::SpecialKey(SpecialKey::PageUp)),
+                            Some(b"6") => Ok(InputSeq::SpecialKey(SpecialKey::PageDown)),
+                            Some(b"1") | Some(b"7") => Ok(InputSeq::SpecialKey(SpecialKey::Home)),
+                            Some(b"4") | Some(b"8") => Ok(InputSeq::SpecialKey(SpecialKey::End)),
+                            Some(b"3") => Ok(InputSeq::SpecialKey(SpecialKey::Delete)),
+                            _ => Ok(InputSeq::Unidentified),
+                        }
+                    }
+                    b'H' => Ok(InputSeq::SpecialKey(SpecialKey::Home)),
+                    b'F' => Ok(InputSeq::SpecialKey(SpecialKey::End)),
+                    _ => unreachable!(),
                 }
             }
             // Ascii key inputs
@@ -265,12 +293,12 @@ impl Editor {
         stdout.flush()
     }
 
-    fn move_cursor(&mut self, dir: CursorDir) {
+    fn move_cursor(&mut self, dir: CursorDir, delta: usize) {
         match dir {
-            CursorDir::Up => self.cy = self.cy.saturating_sub(1),
-            CursorDir::Down => self.cy = self.cy.saturating_add(1),
-            CursorDir::Left => self.cx = self.cx.saturating_sub(1),
-            CursorDir::Right => self.cx = self.cx.saturating_add(1),
+            CursorDir::Up => self.cy = self.cy.saturating_sub(delta),
+            CursorDir::Down => self.cy = cmp::min(self.cy + delta, self.screen_rows - 1),
+            CursorDir::Left => self.cx = self.cx.saturating_sub(delta),
+            CursorDir::Right => self.cx = cmp::min(self.cx + delta, self.screen_cols - 1),
         }
     }
 
@@ -278,17 +306,26 @@ impl Editor {
         let mut exit = false;
         match seq {
             InputSeq::Key(b'w', false) | InputSeq::SpecialKey(SpecialKey::Up) => {
-                self.move_cursor(CursorDir::Up)
+                self.move_cursor(CursorDir::Up, 1)
             }
             InputSeq::Key(b'a', false) | InputSeq::SpecialKey(SpecialKey::Left) => {
-                self.move_cursor(CursorDir::Left)
+                self.move_cursor(CursorDir::Left, 1)
             }
             InputSeq::Key(b's', false) | InputSeq::SpecialKey(SpecialKey::Down) => {
-                self.move_cursor(CursorDir::Down)
+                self.move_cursor(CursorDir::Down, 1)
             }
             InputSeq::Key(b'd', false) | InputSeq::SpecialKey(SpecialKey::Right) => {
-                self.move_cursor(CursorDir::Right)
+                self.move_cursor(CursorDir::Right, 1)
             }
+            InputSeq::SpecialKey(SpecialKey::PageUp) => {
+                self.move_cursor(CursorDir::Up, self.screen_rows)
+            }
+            InputSeq::SpecialKey(SpecialKey::PageDown) => {
+                self.move_cursor(CursorDir::Down, self.screen_rows)
+            }
+            InputSeq::SpecialKey(SpecialKey::Home) => self.cx = 0,
+            InputSeq::SpecialKey(SpecialKey::End) => self.cx = self.screen_cols - 1,
+            InputSeq::SpecialKey(SpecialKey::Delete) => unimplemented!("delete key press"),
             InputSeq::Key(b'q', true) => exit = true,
             _ => {}
         }
