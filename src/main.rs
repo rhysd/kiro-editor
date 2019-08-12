@@ -38,7 +38,7 @@ impl StdinRawMode {
         // Do not wait for next byte with blocking since reading 0 byte is permitted
         termios.c_cc[VMIN] = 0;
         // Set read timeout to 1/10 second it enables 100ms timeout on read()
-        termios.c_cc[VTIME] = 10;
+        termios.c_cc[VTIME] = 1;
         // Apply terminal configurations
         tcsetattr(fd, TCSAFLUSH, &mut termios)?;
 
@@ -71,6 +71,7 @@ impl DerefMut for StdinRawMode {
     }
 }
 
+#[derive(PartialEq, Debug)]
 enum SpecialKey {
     Left,
     Right,
@@ -81,7 +82,7 @@ enum SpecialKey {
 #[derive(PartialEq, Debug)]
 enum InputSeq {
     Unidentified,
-    // SpecialKey(SpecialKey),
+    SpecialKey(SpecialKey),
     // TODO: Add Utf8Key(char),
     Key(u8, bool), // Char code and ctrl mod
     Cursor(usize, usize),
@@ -121,7 +122,7 @@ impl InputSequences {
                 let cmd = loop {
                     let b = self.read_blocking()?;
                     match b {
-                        b'R' => break b,
+                        b'R' | b'A' | b'B' | b'C' | b'D' => break b,
                         _ => buf.push(b),
                     }
                 };
@@ -137,6 +138,10 @@ impl InputSequences {
                             _ => Ok(InputSeq::Unidentified),
                         }
                     }
+                    b'A' => Ok(InputSeq::SpecialKey(SpecialKey::Up)),
+                    b'B' => Ok(InputSeq::SpecialKey(SpecialKey::Down)),
+                    b'C' => Ok(InputSeq::SpecialKey(SpecialKey::Right)),
+                    b'D' => Ok(InputSeq::SpecialKey(SpecialKey::Left)),
                     _ => Ok(InputSeq::Unidentified),
                 }
             }
@@ -165,8 +170,19 @@ impl Iterator for InputSequences {
     }
 }
 
+enum CursorDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
 struct Editor {
     // Editor state goes here
+    // Cursor position
+    cx: usize,
+    cy: usize,
+    // Screen size
     screen_rows: usize,
     screen_cols: usize,
 }
@@ -175,6 +191,8 @@ impl Editor {
     fn new(size: Option<(usize, usize)>) -> Editor {
         let (screen_cols, screen_rows) = size.unwrap_or((0, 0));
         Editor {
+            cx: 0,
+            cy: 0,
             screen_cols,
             screen_rows,
         }
@@ -221,7 +239,9 @@ impl Editor {
 
         self.write_rows(&mut buf)?;
 
-        buf.write(b"\x1b[H")?;
+        // Move cursor
+        write!(buf, "\x1b[{};{}H", self.cy + 1, self.cx + 1)?;
+
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
 
@@ -230,11 +250,34 @@ impl Editor {
         stdout.flush()
     }
 
-    fn process_sequence(&mut self, seq: InputSeq) -> io::Result<bool> {
-        match seq {
-            InputSeq::Key(b'q', true) => Ok(true),
-            _ => Ok(false),
+    fn move_cursor(&mut self, dir: CursorDir) {
+        match dir {
+            CursorDir::Up => self.cy = self.cy.saturating_sub(1),
+            CursorDir::Down => self.cy = self.cy.saturating_add(1),
+            CursorDir::Left => self.cx = self.cx.saturating_sub(1),
+            CursorDir::Right => self.cx = self.cx.saturating_add(1),
         }
+    }
+
+    fn process_sequence(&mut self, seq: InputSeq) -> io::Result<bool> {
+        let mut exit = false;
+        match seq {
+            InputSeq::Key(b'w', false) | InputSeq::SpecialKey(SpecialKey::Up) => {
+                self.move_cursor(CursorDir::Up)
+            }
+            InputSeq::Key(b'a', false) | InputSeq::SpecialKey(SpecialKey::Left) => {
+                self.move_cursor(CursorDir::Left)
+            }
+            InputSeq::Key(b's', false) | InputSeq::SpecialKey(SpecialKey::Down) => {
+                self.move_cursor(CursorDir::Down)
+            }
+            InputSeq::Key(b'd', false) | InputSeq::SpecialKey(SpecialKey::Right) => {
+                self.move_cursor(CursorDir::Right)
+            }
+            InputSeq::Key(b'q', true) => exit = true,
+            _ => {}
+        }
+        Ok(exit)
     }
 
     fn ensure_screen_size<I>(&mut self, mut input: I) -> io::Result<I>
