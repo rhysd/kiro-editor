@@ -73,24 +73,19 @@ impl DerefMut for StdinRawMode {
 }
 
 #[derive(PartialEq, Debug)]
-enum SpecialKey {
-    Left,
-    Right,
-    Up,
-    Down,
-    PageUp,
-    PageDown,
-    Home,
-    End,
-    Delete,
-}
-
-#[derive(PartialEq, Debug)]
 enum InputSeq {
     Unidentified,
-    SpecialKey(SpecialKey),
     // TODO: Add Utf8Key(char),
     Key(u8, bool), // Char code and ctrl mod
+    LeftKey,
+    RightKey,
+    UpKey,
+    DownKey,
+    PageUpKey,
+    PageDownKey,
+    HomeKey,
+    EndKey,
+    DeleteKey,
     Cursor(usize, usize),
 }
 
@@ -158,23 +153,23 @@ impl InputSequences {
                             _ => Ok(InputSeq::Unidentified),
                         }
                     }
-                    b'A' => Ok(InputSeq::SpecialKey(SpecialKey::Up)),
-                    b'B' => Ok(InputSeq::SpecialKey(SpecialKey::Down)),
-                    b'C' => Ok(InputSeq::SpecialKey(SpecialKey::Right)),
-                    b'D' => Ok(InputSeq::SpecialKey(SpecialKey::Left)),
+                    b'A' => Ok(InputSeq::UpKey),
+                    b'B' => Ok(InputSeq::DownKey),
+                    b'C' => Ok(InputSeq::RightKey),
+                    b'D' => Ok(InputSeq::LeftKey),
                     b'~' => {
                         // e.g. \x1b[5~
                         match args.next() {
-                            Some(b"5") => Ok(InputSeq::SpecialKey(SpecialKey::PageUp)),
-                            Some(b"6") => Ok(InputSeq::SpecialKey(SpecialKey::PageDown)),
-                            Some(b"1") | Some(b"7") => Ok(InputSeq::SpecialKey(SpecialKey::Home)),
-                            Some(b"4") | Some(b"8") => Ok(InputSeq::SpecialKey(SpecialKey::End)),
-                            Some(b"3") => Ok(InputSeq::SpecialKey(SpecialKey::Delete)),
+                            Some(b"5") => Ok(InputSeq::PageUpKey),
+                            Some(b"6") => Ok(InputSeq::PageDownKey),
+                            Some(b"1") | Some(b"7") => Ok(InputSeq::HomeKey),
+                            Some(b"4") | Some(b"8") => Ok(InputSeq::EndKey),
+                            Some(b"3") => Ok(InputSeq::DeleteKey),
                             _ => Ok(InputSeq::Unidentified),
                         }
                     }
-                    b'H' => Ok(InputSeq::SpecialKey(SpecialKey::Home)),
-                    b'F' => Ok(InputSeq::SpecialKey(SpecialKey::End)),
+                    b'H' => Ok(InputSeq::HomeKey),
+                    b'F' => Ok(InputSeq::EndKey),
                     _ => unreachable!(),
                 }
             }
@@ -305,27 +300,17 @@ impl Editor {
     fn process_sequence(&mut self, seq: InputSeq) -> io::Result<bool> {
         let mut exit = false;
         match seq {
-            InputSeq::Key(b'w', false) | InputSeq::SpecialKey(SpecialKey::Up) => {
-                self.move_cursor(CursorDir::Up, 1)
-            }
-            InputSeq::Key(b'a', false) | InputSeq::SpecialKey(SpecialKey::Left) => {
-                self.move_cursor(CursorDir::Left, 1)
-            }
-            InputSeq::Key(b's', false) | InputSeq::SpecialKey(SpecialKey::Down) => {
-                self.move_cursor(CursorDir::Down, 1)
-            }
-            InputSeq::Key(b'd', false) | InputSeq::SpecialKey(SpecialKey::Right) => {
+            InputSeq::Key(b'w', false) | InputSeq::UpKey => self.move_cursor(CursorDir::Up, 1),
+            InputSeq::Key(b'a', false) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left, 1),
+            InputSeq::Key(b's', false) | InputSeq::DownKey => self.move_cursor(CursorDir::Down, 1),
+            InputSeq::Key(b'd', false) | InputSeq::RightKey => {
                 self.move_cursor(CursorDir::Right, 1)
             }
-            InputSeq::SpecialKey(SpecialKey::PageUp) => {
-                self.move_cursor(CursorDir::Up, self.screen_rows)
-            }
-            InputSeq::SpecialKey(SpecialKey::PageDown) => {
-                self.move_cursor(CursorDir::Down, self.screen_rows)
-            }
-            InputSeq::SpecialKey(SpecialKey::Home) => self.cx = 0,
-            InputSeq::SpecialKey(SpecialKey::End) => self.cx = self.screen_cols - 1,
-            InputSeq::SpecialKey(SpecialKey::Delete) => unimplemented!("delete key press"),
+            InputSeq::PageUpKey => self.move_cursor(CursorDir::Up, self.screen_rows),
+            InputSeq::PageDownKey => self.move_cursor(CursorDir::Down, self.screen_rows),
+            InputSeq::HomeKey => self.cx = 0,
+            InputSeq::EndKey => self.cx = self.screen_cols - 1,
+            InputSeq::DeleteKey => unimplemented!("delete key press"),
             InputSeq::Key(b'q', true) => exit = true,
             _ => {}
         }
