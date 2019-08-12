@@ -229,7 +229,7 @@ impl Editor {
         Ok(())
     }
 
-    fn refresh_screen(&self) -> io::Result<()> {
+    fn redraw_screen(&self) -> io::Result<()> {
         let mut buf = Vec::with_capacity((self.screen_rows + 1) * self.screen_cols);
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
@@ -247,6 +247,16 @@ impl Editor {
 
         let mut stdout = io::stdout();
         stdout.write(&buf)?;
+        stdout.flush()
+    }
+
+    fn clear_screen(&self) -> io::Result<()> {
+        let mut stdout = io::stdout();
+        // 2: Argument of 'J' command to reset entire screen
+        // J: Command to erase screen http://vt100.net/docs/vt100-ug/chapter3.html#ED
+        stdout.write(b"\x1b[2J")?;
+        // Set cursor position to left-top corner
+        stdout.write(b"\x1b[H")?;
         stdout.flush()
     }
 
@@ -314,13 +324,13 @@ impl Editor {
         let input = self.ensure_screen_size(input)?;
 
         for seq in input {
-            self.refresh_screen()?;
+            self.redraw_screen()?;
             if self.process_sequence(seq?)? {
                 break;
             }
         }
 
-        self.refresh_screen() // Finally refresh screen on exit
+        self.clear_screen() // Finally clear screen on exit
     }
 }
 
