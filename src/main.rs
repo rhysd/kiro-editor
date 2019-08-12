@@ -350,13 +350,42 @@ impl Editor {
     fn move_cursor(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => self.cy = self.cy.saturating_sub(1),
+            CursorDir::Left => {
+                if self.cx > 0 {
+                    self.cx -= 1;
+                } else if self.cy > 0 {
+                    // When moving to left at top of line, move cursor to end of previous line
+                    self.cy -= 1;
+                    self.cx = self.row[self.cy].text.len();
+                }
+            }
             CursorDir::Down => {
-                if self.cy < self.row.len() - 1 {
+                // Allow to move cursor until next line to the last line of file to enable to add a
+                // new line at the end.
+                if self.cy < self.row.len() {
                     self.cy += 1;
                 }
             }
-            CursorDir::Left => self.cx = self.cx.saturating_sub(1),
-            CursorDir::Right => self.cx += 1,
+            CursorDir::Right => {
+                if self.cy < self.row.len() {
+                    let len = self.row[self.cy].text.len();
+                    if self.cx < len {
+                        // Allow to move cursor until next col to the last col of line to enable to
+                        // add a new character at the end of line.
+                        self.cx += 1;
+                    } else if self.cx >= len {
+                        // When moving to right at the end of line, move cursor to top of next line.
+                        self.cy += 1;
+                        self.cx = 0;
+                    }
+                }
+            }
+        };
+
+        // Snap cursor to end of line when moving up/down from longer line
+        let len = self.row.get(self.cy).map(|r| r.text.len()).unwrap_or(0);
+        if self.cx > len {
+            self.cx = len;
         }
     }
 
