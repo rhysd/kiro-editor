@@ -200,7 +200,6 @@ impl Iterator for InputSequences {
     }
 }
 
-#[derive(Default)]
 struct Row {
     text: String,
 }
@@ -220,8 +219,10 @@ struct Editor {
     // Screen size
     screen_rows: usize,
     screen_cols: usize,
-    num_rows: usize,
-    row: Row,
+    // Lines of text buffer
+    row: Vec<Row>,
+    // Scroll position (row offset)
+    rowoff: usize,
 }
 
 impl Editor {
@@ -232,8 +233,8 @@ impl Editor {
             cy: 0,
             screen_cols,
             screen_rows,
-            num_rows: 0,
-            row: Default::default(),
+            row: Vec::with_capacity(screen_rows),
+            rowoff: 0,
         }
     }
 
@@ -248,8 +249,8 @@ impl Editor {
 
     fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         for y in 0..self.screen_rows {
-            if y >= self.num_rows {
-                if y == self.screen_rows / 3 {
+            if y >= self.row.len() {
+                if self.row.is_empty() && y == self.screen_rows / 3 {
                     let msg_buf = format!("Kilo editor -- version {}", VERSION);
                     let welcome = self.trim_line(&msg_buf);
                     let padding = (self.screen_cols - welcome.len()) / 2;
@@ -264,7 +265,7 @@ impl Editor {
                     buf.write(b"~")?;
                 }
             } else {
-                let line = self.trim_line(&self.row.text);
+                let line = self.trim_line(&self.row[y].text);
                 buf.write(line.as_bytes())?;
             }
 
@@ -312,19 +313,9 @@ impl Editor {
 
     fn open_file<P: AsRef<Path>>(&mut self, file: P) -> io::Result<()> {
         let file = fs::File::open(file)?;
-        let mut reader = io::BufReader::new(file);
-        reader.read_line(&mut self.row.text)?;
-
-        // Trim new line at end
-        loop {
-            let c = self.row.text.chars().last();
-            if c != Some('\r') && c != Some('\n') {
-                break;
-            }
-            self.row.text.pop();
+        for line in io::BufReader::new(file).lines() {
+            self.row.push(Row { text: line? });
         }
-
-        self.num_rows = 1;
         Ok(())
     }
 
