@@ -2,7 +2,6 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
-use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::ops::{Deref, DerefMut};
@@ -221,8 +220,9 @@ struct Editor {
     screen_cols: usize,
     // Lines of text buffer
     row: Vec<Row>,
-    // Scroll position (row offset)
+    // Scroll position (row/col offset)
     rowoff: usize,
+    coloff: usize,
 }
 
 impl Editor {
@@ -235,16 +235,22 @@ impl Editor {
             screen_rows,
             row: Vec::with_capacity(screen_rows),
             rowoff: 0,
+            coloff: 0,
         }
     }
 
     fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> &'a str {
-        let line = line.as_ref();
-        if line.len() > self.screen_cols {
-            &line[..self.screen_cols]
-        } else {
-            line
+        let mut line = line.as_ref();
+        if line.len() <= self.coloff {
+            return "";
         }
+        if self.coloff > 0 {
+            line = &line[self.coloff..];
+        }
+        if line.len() > self.screen_cols {
+            line = &line[..self.screen_cols]
+        }
+        line
     }
 
     fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
@@ -294,7 +300,7 @@ impl Editor {
 
         // Move cursor
         let cursor_row = self.cy - self.rowoff + 1;
-        let cursor_col = self.cx + 1;
+        let cursor_col = self.cx - self.coloff + 1;
         write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
 
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
@@ -324,7 +330,7 @@ impl Editor {
     }
 
     fn scroll(&mut self) {
-        // Adjust file row position when cursor is outside screen
+        // Adjust scroll position when cursor is outside screen
         if self.cy < self.rowoff {
             // Scroll up when cursor is above the top of window
             self.rowoff = self.cy;
@@ -332,6 +338,12 @@ impl Editor {
         if self.cy >= self.rowoff + self.screen_rows {
             // Scroll down when cursor is below the bottom of screen
             self.rowoff = self.cy - self.screen_rows + 1;
+        }
+        if self.cx < self.coloff {
+            self.coloff = self.cx;
+        }
+        if self.cx >= self.coloff + self.screen_cols {
+            self.coloff = self.cx - self.screen_cols + 1;
         }
     }
 
@@ -344,7 +356,7 @@ impl Editor {
                 }
             }
             CursorDir::Left => self.cx = self.cx.saturating_sub(1),
-            CursorDir::Right => self.cx = cmp::min(self.cx + 1, self.screen_cols - 1),
+            CursorDir::Right => self.cx += 1,
         }
     }
 
