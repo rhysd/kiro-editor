@@ -88,6 +88,8 @@ enum InputSeq {
     Cursor(usize, usize),
 }
 
+// TODO: Add queue to buffer read input to look ahead user input. It is necessary when reading
+// \x1b but succeeding byte is not b'['.
 struct InputSequences {
     stdin: StdinRawMode,
 }
@@ -112,12 +114,15 @@ impl InputSequences {
         match b {
             // (Maybe) Escape sequence
             0x1b => {
-                let b = self.read_blocking()?;
-                // TODO: Escape key input by user does not work properly at this moment.
-                if b != b'[' {
-                    return self.decode(b);
-                }
+                // Try to read expecting '[' as escape sequence header. Note that, if next input does
+                // not arrive within next tick, it means that it is not an escape sequence.
+                match self.read()? {
+                    b'[' => { /* fall throught */ }
+                    0 => return Ok(InputSeq::Key(0x1b, false)),
+                    b => return self.decode(b), // TODO: First escape character is squashed. Buffer it
+                };
 
+                // Now \1xb[ is a header of escape sequence. Eat it until end with blocking
                 let mut buf = vec![];
                 let cmd = loop {
                     let b = self.read_blocking()?;
