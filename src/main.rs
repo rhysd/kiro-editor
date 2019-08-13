@@ -2,6 +2,7 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
+use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::ops::{Deref, DerefMut};
@@ -10,6 +11,7 @@ use std::path::Path;
 use std::str;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const TAB_STOP: usize = 8;
 
 struct StdinRawMode {
     stdin: io::Stdin,
@@ -200,7 +202,45 @@ impl Iterator for InputSequences {
 }
 
 struct Row {
-    text: String,
+    chars: String,
+    render: String,
+}
+
+impl Row {
+    fn new(line: String) -> Row {
+        let mut render = String::with_capacity(line.len());
+        let mut index = 0;
+        for c in line.chars() {
+            if c == '\t' {
+                loop {
+                    render.push(' ');
+                    index += 1;
+                    if index % TAB_STOP == 0 {
+                        break;
+                    }
+                }
+            } else {
+                render.push(c);
+                index += 1;
+            }
+        }
+        Row {
+            chars: line,
+            render,
+        }
+    }
+
+    fn rx_from_cx(&self, cx: usize) -> usize {
+        // TODO: Consider UTF-8 character width
+        self.chars.chars().take(cx).fold(0, |rx, ch| {
+            if ch == '\t' {
+                // Proceed TAB_STOP spaces then subtract spaces by mod TAB_STOP
+                rx + TAB_STOP - (rx % TAB_STOP)
+            } else {
+                rx + 1
+            }
+        })
+    }
 }
 
 enum CursorDir {
@@ -212,9 +252,11 @@ enum CursorDir {
 
 struct Editor {
     // Editor state goes here
-    // Cursor position
+    // (x, y) coordinate in `chars` buffer of rows
     cx: usize,
     cy: usize,
+    // (x, y) coordinate in `render` text of rows
+    rx: usize,
     // Screen size
     screen_rows: usize,
     screen_cols: usize,
@@ -231,6 +273,7 @@ impl Editor {
         Editor {
             cx: 0,
             cy: 0,
+            rx: 0,
             screen_cols,
             screen_rows,
             row: Vec::with_capacity(screen_rows),
@@ -253,7 +296,7 @@ impl Editor {
         line
     }
 
-    fn write_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
+    fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
             if file_row >= self.row.len() {
@@ -272,7 +315,7 @@ impl Editor {
                     buf.write(b"~")?;
                 }
             } else {
-                let line = self.trim_line(&self.row[file_row].text);
+                let line = self.trim_line(&self.row[file_row].render);
                 buf.write(line.as_bytes())?;
             }
 
@@ -296,11 +339,11 @@ impl Editor {
         // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
         buf.write(b"\x1b[H")?;
 
-        self.write_rows(&mut buf)?;
+        self.draw_rows(&mut buf)?;
 
         // Move cursor
         let cursor_row = self.cy - self.rowoff + 1;
-        let cursor_col = self.cx - self.coloff + 1;
+        let cursor_col = self.rx - self.coloff + 1;
         write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
 
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
@@ -324,12 +367,19 @@ impl Editor {
     fn open_file<P: AsRef<Path>>(&mut self, file: P) -> io::Result<()> {
         let file = fs::File::open(file)?;
         for line in io::BufReader::new(file).lines() {
-            self.row.push(Row { text: line? });
+            self.row.push(Row::new(line?));
         }
         Ok(())
     }
 
     fn scroll(&mut self) {
+        // Calculate X coordinate to render considering tab stop
+        if self.cy < self.row.len() {
+            self.rx = self.row[self.cy].rx_from_cx(self.cx);
+        } else {
+            self.rx = 0;
+        }
+
         // Adjust scroll position when cursor is outside screen
         if self.cy < self.rowoff {
             // Scroll up when cursor is above the top of window
@@ -339,11 +389,11 @@ impl Editor {
             // Scroll down when cursor is below the bottom of screen
             self.rowoff = self.cy - self.screen_rows + 1;
         }
-        if self.cx < self.coloff {
-            self.coloff = self.cx;
+        if self.rx < self.coloff {
+            self.coloff = self.rx;
         }
-        if self.cx >= self.coloff + self.screen_cols {
-            self.coloff = self.cx - self.screen_cols + 1;
+        if self.rx >= self.coloff + self.screen_cols {
+            self.coloff = self.rx - self.screen_cols + 1;
         }
     }
 
@@ -356,7 +406,7 @@ impl Editor {
                 } else if self.cy > 0 {
                     // When moving to left at top of line, move cursor to end of previous line
                     self.cy -= 1;
-                    self.cx = self.row[self.cy].text.len();
+                    self.cx = self.row[self.cy].chars.len();
                 }
             }
             CursorDir::Down => {
@@ -368,7 +418,7 @@ impl Editor {
             }
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    let len = self.row[self.cy].text.len();
+                    let len = self.row[self.cy].chars.len();
                     if self.cx < len {
                         // Allow to move cursor until next col to the last col of line to enable to
                         // add a new character at the end of line.
@@ -383,7 +433,7 @@ impl Editor {
         };
 
         // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(|r| r.text.len()).unwrap_or(0);
+        let len = self.row.get(self.cy).map(|r| r.chars.len()).unwrap_or(0);
         if self.cx > len {
             self.cx = len;
         }
@@ -397,17 +447,24 @@ impl Editor {
             InputSeq::Key(b's', false) | InputSeq::DownKey => self.move_cursor(CursorDir::Down),
             InputSeq::Key(b'd', false) | InputSeq::RightKey => self.move_cursor(CursorDir::Right),
             InputSeq::PageUpKey => {
+                self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Up);
                 }
             }
             InputSeq::PageDownKey => {
+                // Set cursor to bottom of screen considering end of buffer
+                self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Down)
                 }
             }
             InputSeq::HomeKey => self.cx = 0,
-            InputSeq::EndKey => self.cx = self.screen_cols - 1,
+            InputSeq::EndKey => {
+                if self.cy < self.row.len() {
+                    self.cx = self.screen_cols - 1;
+                }
+            }
             InputSeq::DeleteKey => unimplemented!("delete key press"),
             InputSeq::Key(b'q', true) => exit = true,
             _ => {}
