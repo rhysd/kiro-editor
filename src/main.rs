@@ -324,6 +324,13 @@ impl Row {
         self.buf.push_str(s);
         self.update_render();
     }
+
+    fn truncate(&mut self, at: usize) {
+        if at < self.buf.len() {
+            self.buf.truncate(at);
+            self.update_render();
+        }
+    }
 }
 
 enum CursorDir {
@@ -592,6 +599,20 @@ impl Editor {
         self.dirty = true;
     }
 
+    fn insert_line(&mut self) {
+        if self.cy >= self.row.len() {
+            self.row.push(Row::new(""));
+        } else if self.cx >= self.row[self.cy].buf.len() {
+            self.row.insert(self.cy + 1, Row::new(""));
+        } else {
+            let split = String::from(&self.row[self.cy].buf[self.cx..]);
+            self.row[self.cy].truncate(self.cx);
+            self.row.insert(self.cy + 1, Row::new(split));
+        }
+        self.cy += 1;
+        self.cx = 0;
+    }
+
     fn move_cursor(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => self.cy = self.cy.saturating_sub(1),
@@ -673,7 +694,7 @@ impl Editor {
                     return Ok(false);
                 }
             }
-            InputSeq::Key(b'\r', false) => unimplemented!(),
+            InputSeq::Key(b'\r', false) | InputSeq::Key(b'm', true) => self.insert_line(),
             InputSeq::Key(b'h', true) | InputSeq::Key(0x08, false) | InputSeq::Key(0x7f, false) => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
                 self.delete_char();
