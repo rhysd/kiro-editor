@@ -13,6 +13,7 @@ use std::time::SystemTime;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const TAB_STOP: usize = 8;
+const HELP_TEXT: &'static str = "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-G = find";
 
 struct StdinRawMode {
     stdin: io::Stdin,
@@ -303,6 +304,22 @@ impl Row {
         })
     }
 
+    fn cx_from_rx(&self, rx: usize) -> usize {
+        // TODO: Consider UTF-8 character width
+        let mut current_rx = 0;
+        for (cx, ch) in self.buf.chars().enumerate() {
+            if ch == '\t' {
+                current_rx += TAB_STOP - (current_rx % TAB_STOP);
+            } else {
+                current_rx += 1;
+            }
+            if current_rx > rx {
+                return cx; // Found
+            }
+        }
+        self.buf.len() // Fall back to end of line
+    }
+
     // Note: 'at' is an index of buffer, not render text
     fn insert_char(&mut self, at: usize, c: char) {
         if self.buf.len() <= at {
@@ -389,7 +406,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             row: Vec::with_capacity(h),
             rowoff: 0,
             coloff: 0,
-            message: StatusMessage::new("HELP: Ctrl-S = save | Ctrl-Q = quit"),
+            message: StatusMessage::new(HELP_TEXT),
             dirty: false,
             quitting: false,
         }
@@ -580,6 +597,27 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
+    fn find(&mut self) -> io::Result<()> {
+        let query = if let Some(input) = self.prompt("Search: ")? {
+            input
+        } else {
+            return Ok(()); // Canceled
+        };
+
+        for (y, row) in self.row.iter().enumerate() {
+            if let Some(rx) = row.render.find(&query) {
+                self.cy = y;
+                self.cx = row.cx_from_rx(rx);
+                // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
+                self.rowoff = self.row.len();
+                return Ok(());
+            }
+        }
+
+        self.message = StatusMessage::new("Not found");
+        Ok(())
+    }
+
     fn setup_scroll(&mut self) {
         // Calculate X coordinate to render considering tab stop
         if self.cy < self.row.len() {
@@ -757,6 +795,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.move_cursor(CursorDir::Right);
                 self.delete_char();
             }
+            InputSeq::Key(b'g', true) => self.find()?,
             InputSeq::Key(b'q', true) => {
                 if !self.dirty || self.quitting {
                     return Ok(AfterKeyPress::Quit);
