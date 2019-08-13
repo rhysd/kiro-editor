@@ -596,10 +596,10 @@ impl Editor {
     fn process_keypress(&mut self, seq: InputSeq) -> io::Result<bool> {
         let mut exit = false;
         match seq {
-            InputSeq::UpKey => self.move_cursor(CursorDir::Up),
-            InputSeq::LeftKey => self.move_cursor(CursorDir::Left),
-            InputSeq::DownKey => self.move_cursor(CursorDir::Down),
-            InputSeq::RightKey => self.move_cursor(CursorDir::Right),
+            InputSeq::Key(b'p', true) | InputSeq::UpKey => self.move_cursor(CursorDir::Up),
+            InputSeq::Key(b'b', true) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left),
+            InputSeq::Key(b'n', true) | InputSeq::DownKey => self.move_cursor(CursorDir::Down),
+            InputSeq::Key(b'f', true) | InputSeq::RightKey => self.move_cursor(CursorDir::Right),
             InputSeq::PageUpKey => {
                 self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
@@ -613,8 +613,8 @@ impl Editor {
                     self.move_cursor(CursorDir::Down)
                 }
             }
-            InputSeq::HomeKey => self.cx = 0,
-            InputSeq::EndKey => {
+            InputSeq::Key(b'a', true) | InputSeq::HomeKey => self.cx = 0,
+            InputSeq::Key(b'e', true) | InputSeq::EndKey => {
                 if self.cy < self.row.len() {
                     self.cx = self.screen_cols - 1;
                 }
