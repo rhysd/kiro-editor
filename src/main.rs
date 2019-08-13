@@ -245,10 +245,6 @@ impl StatusMessage {
             timestamp: SystemTime::now(),
         }
     }
-
-    fn reset_timestamp(&mut self) {
-        self.timestamp = SystemTime::now();
-    }
 }
 
 struct Row {
@@ -556,7 +552,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn save(&mut self) -> io::Result<()> {
         let mut create = false;
         if self.file.is_none() {
-            if let Some(input) = self.prompt("Save as: ")? {
+            if let Some(input) = self.prompt("Save as: ", |_, _, _, _| {})? {
                 self.file = Some(FilePath {
                     path: PathBuf::from(&input),
                     display: input,
@@ -597,24 +593,33 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
-    fn find(&mut self) -> io::Result<()> {
-        let query = if let Some(input) = self.prompt("Search: ")? {
-            input
-        } else {
-            return Ok(()); // Canceled
-        };
-
+    fn on_incremental_find(&mut self, query: &str, _: InputSeq, end: bool) {
+        if end {
+            return;
+        }
         for (y, row) in self.row.iter().enumerate() {
-            if let Some(rx) = row.render.find(&query) {
+            if let Some(rx) = row.render.find(query) {
                 self.cy = y;
                 self.cx = row.cx_from_rx(rx);
                 // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
                 self.rowoff = self.row.len();
-                return Ok(());
+                break;
             }
         }
+    }
 
-        self.message = StatusMessage::new("Not found");
+    fn find(&mut self) -> io::Result<()> {
+        let (cx, cy, coloff, rowoff) = (self.cx, self.cy, self.coloff, self.rowoff);
+        if self
+            .prompt("Search: ", Self::on_incremental_find)?
+            .is_none()
+        {
+            // Canceled. Restore cursor position
+            self.cx = cx;
+            self.cy = cy;
+            self.coloff = coloff;
+            self.rowoff = rowoff;
+        }
         Ok(())
     }
 
@@ -725,44 +730,51 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
-    fn prompt<S: Into<String>>(&mut self, prompt: S) -> io::Result<Option<String>> {
-        let prompt = prompt.into();
-        let prompt_len = prompt.len();
-        self.message = StatusMessage::new(prompt);
+    fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> io::Result<Option<String>>
+    where
+        S: AsRef<str>,
+        F: FnMut(&mut Self, &str, InputSeq, bool),
+    {
+        let mut buf = String::new();
+        let prompt = prompt.as_ref();
+        self.message = StatusMessage::new(prompt.to_string());
+        self.setup_scroll();
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
-            // Reset timestamp per timeout so it does not erase status message while prompt
-            self.message.reset_timestamp();
-
-            match seq? {
+            let key = seq?;
+            match key {
                 InputSeq::Unidentified => continue,
                 InputSeq::Key(b'h', true) | InputSeq::Key(0x7f, false) | InputSeq::DeleteKey
-                    if self.message.text.len() > prompt_len =>
+                    if !buf.is_empty() =>
                 {
-                    self.message.text.pop();
+                    buf.pop();
                 }
-                InputSeq::Key(b'g', true) | InputSeq::Key(0x1b, false) => {
+                k @ InputSeq::Key(b'g', true) | k @ InputSeq::Key(0x1b, false) => {
                     self.message = StatusMessage::new("Canceled.");
+                    incremental_callback(self, buf.as_str(), k, true);
                     return Ok(None);
                 }
-                InputSeq::Key(b'\r', false) | InputSeq::Key(b'm', true) => break,
+                k @ InputSeq::Key(b'\r', false) | k @ InputSeq::Key(b'm', true) => {
+                    incremental_callback(self, buf.as_str(), k, true);
+                    break;
+                }
                 InputSeq::Key(b, false) => {
-                    self.message.text.push(b as char);
+                    buf.push(b as char);
                 }
                 _ => continue,
             }
 
+            incremental_callback(self, buf.as_str(), key, false);
+
+            self.message = StatusMessage::new(format!("{}{}", prompt, buf));
+            self.setup_scroll();
             self.refresh_screen()?;
         }
 
-        let input = if self.message.text.len() > prompt_len {
-            Some(String::from(&self.message.text[prompt_len..]))
-        } else {
-            None
-        };
+        let input = if buf.is_empty() { None } else { Some(buf) };
 
-        self.message.text.clear();
+        self.message = StatusMessage::new("");
         Ok(input)
     }
 
