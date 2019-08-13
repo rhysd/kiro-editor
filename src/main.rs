@@ -301,11 +301,27 @@ impl Row {
 
     // Note: 'at' is an index of buffer, not render text
     fn insert_char(&mut self, at: usize, c: char) {
-        if self.buf.len() < at {
+        if self.buf.len() <= at {
             self.buf.push(c);
         } else {
             self.buf.insert(at, c);
         }
+        self.update_render();
+    }
+
+    fn delete_char(&mut self, at: usize) {
+        if at < self.buf.len() {
+            self.buf.remove(at);
+            self.update_render();
+        }
+    }
+
+    fn append<S: AsRef<str>>(&mut self, s: S) {
+        let s = s.as_ref();
+        if s.is_empty() {
+            return;
+        }
+        self.buf.push_str(s);
         self.update_render();
     }
 }
@@ -559,6 +575,23 @@ impl Editor {
         self.dirty = true;
     }
 
+    fn delete_char(&mut self) {
+        if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
+            return;
+        }
+        if self.cx > 0 {
+            self.row[self.cy].delete_char(self.cx - 1);
+            self.cx -= 1;
+        } else {
+            // At top of line, backspace concats current line to previous line
+            self.cx = self.row[self.cy - 1].buf.len(); // Move cursor column to end of previous line
+            let row = self.row.remove(self.cy);
+            self.cy -= 1; // Move cursor to previous line
+            self.row[self.cy].append(row.buf);
+        }
+        self.dirty = true;
+    }
+
     fn move_cursor(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => self.cy = self.cy.saturating_sub(1),
@@ -626,7 +659,10 @@ impl Editor {
                     self.cx = self.screen_cols - 1;
                 }
             }
-            InputSeq::DeleteKey => unimplemented!("delete key press"),
+            InputSeq::DeleteKey | InputSeq::Key(b'd', true) => {
+                self.move_cursor(CursorDir::Right);
+                self.delete_char();
+            }
             InputSeq::Key(b'q', true) => {
                 if self.quitting {
                     return Ok(true);
@@ -638,9 +674,9 @@ impl Editor {
                 }
             }
             InputSeq::Key(b'\r', false) => unimplemented!(),
-            InputSeq::Key(b'h', true) | InputSeq::Key(0x08, false) | InputSeq::Key(0x1f, false) => {
+            InputSeq::Key(b'h', true) | InputSeq::Key(0x08, false) | InputSeq::Key(0x7f, false) => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
-                unimplemented!();
+                self.delete_char();
             }
             InputSeq::Key(b'l', true) | InputSeq::Key(0x1b, false) => {
                 // Our editor refresh screen after any key
