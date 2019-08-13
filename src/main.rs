@@ -13,7 +13,8 @@ use std::time::SystemTime;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const TAB_STOP: usize = 8;
-const HELP_TEXT: &'static str = "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-G = find";
+const HELP_TEXT: &'static str =
+    "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-G = find | Ctrl-? = help";
 
 struct StdinRawMode {
     stdin: io::Stdin,
@@ -104,6 +105,7 @@ struct InputSequences {
 
 impl InputSequences {
     fn read_byte(&mut self) -> io::Result<u8> {
+        // TODO: Regarding 0 as timeout conflicts with Ctrl-`
         let mut one_byte: [u8; 1] = [0];
         self.stdin.read(&mut one_byte)?;
         Ok(one_byte[0])
@@ -190,7 +192,9 @@ impl InputSequences {
             0x20..=0x7f => Ok(InputSeq::Key(b, false)),
             // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
             // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x01..=0x1f => Ok(InputSeq::Key(b | 0b1100000, true)),
+            0x01..=0x1e => Ok(InputSeq::Key(b | 0b1100000, true)),
+            // Ctrl-?
+            0x1f => Ok(InputSeq::Key(b | 0b0100000, true)),
             _ => Ok(InputSeq::Unidentified), // TODO: 0x80..=0xff => { ... } Handle UTF-8
         }
     }
@@ -825,6 +829,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
             InputSeq::Key(b'l', true) | InputSeq::Key(0x1b, false) => {
                 // Our editor refresh screen after any key
+            }
+            InputSeq::Key(b'?', true) => {
+                self.message = StatusMessage::new(HELP_TEXT);
             }
             InputSeq::Key(b's', true) => self.save()?,
             InputSeq::Key(b, false) => self.insert_char(b as char),
