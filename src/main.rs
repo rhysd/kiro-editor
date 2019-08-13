@@ -514,10 +514,11 @@ impl Editor {
 
         let msg = format!("{} bytes written to {}", bytes, &file.display);
         self.message = StatusMessage::new(msg);
+        self.dirty = false;
         Ok(())
     }
 
-    fn scroll(&mut self) {
+    fn setup_scroll(&mut self) {
         // Calculate X coordinate to render considering tab stop
         if self.cy < self.row.len() {
             self.rx = self.row[self.cy].rx_from_cx(self.cx);
@@ -630,7 +631,8 @@ impl Editor {
             }
             InputSeq::Key(b's', true) => self.save()?,
             InputSeq::Key(b, false) => self.insert_char(b as char),
-            _ => {}
+            InputSeq::Key(..) => { /* ignore other key inputs */ }
+            _ => unreachable!(),
         }
         Ok(exit)
     }
@@ -668,12 +670,20 @@ impl Editor {
     {
         let input = self.ensure_screen_size(input)?;
 
+        // Render first screen
+        self.setup_scroll();
+        self.refresh_screen()?;
+
         for seq in input {
-            self.scroll();
-            self.refresh_screen()?;
-            if self.process_keypress(seq?)? {
+            let seq = seq?;
+            if seq == InputSeq::Unidentified {
+                continue; // Ignore
+            }
+            if self.process_keypress(seq)? {
                 break;
             }
+            self.setup_scroll();
+            self.refresh_screen()?; // Update screen after keypress
         }
 
         self.clear_screen() // Finally clear screen on exit
