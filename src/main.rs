@@ -238,9 +238,9 @@ struct StatusMessage {
 }
 
 impl StatusMessage {
-    fn new(text: String) -> StatusMessage {
+    fn new<S: Into<String>>(message: S) -> StatusMessage {
         StatusMessage {
-            text,
+            text: message.into(),
             timestamp: SystemTime::now(),
         }
     }
@@ -252,9 +252,9 @@ struct Row {
 }
 
 impl Row {
-    fn new(line: String) -> Row {
+    fn new<S: Into<String>>(line: S) -> Row {
         let mut row = Row {
-            buf: line,
+            buf: line.into(),
             render: "".to_string(),
         };
         row.update_render();
@@ -354,7 +354,7 @@ impl Editor {
             row: Vec::with_capacity(h),
             rowoff: 0,
             coloff: 0,
-            message: StatusMessage::new("HELP: Ctrl-S = save | Ctrl-Q = quit".to_string()),
+            message: StatusMessage::new("HELP: Ctrl-S = save | Ctrl-Q = quit"),
             dirty: false,
             quitting: false,
         }
@@ -505,7 +505,7 @@ impl Editor {
         let ref file = if let Some(ref file) = self.file {
             file
         } else {
-            self.message = StatusMessage::new("No file name".to_string());
+            self.message = StatusMessage::new("Cannot save unnamed buffer");
             return Ok(());
         };
 
@@ -632,9 +632,8 @@ impl Editor {
                     return Ok(true);
                 } else {
                     self.quitting = true;
-                    self.message = StatusMessage::new(
-                        "File has unsaved changes! Press Ctrl-Q again to quit".to_string(),
-                    );
+                    self.message =
+                        StatusMessage::new("File has unsaved changes! Press Ctrl-Q again to quit");
                     return Ok(false);
                 }
             }
