@@ -335,6 +335,9 @@ struct Editor {
     coloff: usize,
     // Message in status line
     message: StatusMessage,
+    // Flag set to true when buffer is modified after loading a file
+    dirty: bool,
+    quitting: bool,
 }
 
 impl Editor {
@@ -352,6 +355,8 @@ impl Editor {
             rowoff: 0,
             coloff: 0,
             message: StatusMessage::new("HELP: Ctrl-S = save | Ctrl-Q = quit".to_string()),
+            dirty: false,
+            quitting: false,
         }
     }
 
@@ -379,7 +384,8 @@ impl Editor {
             "[No Name]"
         };
 
-        let left = format!("{:<20?} - {} lines", file, self.row.len());
+        let modified = if self.dirty { "(modified) " } else { "" };
+        let left = format!("{:<20?} - {} lines {}", file, self.row.len(), modified);
         let left = &left[..cmp::min(left.len(), self.screen_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
 
@@ -491,6 +497,7 @@ impl Editor {
             self.row.push(Row::new(line?));
         }
         self.file = Some(FilePath::from(path));
+        self.dirty = false;
         Ok(())
     }
 
@@ -549,6 +556,7 @@ impl Editor {
         }
         self.row[self.cy].insert_char(self.cx, ch);
         self.cx += 1;
+        self.dirty = true;
     }
 
     fn move_cursor(&mut self, dir: CursorDir) {
@@ -594,7 +602,6 @@ impl Editor {
     }
 
     fn process_keypress(&mut self, seq: InputSeq) -> io::Result<bool> {
-        let mut exit = false;
         match seq {
             InputSeq::Key(b'p', true) | InputSeq::UpKey => self.move_cursor(CursorDir::Up),
             InputSeq::Key(b'b', true) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left),
@@ -620,7 +627,17 @@ impl Editor {
                 }
             }
             InputSeq::DeleteKey => unimplemented!("delete key press"),
-            InputSeq::Key(b'q', true) => exit = true,
+            InputSeq::Key(b'q', true) => {
+                if self.quitting {
+                    return Ok(true);
+                } else {
+                    self.quitting = true;
+                    self.message = StatusMessage::new(
+                        "File has unsaved changes! Press Ctrl-Q again to quit".to_string(),
+                    );
+                    return Ok(false);
+                }
+            }
             InputSeq::Key(b'\r', false) => unimplemented!(),
             InputSeq::Key(b'h', true) | InputSeq::Key(0x08, false) | InputSeq::Key(0x1f, false) => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
@@ -634,7 +651,9 @@ impl Editor {
             InputSeq::Key(..) => { /* ignore other key inputs */ }
             _ => unreachable!(),
         }
-        Ok(exit)
+
+        self.quitting = false;
+        Ok(false)
     }
 
     fn ensure_screen_size<I>(&mut self, mut input: I) -> io::Result<I>
