@@ -50,7 +50,10 @@ impl StdinRawMode {
     }
 
     fn input_keys(self) -> InputSequences {
-        InputSequences { stdin: self }
+        InputSequences {
+            stdin: self,
+            next_byte: 0,
+        }
     }
 }
 
@@ -92,10 +95,9 @@ enum InputSeq {
     Cursor(usize, usize),
 }
 
-// TODO: Add queue to buffer read input to look ahead user input. It is necessary when reading
-// \x1b but succeeding byte is not b'['.
 struct InputSequences {
     stdin: StdinRawMode,
+    next_byte: u8, // Reading sequence sometimes requires looking ahead 1 byte
 }
 
 impl InputSequences {
@@ -123,7 +125,10 @@ impl InputSequences {
                 match self.read()? {
                     b'[' => { /* fall throught */ }
                     0 => return Ok(InputSeq::Key(0x1b, false)),
-                    b => return self.decode(b), // TODO: First escape character is squashed. Buffer it
+                    b => {
+                        self.next_byte = b; // Already read the next byte so remember it
+                        return Ok(InputSeq::Key(0x1b, false));
+                    }
                 };
 
                 // Now confirmed \1xb[ which is a header of escape sequence. Eat it until the end
@@ -186,7 +191,13 @@ impl InputSequences {
     }
 
     fn read_seq(&mut self) -> io::Result<InputSeq> {
-        let b = self.read()?;
+        let b = match self.next_byte {
+            0 => self.read()?,
+            b => {
+                self.next_byte = 0; // Next byte was read for looking ahead
+                b
+            }
+        };
         self.decode(b)
     }
 }
