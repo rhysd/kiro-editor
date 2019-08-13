@@ -537,12 +537,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn save(&mut self) -> io::Result<()> {
+        let mut create = false;
         if self.file.is_none() {
             if let Some(input) = self.prompt("Save as: ")? {
                 self.file = Some(FilePath {
                     path: PathBuf::from(&input),
                     display: input,
                 });
+                create = true;
             }
         }
 
@@ -552,7 +554,17 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             return Ok(()); // Canceled
         };
 
-        let mut f = io::BufWriter::new(fs::File::create(&file.path)?);
+        let f = match fs::File::create(&file.path) {
+            Ok(f) => f,
+            Err(e) => {
+                self.message = StatusMessage::new(format!("Could not save: {}", e));
+                if create {
+                    self.file = None; // Could not make file. Back to unnamed buffer
+                }
+                return Ok(()); // This is not a fatal error
+            }
+        };
+        let mut f = io::BufWriter::new(f);
         let mut bytes = 0;
         for line in self.row.iter() {
             let b = line.buf.as_bytes();
