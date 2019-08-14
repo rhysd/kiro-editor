@@ -251,6 +251,24 @@ impl StatusMessage {
     }
 }
 
+enum FindDir {
+    Back,
+    Forward,
+}
+struct FindState {
+    last_match: Option<usize>,
+    dir: FindDir,
+}
+
+impl FindState {
+    fn new() -> FindState {
+        FindState {
+            last_match: None,
+            dir: FindDir::Forward,
+        }
+    }
+}
+
 struct Row {
     buf: String,
     render: String,
@@ -368,8 +386,9 @@ enum AfterKeyPress {
 }
 
 struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
+    // VT100 sequence stream represented as Iterator
     input: I,
-    // Editor state goes here
+    // File editor is opening
     file: Option<FilePath>,
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
@@ -388,7 +407,10 @@ struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     message: StatusMessage,
     // Flag set to true when buffer is modified after loading a file
     dirty: bool,
+    // After first Ctrl-Q
     quitting: bool,
+    // Text search state
+    finding: FindState,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -409,6 +431,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             message: StatusMessage::new(HELP_TEXT),
             dirty: false,
             quitting: false,
+            finding: FindState::new(),
         }
     }
 
@@ -597,16 +620,42 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
-    fn on_incremental_find(&mut self, query: &str, _: InputSeq, end: bool) {
+    fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) {
         if end {
+            self.finding = FindState::new(); // Clear text search state for next time
             return;
         }
-        for (y, row) in self.row.iter().enumerate() {
+
+        match key {
+            InputSeq::RightKey
+            | InputSeq::DownKey
+            | InputSeq::Key(b'f', true)
+            | InputSeq::Key(b'n', true) => self.finding.dir = FindDir::Forward,
+            InputSeq::LeftKey
+            | InputSeq::UpKey
+            | InputSeq::Key(b'b', true)
+            | InputSeq::Key(b'p', true) => self.finding.dir = FindDir::Back,
+            _ => self.finding = FindState::new(),
+        }
+
+        let row_len = self.row.len();
+        let mut y = self.finding.last_match.unwrap_or(self.cy);
+        for _ in 0..row_len {
+            // Wrapping text search at top/bottom of text buffer
+            y = match self.finding.dir {
+                FindDir::Forward if y == row_len - 1 => 0,
+                FindDir::Forward => y + 1,
+                FindDir::Back if y == 0 => row_len - 1,
+                FindDir::Back => y - 1,
+            };
+
+            let row = &self.row[y];
             if let Some(rx) = row.render.find(query) {
                 self.cy = y;
                 self.cx = row.cx_from_rx(rx);
                 // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
                 self.rowoff = self.row.len();
+                self.finding.last_match = Some(y);
                 break;
             }
         }
@@ -766,7 +815,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 InputSeq::Key(b, false) => {
                     buf.push(b as char);
                 }
-                _ => continue,
+                _ => {}
             }
 
             incremental_callback(self, buf.as_str(), key, false);
