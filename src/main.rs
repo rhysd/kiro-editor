@@ -13,8 +13,7 @@ use std::time::SystemTime;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const TAB_STOP: usize = 8;
-const HELP_TEXT: &'static str =
-    "HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-G = find | Ctrl-? = help";
+const HELP_TEXT: &'static str = "HELP: ^S = save | ^Q = quit | ^G = find | ^? = help";
 
 struct StdinRawMode {
     stdin: io::Stdin,
@@ -579,7 +578,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn save(&mut self) -> io::Result<()> {
         let mut create = false;
         if self.file.is_none() {
-            if let Some(input) = self.prompt("Save as: ", |_, _, _, _| {})? {
+            if let Some(input) =
+                self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| {})?
+            {
                 self.file = Some(FilePath {
                     path: PathBuf::from(&input),
                     display: input,
@@ -622,7 +623,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) {
         if end {
-            self.finding = FindState::new(); // Clear text search state for next time
             return;
         }
 
@@ -663,16 +663,23 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn find(&mut self) -> io::Result<()> {
         let (cx, cy, coloff, rowoff) = (self.cx, self.cy, self.coloff, self.rowoff);
-        if self
-            .prompt("Search: ", Self::on_incremental_find)?
-            .is_none()
-        {
+        let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
+        if self.prompt(s, Self::on_incremental_find)?.is_none() {
             // Canceled. Restore cursor position
             self.cx = cx;
             self.cy = cy;
             self.coloff = coloff;
             self.rowoff = rowoff;
+        } else {
+            let msg = if self.finding.last_match.is_some() {
+                "Found"
+            } else {
+                "Not Found"
+            };
+            self.message = StatusMessage::new(msg);
         }
+
+        self.finding = FindState::new(); // Clear text search state for next time
         Ok(())
     }
 
@@ -790,7 +797,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     {
         let mut buf = String::new();
         let prompt = prompt.as_ref();
-        self.message = StatusMessage::new(prompt.to_string());
+        self.message = StatusMessage::new(prompt.replacen("{}", "", 1));
         self.setup_scroll();
         self.refresh_screen()?;
 
@@ -820,7 +827,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
             incremental_callback(self, buf.as_str(), key, false);
 
-            self.message = StatusMessage::new(format!("{}{}", prompt, buf));
+            self.message = StatusMessage::new(prompt.replacen("{}", &buf, 1));
             self.setup_scroll();
             self.refresh_screen()?;
         }
@@ -843,7 +850,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     self.move_cursor(CursorDir::Up);
                 }
             }
-            InputSeq::PageDownKey => {
+            InputSeq::Key(b'v', true) | InputSeq::PageDownKey => {
                 // Set cursor to bottom of screen considering end of buffer
                 self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
                 for _ in 0..self.screen_rows {
@@ -856,7 +863,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     self.cx = self.screen_cols - 1;
                 }
             }
-            InputSeq::DeleteKey | InputSeq::Key(b'd', true) => {
+            InputSeq::Key(b'd', true) | InputSeq::DeleteKey => {
                 self.move_cursor(CursorDir::Right);
                 self.delete_char();
             }
@@ -867,7 +874,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 } else {
                     self.quitting = true;
                     self.message =
-                        StatusMessage::new("File has unsaved changes! Press Ctrl-Q again to quit");
+                        StatusMessage::new("File has unsaved changes! Press ^Q again to quit");
                     return Ok(AfterKeyPress::Continue);
                 }
             }
