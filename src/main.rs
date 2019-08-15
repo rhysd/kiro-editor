@@ -291,7 +291,7 @@ impl Row {
     }
 
     fn update_render(&mut self) {
-        self.render = String::with_capacity(self.buf.len());
+        self.render = String::with_capacity(self.buf.as_bytes().len());
         let mut index = 0;
         for c in self.buf.chars() {
             if c == '\t' {
@@ -334,12 +334,12 @@ impl Row {
                 return cx; // Found
             }
         }
-        self.buf.len() // Fall back to end of line
+        self.buf.as_bytes().len() // Fall back to end of line
     }
 
     // Note: 'at' is an index of buffer, not render text
     fn insert_char(&mut self, at: usize, c: char) {
-        if self.buf.len() <= at {
+        if self.buf.as_bytes().len() <= at {
             self.buf.push(c);
         } else {
             self.buf.insert(at, c);
@@ -348,7 +348,7 @@ impl Row {
     }
 
     fn delete_char(&mut self, at: usize) {
-        if at < self.buf.len() {
+        if at < self.buf.as_bytes().len() {
             self.buf.remove(at);
             self.update_render();
         }
@@ -364,7 +364,7 @@ impl Row {
     }
 
     fn truncate(&mut self, at: usize) {
-        if at < self.buf.len() {
+        if at < self.buf.as_bytes().len() {
             self.buf.truncate(at);
             self.update_render();
         }
@@ -726,7 +726,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx -= 1;
         } else {
             // At top of line, backspace concats current line to previous line
-            self.cx = self.row[self.cy - 1].buf.len(); // Move cursor column to end of previous line
+            self.cx = self.row[self.cy - 1].buf.as_bytes().len(); // Move cursor column to end of previous line
             let row = self.row.remove(self.cy);
             self.cy -= 1; // Move cursor to previous line
             self.row[self.cy].append(row.buf);
@@ -737,7 +737,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn insert_line(&mut self) {
         if self.cy >= self.row.len() {
             self.row.push(Row::new(""));
-        } else if self.cx >= self.row[self.cy].buf.len() {
+        } else if self.cx >= self.row[self.cy].buf.as_bytes().len() {
             self.row.insert(self.cy + 1, Row::new(""));
         } else {
             let split = String::from(&self.row[self.cy].buf[self.cx..]);
@@ -757,7 +757,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 } else if self.cy > 0 {
                     // When moving to left at top of line, move cursor to end of previous line
                     self.cy -= 1;
-                    self.cx = self.row[self.cy].buf.len();
+                    self.cx = self.row[self.cy].buf.as_bytes().len();
                 }
             }
             CursorDir::Down => {
@@ -769,7 +769,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    let len = self.row[self.cy].buf.len();
+                    let len = self.row[self.cy].buf.as_bytes().len();
                     if self.cx < len {
                         // Allow to move cursor until next col to the last col of line to enable to
                         // add a new character at the end of line.
@@ -784,7 +784,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         };
 
         // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(|r| r.buf.len()).unwrap_or(0);
+        let len = self
+            .row
+            .get(self.cy)
+            .map(|r| r.buf.as_bytes().len())
+            .unwrap_or(0);
         if self.cx > len {
             self.cx = len;
         }
