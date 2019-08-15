@@ -5,7 +5,9 @@
 use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
-use std::ops::{Deref, DerefMut, Range};
+use std::iter;
+use std::mem;
+use std::ops::{Deref, DerefMut};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -285,11 +287,10 @@ impl Highlight {
     }
 }
 
+#[derive(Default)]
 struct Row {
     buf: String,
     render: String,
-    hl: Vec<Highlight>,
-    match_indices: Option<Range<usize>>,
 }
 
 impl Row {
@@ -297,43 +298,9 @@ impl Row {
         let mut row = Row {
             buf: line.into(),
             render: "".to_string(),
-            hl: vec![],
-            match_indices: None,
         };
         row.update_render();
         row
-    }
-
-    fn empty() -> Row {
-        Row {
-            buf: "".to_string(),
-            render: "".to_string(),
-            match_indices: None,
-            hl: vec![],
-        }
-    }
-
-    fn update_highlight(&mut self) {
-        self.hl
-            .resize(self.render.as_bytes().len(), Highlight::Normal);
-
-        let mut prev = Highlight::Normal;
-        for (i, b) in self.render.as_bytes().iter().cloned().enumerate() {
-            let mut hl = Highlight::Normal;
-
-            if let Some(ref range) = self.match_indices {
-                if range.contains(&i) {
-                    hl = Highlight::Match;
-                }
-            } else if b.is_ascii_digit() {
-                hl = Highlight::Number;
-            } else if b == b'.' && prev == Highlight::Number {
-                hl = Highlight::Number;
-            }
-
-            self.hl[i] = hl;
-            prev = hl;
-        }
     }
 
     fn update_render(&mut self) {
@@ -353,7 +320,6 @@ impl Row {
                 index += 1;
             }
         }
-        self.update_highlight();
     }
 
     fn rx_from_cx(&self, cx: usize) -> usize {
@@ -416,15 +382,68 @@ impl Row {
             self.update_render();
         }
     }
+}
 
-    fn set_match(&mut self, start: usize, end: usize) {
-        self.match_indices = Some(start..end);
-        self.update_highlight();
+#[derive(Default)]
+struct Highlights {
+    lines: Vec<Vec<Highlight>>,
+    matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
+}
+
+impl Highlights {
+    fn from_rows<'a, R: Iterator<Item = &'a Row>>(iter: R) -> Highlights {
+        Highlights {
+            lines: iter
+                .map(|r| {
+                    iter::repeat(Highlight::Normal)
+                        .take(r.render.as_bytes().len())
+                        .collect()
+                })
+                .collect(),
+            matched: None,
+        }
     }
 
-    fn clear_match(&mut self) {
-        self.match_indices = None;
-        self.update_highlight();
+    fn update(&mut self, rows: &Vec<Row>) {
+        self.lines.resize_with(rows.len(), Default::default);
+
+        for (y, ref row) in rows.iter().enumerate() {
+            self.lines[y].resize(row.render.as_bytes().len(), Highlight::Normal);
+
+            let mut prev = Highlight::Normal;
+            for (x, b) in row.render.as_bytes().iter().cloned().enumerate() {
+                let hl = if b.is_ascii_digit() {
+                    Highlight::Number
+                } else if b == b'.' && prev == Highlight::Number {
+                    Highlight::Number
+                } else {
+                    Highlight::Normal
+                };
+
+                self.lines[y][x] = hl;
+                prev = hl;
+            }
+        }
+    }
+
+    fn set_match(&mut self, y: usize, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        self.clear_previous_match();
+        self.matched = Some((
+            start,
+            y,
+            self.lines[y][start..end].iter().cloned().collect(),
+        ));
+        self.lines[y].splice(start..end, iter::repeat(Highlight::Match).take(end - start));
+    }
+
+    fn clear_previous_match(&mut self) {
+        if let Some((x, y, saved)) = mem::replace(&mut self.matched, None) {
+            // Restore previously replaced highlights
+            self.lines[y].splice(x..(x + saved.len()), saved.into_iter());
+        }
     }
 }
 
@@ -457,7 +476,7 @@ enum CursorDir {
 #[derive(PartialEq)]
 enum AfterKeyPress {
     Quit,
-    Continue,
+    Nothing,
 }
 
 struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
@@ -486,6 +505,7 @@ struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     quitting: bool,
     // Text search state
     finding: FindState,
+    hl: Highlights,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -507,6 +527,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             dirty: false,
             quitting: false,
             finding: FindState::new(),
+            hl: Highlights::default(),
         }
     }
 
@@ -607,7 +628,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     .as_bytes()
                     .iter()
                     .cloned()
-                    .zip(row.hl.iter())
+                    .zip(self.hl.lines[file_row].iter())
                     .skip(self.coloff)
                     .take(self.screen_cols)
                 {
@@ -671,9 +692,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
+        self.row = vec![]; // TODO: Use .collect()
         for line in io::BufReader::new(file).lines() {
             self.row.push(Row::new(line?));
         }
+        self.hl = Highlights::from_rows(self.row.iter());
         self.file = Some(FilePath::from(path));
         self.dirty = false;
         Ok(())
@@ -726,8 +749,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) {
-        if let Some(y) = self.finding.last_match {
-            self.row[y].clear_match(); // Clear previous match
+        if self.finding.last_match.is_some() {
+            self.hl.clear_previous_match();
         }
 
         if end {
@@ -773,7 +796,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.rowoff = row_len;
                 self.finding.last_match = Some(y);
                 // Set match highlight on the found line
-                row.set_match(rx, rx + query.as_bytes().len());
+                self.hl.set_match(y, rx, rx + query.as_bytes().len());
                 break;
             }
 
@@ -831,11 +854,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
-            self.row.push(Row::empty());
+            self.row.push(Row::default());
         }
         self.row[self.cy].insert_char(self.cx, ch);
         self.cx += 1;
         self.dirty = true;
+        self.hl.update(&self.row);
     }
 
     fn delete_char(&mut self) {
@@ -853,6 +877,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.row[self.cy].append(row.buf);
         }
         self.dirty = true;
+        self.hl.update(&self.row);
     }
 
     fn insert_line(&mut self) {
@@ -867,6 +892,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
         self.cy += 1;
         self.cx = 0;
+        self.hl.update(&self.row);
     }
 
     fn move_cursor(&mut self, dir: CursorDir) {
@@ -1000,7 +1026,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     self.quitting = true;
                     self.message =
                         StatusMessage::new("File has unsaved changes! Press ^Q again to quit");
-                    return Ok(AfterKeyPress::Continue);
+                    return Ok(AfterKeyPress::Nothing);
                 }
             }
             InputSeq::Key(b'\r', false) | InputSeq::Key(b'm', true) => self.insert_line(),
@@ -1021,7 +1047,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         self.quitting = false;
-        Ok(AfterKeyPress::Continue)
+        Ok(AfterKeyPress::Nothing)
     }
 
     fn ensure_screen_size(&mut self) -> io::Result<()> {
@@ -1053,6 +1079,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         // Render first screen
         self.setup_scroll();
+        self.hl.update(&self.row);
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
