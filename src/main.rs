@@ -250,27 +250,46 @@ impl StatusMessage {
     }
 }
 
-enum FindDir {
-    Back,
-    Forward,
-}
-struct FindState {
-    last_match: Option<usize>,
-    dir: FindDir,
+enum Highlight {
+    Normal,
+    Number,
 }
 
-impl FindState {
-    fn new() -> FindState {
-        FindState {
-            last_match: None,
-            dir: FindDir::Forward,
+#[derive(PartialEq)]
+enum AnsiColor {
+    Reset,
+    Red,
+}
+
+impl AnsiColor {
+    fn sequence(&self) -> &'static [u8] {
+        match self {
+            AnsiColor::Reset => b"\x1b[39m",
+            AnsiColor::Red => b"\x1b[91m",
         }
+    }
+}
+
+impl Highlight {
+    fn color(&self) -> AnsiColor {
+        // https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+        match self {
+            Highlight::Normal => AnsiColor::Reset,
+            Highlight::Number => AnsiColor::Red,
+        }
+    }
+}
+
+impl Default for Highlight {
+    fn default() -> Self {
+        Highlight::Normal
     }
 }
 
 struct Row {
     buf: String,
     render: String,
+    hl: Vec<Highlight>,
 }
 
 impl Row {
@@ -278,6 +297,7 @@ impl Row {
         let mut row = Row {
             buf: line.into(),
             render: "".to_string(),
+            hl: vec![],
         };
         row.update_render();
         row
@@ -287,6 +307,17 @@ impl Row {
         Row {
             buf: "".to_string(),
             render: "".to_string(),
+            hl: vec![],
+        }
+    }
+
+    fn update_highlight(&mut self) {
+        self.hl
+            .resize_with(self.render.as_bytes().len(), Default::default);
+        for (i, b) in self.render.as_bytes().iter().enumerate() {
+            if b.is_ascii_digit() {
+                self.hl[i] = Highlight::Number;
+            }
         }
     }
 
@@ -307,6 +338,7 @@ impl Row {
                 index += 1;
             }
         }
+        self.update_highlight();
     }
 
     fn rx_from_cx(&self, cx: usize) -> usize {
@@ -367,6 +399,24 @@ impl Row {
         if at < self.buf.as_bytes().len() {
             self.buf.truncate(at);
             self.update_render();
+        }
+    }
+}
+
+enum FindDir {
+    Back,
+    Forward,
+}
+struct FindState {
+    last_match: Option<usize>,
+    dir: FindDir,
+}
+
+impl FindState {
+    fn new() -> FindState {
+        FindState {
+            last_match: None,
+            dir: FindDir::Forward,
         }
     }
 }
@@ -517,8 +567,30 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     buf.write(b"~")?;
                 }
             } else {
-                let line = self.trim_line(&self.row[file_row].render);
-                buf.write(line.as_bytes())?;
+                // TODO: Support UTF-8
+                let row = &self.row[file_row];
+                let mut prev_color = AnsiColor::Reset;
+
+                for (b, hl) in row
+                    .render
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .zip(row.hl.iter())
+                    .skip(self.coloff)
+                    .take(self.screen_cols)
+                {
+                    let color = hl.color();
+                    if color != prev_color {
+                        buf.write(color.sequence())?;
+                        prev_color = color;
+                    }
+                    buf.write(&[b])?;
+                }
+
+                if prev_color != AnsiColor::Reset {
+                    buf.write(AnsiColor::Reset.sequence())?; // Ensure to reset color at end of line
+                }
             }
 
             // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
