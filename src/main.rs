@@ -864,7 +864,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             InputSeq::Key(b'a', true) | InputSeq::HomeKey => self.cx = 0,
             InputSeq::Key(b'e', true) | InputSeq::EndKey => {
                 if self.cy < self.row.len() {
-                    self.cx = self.screen_cols - 1;
+                    self.cx = self.row[self.cy].buf.len();
                 }
             }
             InputSeq::Key(b'd', true) | InputSeq::DeleteKey => {
