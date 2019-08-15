@@ -428,6 +428,7 @@ impl Row {
     }
 }
 
+#[derive(Clone, Copy)]
 enum FindDir {
     Back,
     Forward,
@@ -745,18 +746,23 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             _ => self.finding = FindState::new(),
         }
 
-        let row_len = self.row.len();
-        let mut y = self.finding.last_match.unwrap_or(self.cy);
-        for _ in 0..row_len {
-            // Wrapping text search at top/bottom of text buffer
-            y = match self.finding.dir {
-                FindDir::Forward if y == row_len - 1 => 0,
+        fn next_line(y: usize, dir: FindDir, len: usize) -> usize {
+            match dir {
+                FindDir::Forward if y == len - 1 => 0,
                 FindDir::Forward => y + 1,
-                FindDir::Back if y == 0 => row_len - 1,
+                FindDir::Back if y == 0 => len - 1,
                 FindDir::Back => y - 1,
-            };
+            }
+        }
 
-            let len_lines = self.row.len();
+        let row_len = self.row.len();
+        let dir = self.finding.dir;
+        let mut y = self
+            .finding
+            .last_match
+            .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
+            .unwrap_or(self.cy);
+        for _ in 0..row_len {
             let row = &mut self.row[y];
             if let Some(rx) = row.render.find(query) {
                 // XXX: This searches render text, not actual buffer. So it may not work properly on
@@ -764,12 +770,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.cy = y;
                 self.cx = row.cx_from_rx(rx);
                 // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
-                self.rowoff = len_lines;
+                self.rowoff = row_len;
                 self.finding.last_match = Some(y);
                 // Set match highlight on the found line
                 row.set_match(rx, rx + query.as_bytes().len());
                 break;
             }
+
+            // Wrapping text search at top/bottom of text buffer
+            y = next_line(y, dir, row_len);
         }
     }
 
