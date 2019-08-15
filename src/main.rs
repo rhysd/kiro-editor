@@ -5,7 +5,7 @@
 use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Deref, DerefMut, Range};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -250,24 +250,28 @@ impl StatusMessage {
     }
 }
 
-enum Highlight {
-    Normal,
-    Number,
-}
-
 #[derive(PartialEq)]
 enum AnsiColor {
     Reset,
     Red,
+    BlueUnderline,
 }
 
 impl AnsiColor {
     fn sequence(&self) -> &'static [u8] {
         match self {
-            AnsiColor::Reset => b"\x1b[39m",
+            AnsiColor::Reset => b"\x1b[39;0m",
             AnsiColor::Red => b"\x1b[91m",
+            AnsiColor::BlueUnderline => b"\x1b[94;4m",
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Highlight {
+    Normal,
+    Number,
+    Match,
 }
 
 impl Highlight {
@@ -276,13 +280,8 @@ impl Highlight {
         match self {
             Highlight::Normal => AnsiColor::Reset,
             Highlight::Number => AnsiColor::Red,
+            Highlight::Match => AnsiColor::BlueUnderline,
         }
-    }
-}
-
-impl Default for Highlight {
-    fn default() -> Self {
-        Highlight::Normal
     }
 }
 
@@ -290,6 +289,7 @@ struct Row {
     buf: String,
     render: String,
     hl: Vec<Highlight>,
+    match_indices: Option<Range<usize>>,
 }
 
 impl Row {
@@ -298,6 +298,7 @@ impl Row {
             buf: line.into(),
             render: "".to_string(),
             hl: vec![],
+            match_indices: None,
         };
         row.update_render();
         row
@@ -307,17 +308,31 @@ impl Row {
         Row {
             buf: "".to_string(),
             render: "".to_string(),
+            match_indices: None,
             hl: vec![],
         }
     }
 
     fn update_highlight(&mut self) {
         self.hl
-            .resize_with(self.render.as_bytes().len(), Default::default);
-        for (i, b) in self.render.as_bytes().iter().enumerate() {
-            if b.is_ascii_digit() {
-                self.hl[i] = Highlight::Number;
+            .resize(self.render.as_bytes().len(), Highlight::Normal);
+
+        let mut prev = Highlight::Normal;
+        for (i, b) in self.render.as_bytes().iter().cloned().enumerate() {
+            let mut hl = Highlight::Normal;
+
+            if let Some(ref range) = self.match_indices {
+                if range.contains(&i) {
+                    hl = Highlight::Match;
+                }
+            } else if b.is_ascii_digit() {
+                hl = Highlight::Number;
+            } else if b == b'.' && prev == Highlight::Number {
+                hl = Highlight::Number;
             }
+
+            self.hl[i] = hl;
+            prev = hl;
         }
     }
 
@@ -400,6 +415,16 @@ impl Row {
             self.buf.truncate(at);
             self.update_render();
         }
+    }
+
+    fn set_match(&mut self, start: usize, end: usize) {
+        self.match_indices = Some(start..end);
+        self.update_highlight();
+    }
+
+    fn clear_match(&mut self) {
+        self.match_indices = None;
+        self.update_highlight();
     }
 }
 
@@ -549,6 +574,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
+        let mut prev_color = AnsiColor::Reset;
+
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
             if file_row >= self.row.len() {
@@ -564,12 +591,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     }
                     buf.write(welcome.as_bytes())?;
                 } else {
+                    if prev_color != AnsiColor::Reset {
+                        buf.write(AnsiColor::Reset.sequence())?;
+                        prev_color = AnsiColor::Reset;
+                    }
                     buf.write(b"~")?;
                 }
             } else {
                 // TODO: Support UTF-8
                 let row = &self.row[file_row];
-                let mut prev_color = AnsiColor::Reset;
 
                 for (b, hl) in row
                     .render
@@ -587,16 +617,17 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     }
                     buf.write(&[b])?;
                 }
-
-                if prev_color != AnsiColor::Reset {
-                    buf.write(AnsiColor::Reset.sequence())?; // Ensure to reset color at end of line
-                }
             }
 
             // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
             buf.write(b"\x1b[K")?;
             buf.write(b"\r\n")?; // Finally go to next line.
         }
+
+        if prev_color != AnsiColor::Reset {
+            buf.write(AnsiColor::Reset.sequence())?; // Ensure to reset color at end of screen
+        }
+
         Ok(())
     }
 
@@ -694,6 +725,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) {
+        if let Some(y) = self.finding.last_match {
+            self.row[y].clear_match(); // Clear previous match
+        }
+
         if end {
             return;
         }
@@ -721,13 +756,18 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 FindDir::Back => y - 1,
             };
 
-            let row = &self.row[y];
+            let len_lines = self.row.len();
+            let row = &mut self.row[y];
             if let Some(rx) = row.render.find(query) {
+                // XXX: This searches render text, not actual buffer. So it may not work properly on
+                // character which is rendered differently (e.g. tab character)
                 self.cy = y;
                 self.cx = row.cx_from_rx(rx);
                 // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
-                self.rowoff = self.row.len();
+                self.rowoff = len_lines;
                 self.finding.last_match = Some(y);
+                // Set match highlight on the found line
+                row.set_match(rx, rx + query.as_bytes().len());
                 break;
             }
         }
