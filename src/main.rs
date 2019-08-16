@@ -3,6 +3,7 @@
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
 use std::cmp;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::iter;
@@ -229,11 +230,19 @@ struct FilePath {
 }
 
 impl FilePath {
-    fn from<P: AsRef<Path>>(path: P) -> FilePath {
+    fn from<P: AsRef<Path>>(path: P) -> Self {
         let path = path.as_ref();
         FilePath {
             path: PathBuf::from(path),
             display: path.to_string_lossy().to_string(),
+        }
+    }
+
+    fn from_string<S: Into<String>>(s: S) -> Self {
+        let display = s.into();
+        FilePath {
+            path: PathBuf::from(&display),
+            display,
         }
     }
 }
@@ -384,14 +393,60 @@ impl Row {
     }
 }
 
-#[derive(Default)]
+struct SyntaxHighlight {
+    name: &'static str,
+    file_exts: &'static [&'static str],
+    number: bool,
+}
+
+const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    name: "plain",
+    file_exts: &[],
+    number: false,
+};
+
+const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    name: "c",
+    file_exts: &["c", "h", "cpp"],
+    number: true,
+};
+
+const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[&PLAIN_SYNTAX, &C_SYNTAX];
+
+impl SyntaxHighlight {
+    fn detect<P: AsRef<Path>>(path: P) -> &'static SyntaxHighlight {
+        if let Some(ext) = path.as_ref().extension().and_then(OsStr::to_str) {
+            for syntax in ALL_SYNTAX {
+                if syntax.file_exts.contains(&ext) {
+                    return syntax;
+                }
+            }
+        }
+        &PLAIN_SYNTAX
+    }
+}
+
 struct Highlighting {
     lines: Vec<Vec<Highlight>>,
     matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
+    syntax: &'static SyntaxHighlight,
+}
+
+impl Default for Highlighting {
+    fn default() -> Self {
+        Highlighting {
+            lines: vec![],
+            matched: None,
+            syntax: &PLAIN_SYNTAX,
+        }
+    }
 }
 
 impl Highlighting {
-    fn from_rows<'a, R: Iterator<Item = &'a Row>>(iter: R) -> Highlighting {
+    fn from_rows<'a, R: Iterator<Item = &'a Row>>(
+        iter: R,
+        syntax: &'static SyntaxHighlight,
+    ) -> Highlighting {
         Highlighting {
             lines: iter
                 .map(|r| {
@@ -401,7 +456,16 @@ impl Highlighting {
                 })
                 .collect(),
             matched: None,
+            syntax,
         }
+    }
+
+    fn set_syntax(&mut self, syntax: &'static SyntaxHighlight, rows: &Vec<Row>) {
+        if self.syntax.name == syntax.name {
+            return;
+        }
+        self.syntax = syntax;
+        self.update(rows);
     }
 
     fn update(&mut self, rows: &Vec<Row>) {
@@ -418,13 +482,15 @@ impl Highlighting {
             let mut prev_ch = b'\0';
             for (x, b) in row.render.as_bytes().iter().cloned().enumerate() {
                 let is_bound = is_sep(prev_ch) ^ is_sep(b);
-                let hl = if b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound) {
-                    Highlight::Number
-                } else if b == b'.' && prev_hl == Highlight::Number {
-                    Highlight::Number
-                } else {
-                    Highlight::Normal
-                };
+                let mut hl = Highlight::Normal;
+
+                if self.syntax.number {
+                    if b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound) {
+                        hl = Highlight::Number;
+                    } else if b == b'.' && prev_hl == Highlight::Number {
+                        hl = Highlight::Number;
+                    }
+                }
 
                 self.lines[y][x] = hl;
                 prev_hl = hl;
@@ -572,7 +638,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             return Ok(());
         }
 
-        let right = format!("{}/{}", self.cy, self.row.len());
+        let right = format!("{} {}/{}", self.hl.syntax.name, self.cy, self.row.len());
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -704,7 +770,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             .lines()
             .map(|r| Ok(Row::new(r?)))
             .collect::<io::Result<_>>()?;
-        self.hl = Highlighting::from_rows(self.row.iter());
+        self.hl = Highlighting::from_rows(self.row.iter(), SyntaxHighlight::detect(path));
         self.file = Some(FilePath::from(path));
         self.dirty = false;
         Ok(())
@@ -716,10 +782,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             if let Some(input) =
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| {})?
             {
-                self.file = Some(FilePath {
-                    path: PathBuf::from(&input),
-                    display: input,
-                });
+                let file = FilePath::from_string(input);
+                self.hl
+                    .set_syntax(SyntaxHighlight::detect(&file.path), &self.row);
+                self.file = Some(file);
                 create = true;
             }
         }
