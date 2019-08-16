@@ -443,10 +443,7 @@ impl Default for Highlighting {
 }
 
 impl Highlighting {
-    fn from_rows<'a, R: Iterator<Item = &'a Row>>(
-        iter: R,
-        syntax: &'static SyntaxHighlight,
-    ) -> Highlighting {
+    fn new<'a, R: Iterator<Item = &'a Row>, P: AsRef<Path>>(path: P, iter: R) -> Highlighting {
         Highlighting {
             lines: iter
                 .map(|r| {
@@ -456,11 +453,12 @@ impl Highlighting {
                 })
                 .collect(),
             matched: None,
-            syntax,
+            syntax: SyntaxHighlight::detect(path.as_ref()),
         }
     }
 
-    fn set_syntax(&mut self, syntax: &'static SyntaxHighlight, rows: &Vec<Row>) {
+    fn path_changed<P: AsRef<Path>>(&mut self, new_path: P, rows: &Vec<Row>) {
+        let syntax = SyntaxHighlight::detect(new_path.as_ref());
         if self.syntax.name == syntax.name {
             return;
         }
@@ -770,7 +768,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             .lines()
             .map(|r| Ok(Row::new(r?)))
             .collect::<io::Result<_>>()?;
-        self.hl = Highlighting::from_rows(self.row.iter(), SyntaxHighlight::detect(path));
+        self.hl = Highlighting::new(path, self.row.iter());
         self.file = Some(FilePath::from(path));
         self.dirty = false;
         Ok(())
@@ -783,8 +781,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| {})?
             {
                 let file = FilePath::from_string(input);
-                self.hl
-                    .set_syntax(SyntaxHighlight::detect(&file.path), &self.row);
+                self.hl.path_changed(&file.path, &self.row);
                 self.file = Some(file);
                 create = true;
             }
