@@ -265,16 +265,28 @@ impl StatusMessage {
 enum AnsiColor {
     Reset,
     Red,
+    Green,
+    Gray,
+    Yellow,
+    Cyan,
     BlueUnderline,
+    Invert,
 }
 
 impl AnsiColor {
     fn sequence(&self) -> &'static [u8] {
-        // https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+        // 'm' sets attributes to text printed after: https://vt100.net/docs/vt100-ug/chapter3.html#SGR
+        // Color table: https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+        use AnsiColor::*;
         match self {
-            AnsiColor::Reset => b"\x1b[39;0m",
-            AnsiColor::Red => b"\x1b[91m",
-            AnsiColor::BlueUnderline => b"\x1b[94;4m",
+            Reset => b"\x1b[39;0m",
+            Red => b"\x1b[91m",
+            Green => b"\x1b[32m",
+            Gray => b"\x1b[90m",
+            Yellow => b"\x1b[33m",
+            Cyan => b"\x1b[36m",
+            BlueUnderline => b"\x1b[94;4m",
+            Invert => b"\x1b[7m",
         }
     }
 }
@@ -283,15 +295,25 @@ impl AnsiColor {
 enum Highlight {
     Normal,
     Number,
+    String,
+    Comment,
+    Keyword,
+    Type,
     Match,
 }
 
 impl Highlight {
     fn color(&self) -> AnsiColor {
+        use AnsiColor::*;
+        use Highlight::*;
         match self {
-            Highlight::Normal => AnsiColor::Reset,
-            Highlight::Number => AnsiColor::Red,
-            Highlight::Match => AnsiColor::BlueUnderline,
+            Normal => Reset,
+            Number => Red,
+            String => Green,
+            Comment => Gray,
+            Keyword => Yellow,
+            Type => Cyan,
+            Match => BlueUnderline,
         }
     }
 }
@@ -397,18 +419,39 @@ struct SyntaxHighlight {
     name: &'static str,
     file_exts: &'static [&'static str],
     number: bool,
+    string: bool,
+    line_comment: Option<&'static str>,
+    block_comment: Option<(&'static str, &'static str)>,
+    keywords: &'static [&'static str],
+    builtin_types: &'static [&'static str],
 }
 
 const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     name: "plain",
     file_exts: &[],
     number: false,
+    string: false,
+    line_comment: None,
+    block_comment: None,
+    keywords: &[],
+    builtin_types: &[],
 };
 
 const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     name: "c",
-    file_exts: &["c", "h", "cpp"],
+    file_exts: &["c", "h"],
     number: true,
+    string: true,
+    line_comment: Some("//"),
+    block_comment: Some(("/*", "*/")),
+    keywords: &[
+        "auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern",
+        "for", "goto", "if", "inline", "register", "restrict", "return", "sizeof", "static",
+        "struct", "switch", "typedef", "union", "volatile", "while",
+    ],
+    builtin_types: &[
+        "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void",
+    ],
 };
 
 const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[&PLAIN_SYNTAX, &C_SYNTAX];
@@ -470,19 +513,120 @@ impl Highlighting {
         self.lines.resize_with(rows.len(), Default::default);
 
         fn is_sep(b: u8) -> bool {
-            b.is_ascii_whitespace() || b == b'\0' || b",.()+-/*=~%<>[];".contains(&b)
+            b.is_ascii_whitespace() || b",.()+-/*=~%<>[];\0".contains(&b)
         }
 
+        fn starts_with_word(input: &[u8], word: &[u8]) -> bool {
+            if !input.starts_with(word) {
+                false
+            } else if input.len() == word.len() {
+                true
+            } else if input.len() > word.len() && is_sep(input[word.len()]) {
+                true
+            } else {
+                false
+            }
+        }
+
+        let mut prev_quote = None;
+        let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate() {
             self.lines[y].resize(row.render.as_bytes().len(), Highlight::Normal);
 
             let mut prev_hl = Highlight::Normal;
-            let mut prev_ch = b'\0';
-            for (x, b) in row.render.as_bytes().iter().cloned().enumerate() {
-                let is_bound = is_sep(prev_ch) ^ is_sep(b);
+            let mut prev_char = b'\0';
+            let mut iter = row.render.as_bytes().iter().cloned().enumerate();
+
+            while let Some((x, b)) = iter.next() {
+                let is_bound = is_sep(prev_char) ^ is_sep(b);
                 let mut hl = Highlight::Normal;
 
-                if self.syntax.number {
+                if let Some((comment_start, comment_end)) = self.syntax.block_comment {
+                    if prev_quote.is_none() {
+                        let comment_delim = if in_block_comment
+                            && row.render[x..].starts_with(comment_end)
+                        {
+                            in_block_comment = false;
+                            Some(comment_end)
+                        } else if !in_block_comment && row.render[x..].starts_with(comment_start) {
+                            in_block_comment = true;
+                            Some(comment_start)
+                        } else {
+                            None
+                        };
+
+                        // Eat delimiter of block comment at once
+                        if let Some(comment_delim) = comment_delim {
+                            // Consume whole '/*' here. Otherwise such as '/*/' is wrongly accepted
+                            let len = comment_delim.as_bytes().len();
+                            self.lines[y]
+                                .splice(x..x + len, iter::repeat(Highlight::Comment).take(len));
+
+                            prev_hl = Highlight::Comment;
+                            prev_char = comment_delim.as_bytes()[len - 1];
+                            iter.nth(len - 2);
+                            continue;
+                        }
+
+                        if in_block_comment {
+                            hl = Highlight::Comment;
+                        }
+                    }
+                }
+
+                if let Some(comment_leader) = self.syntax.line_comment {
+                    if prev_quote.is_none() && row.render[x..].starts_with(comment_leader) {
+                        let len = self.lines[y].len();
+                        self.lines[y].splice(x.., iter::repeat(Highlight::Comment).take(len - x));
+                        break;
+                    }
+                }
+
+                if hl == Highlight::Normal && self.syntax.string {
+                    if let Some(q) = prev_quote {
+                        // In string literal
+                        match (q, b) {
+                            (b'"', b'"') if prev_char != b'\\' => prev_quote = None,
+                            (b'\'', b'\'') if prev_char != b'\\' => prev_quote = None,
+                            _ => {}
+                        }
+                        hl = Highlight::String;
+                    } else if b"\"'".contains(&b) {
+                        prev_quote = Some(b);
+                        hl = Highlight::String;
+                    }
+                }
+
+                // Highlight identifiers
+                if hl == Highlight::Normal && is_bound {
+                    let line = row.render[x..].as_bytes();
+                    if let Some((keyword, highlight)) = self
+                        .syntax
+                        .keywords
+                        .iter()
+                        .zip(iter::repeat(Highlight::Keyword))
+                        .chain(
+                            self.syntax
+                                .builtin_types
+                                .iter()
+                                .zip(iter::repeat(Highlight::Type)),
+                        )
+                        .find(|(k, _)| starts_with_word(line, k.as_bytes()))
+                    {
+                        let len = keyword.as_bytes().len();
+                        self.lines[y].splice(x..x + len, iter::repeat(highlight).take(len));
+
+                        prev_hl = highlight;
+                        prev_char = line[len - 1];
+                        // Consume keyword from input. `- 2` because first character was already
+                        // consumed by the while statement
+                        iter.nth(len - 2);
+
+                        continue;
+                    }
+                }
+
+                if hl == Highlight::Normal && self.syntax.number {
                     if b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound) {
                         hl = Highlight::Number;
                     } else if b == b'.' && prev_hl == Highlight::Number {
@@ -492,7 +636,7 @@ impl Highlighting {
 
                 self.lines[y][x] = hl;
                 prev_hl = hl;
-                prev_ch = b;
+                prev_char = b;
             }
         }
     }
@@ -617,8 +761,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn draw_status_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        // 'm' sets attributes to text printed after. '7' means inverting color. https://vt100.net/docs/vt100-ug/chapter3.html#SGR
-        buf.write(b"\x1b[7m")?;
+        buf.write(AnsiColor::Invert.sequence())?;
 
         let file = if let Some(ref f) = self.file {
             f.display.as_str()
@@ -650,8 +793,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         buf.write(right.as_bytes())?;
 
         // Defualt argument of 'm' command is 0 so it resets attributes
-        buf.write(b"\x1b[m")?;
-        buf.write(b"\r\n")?; // Newline for message bar
+        buf.write(AnsiColor::Reset.sequence())?;
+        buf.write(b"\r\n")?; // Newline for succeeding message bar
         Ok(())
     }
 
