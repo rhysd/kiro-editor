@@ -261,6 +261,7 @@ enum AnsiColor {
 
 impl AnsiColor {
     fn sequence(&self) -> &'static [u8] {
+        // https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
         match self {
             AnsiColor::Reset => b"\x1b[39;0m",
             AnsiColor::Red => b"\x1b[91m",
@@ -278,7 +279,6 @@ enum Highlight {
 
 impl Highlight {
     fn color(&self) -> AnsiColor {
-        // https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
         match self {
             Highlight::Normal => AnsiColor::Reset,
             Highlight::Number => AnsiColor::Red,
@@ -407,21 +407,28 @@ impl Highlights {
     fn update(&mut self, rows: &Vec<Row>) {
         self.lines.resize_with(rows.len(), Default::default);
 
+        fn is_sep(b: u8) -> bool {
+            b.is_ascii_whitespace() || b == b'\0' || b",.()+-/*=~%<>[];".contains(&b)
+        }
+
         for (y, ref row) in rows.iter().enumerate() {
             self.lines[y].resize(row.render.as_bytes().len(), Highlight::Normal);
 
-            let mut prev = Highlight::Normal;
+            let mut prev_hl = Highlight::Normal;
+            let mut prev_ch = b'\0';
             for (x, b) in row.render.as_bytes().iter().cloned().enumerate() {
-                let hl = if b.is_ascii_digit() {
+                let is_bound = is_sep(prev_ch) ^ is_sep(b);
+                let hl = if b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound) {
                     Highlight::Number
-                } else if b == b'.' && prev == Highlight::Number {
+                } else if b == b'.' && prev_hl == Highlight::Number {
                     Highlight::Number
                 } else {
                     Highlight::Normal
                 };
 
                 self.lines[y][x] = hl;
-                prev = hl;
+                prev_hl = hl;
+                prev_ch = b;
             }
         }
     }
@@ -600,6 +607,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
+
             if file_row >= self.row.len() {
                 if self.row.is_empty() && y == self.screen_rows / 3 {
                     let msg_buf = format!("Kilo editor -- version {}", VERSION);
@@ -770,6 +778,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         fn next_line(y: usize, dir: FindDir, len: usize) -> usize {
+            // Wrapping text search at top/bottom of text buffer
             match dir {
                 FindDir::Forward if y == len - 1 => 0,
                 FindDir::Forward => y + 1,
@@ -800,7 +809,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 break;
             }
 
-            // Wrapping text search at top/bottom of text buffer
             y = next_line(y, dir, row_len);
         }
     }
