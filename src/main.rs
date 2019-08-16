@@ -385,14 +385,14 @@ impl Row {
 }
 
 #[derive(Default)]
-struct Highlights {
+struct Highlighting {
     lines: Vec<Vec<Highlight>>,
     matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
 }
 
-impl Highlights {
-    fn from_rows<'a, R: Iterator<Item = &'a Row>>(iter: R) -> Highlights {
-        Highlights {
+impl Highlighting {
+    fn from_rows<'a, R: Iterator<Item = &'a Row>>(iter: R) -> Highlighting {
+        Highlighting {
             lines: iter
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
@@ -512,7 +512,7 @@ struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     quitting: bool,
     // Text search state
     finding: FindState,
-    hl: Highlights,
+    hl: Highlighting,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -534,7 +534,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             dirty: false,
             quitting: false,
             finding: FindState::new(),
-            hl: Highlights::default(),
+            hl: Highlighting::default(),
         }
     }
 
@@ -700,11 +700,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         let path = path.as_ref();
         let file = fs::File::open(path)?;
-        self.row = vec![]; // TODO: Use .collect()
-        for line in io::BufReader::new(file).lines() {
-            self.row.push(Row::new(line?));
-        }
-        self.hl = Highlights::from_rows(self.row.iter());
+        self.row = io::BufReader::new(file)
+            .lines()
+            .map(|r| Ok(Row::new(r?)))
+            .collect::<io::Result<_>>()?;
+        self.hl = Highlighting::from_rows(self.row.iter());
         self.file = Some(FilePath::from(path));
         self.dirty = false;
         Ok(())
@@ -757,6 +757,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) {
+        use InputSeq::*;
+
         if self.finding.last_match.is_some() {
             self.hl.clear_previous_match();
         }
@@ -766,14 +768,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         match key {
-            InputSeq::RightKey
-            | InputSeq::DownKey
-            | InputSeq::Key(b'f', true)
-            | InputSeq::Key(b'n', true) => self.finding.dir = FindDir::Forward,
-            InputSeq::LeftKey
-            | InputSeq::UpKey
-            | InputSeq::Key(b'b', true)
-            | InputSeq::Key(b'p', true) => self.finding.dir = FindDir::Back,
+            RightKey | DownKey | Key(b'f', true) | Key(b'n', true) => {
+                self.finding.dir = FindDir::Forward
+            }
+            LeftKey | UpKey | Key(b'b', true) | Key(b'p', true) => self.finding.dir = FindDir::Back,
             _ => self.finding = FindState::new(),
         }
 
@@ -961,24 +959,23 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
+            use InputSeq::*;
             let key = seq?;
             match key {
-                InputSeq::Unidentified => continue,
-                InputSeq::Key(b'h', true) | InputSeq::Key(0x7f, false) | InputSeq::DeleteKey
-                    if !buf.is_empty() =>
-                {
+                Unidentified => continue,
+                Key(b'h', true) | Key(0x7f, false) | DeleteKey if !buf.is_empty() => {
                     buf.pop();
                 }
-                k @ InputSeq::Key(b'g', true) | k @ InputSeq::Key(0x1b, false) => {
+                k @ Key(b'g', true) | k @ Key(0x1b, false) => {
                     self.message = StatusMessage::new("Canceled.");
                     incremental_callback(self, buf.as_str(), k, true);
                     return Ok(None);
                 }
-                k @ InputSeq::Key(b'\r', false) | k @ InputSeq::Key(b'm', true) => {
+                k @ Key(b'\r', false) | k @ Key(b'm', true) => {
                     incremental_callback(self, buf.as_str(), k, true);
                     break;
                 }
-                InputSeq::Key(b, false) => {
+                Key(b, false) => {
                     buf.push(b as char);
                 }
                 _ => {}
@@ -998,36 +995,38 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn process_keypress(&mut self, seq: InputSeq) -> io::Result<AfterKeyPress> {
+        use InputSeq::*;
+
         match seq {
-            InputSeq::Key(b'p', true) | InputSeq::UpKey => self.move_cursor(CursorDir::Up),
-            InputSeq::Key(b'b', true) | InputSeq::LeftKey => self.move_cursor(CursorDir::Left),
-            InputSeq::Key(b'n', true) | InputSeq::DownKey => self.move_cursor(CursorDir::Down),
-            InputSeq::Key(b'f', true) | InputSeq::RightKey => self.move_cursor(CursorDir::Right),
-            InputSeq::PageUpKey => {
+            Key(b'p', true) | UpKey => self.move_cursor(CursorDir::Up),
+            Key(b'b', true) | LeftKey => self.move_cursor(CursorDir::Left),
+            Key(b'n', true) | DownKey => self.move_cursor(CursorDir::Down),
+            Key(b'f', true) | RightKey => self.move_cursor(CursorDir::Right),
+            PageUpKey => {
                 self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Up);
                 }
             }
-            InputSeq::Key(b'v', true) | InputSeq::PageDownKey => {
+            Key(b'v', true) | PageDownKey => {
                 // Set cursor to bottom of screen considering end of buffer
                 self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Down)
                 }
             }
-            InputSeq::Key(b'a', true) | InputSeq::HomeKey => self.cx = 0,
-            InputSeq::Key(b'e', true) | InputSeq::EndKey => {
+            Key(b'a', true) | HomeKey => self.cx = 0,
+            Key(b'e', true) | EndKey => {
                 if self.cy < self.row.len() {
                     self.cx = self.row[self.cy].buf.len();
                 }
             }
-            InputSeq::Key(b'd', true) | InputSeq::DeleteKey => {
+            Key(b'd', true) | DeleteKey => {
                 self.move_cursor(CursorDir::Right);
                 self.delete_char();
             }
-            InputSeq::Key(b'g', true) => self.find()?,
-            InputSeq::Key(b'q', true) => {
+            Key(b'g', true) => self.find()?,
+            Key(b'q', true) => {
                 if !self.dirty || self.quitting {
                     return Ok(AfterKeyPress::Quit);
                 } else {
@@ -1037,20 +1036,20 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     return Ok(AfterKeyPress::Nothing);
                 }
             }
-            InputSeq::Key(b'\r', false) | InputSeq::Key(b'm', true) => self.insert_line(),
-            InputSeq::Key(b'h', true) | InputSeq::Key(0x08, false) | InputSeq::Key(0x7f, false) => {
+            Key(b'\r', false) | Key(b'm', true) => self.insert_line(),
+            Key(b'h', true) | Key(0x08, false) | Key(0x7f, false) => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
                 self.delete_char();
             }
-            InputSeq::Key(b'l', true) | InputSeq::Key(0x1b, false) => {
+            Key(b'l', true) | Key(0x1b, false) => {
                 // Our editor refresh screen after any key
             }
-            InputSeq::Key(b'?', true) => {
+            Key(b'?', true) => {
                 self.message = StatusMessage::new(HELP_TEXT);
             }
-            InputSeq::Key(b's', true) => self.save()?,
-            InputSeq::Key(b, false) => self.insert_char(b as char),
-            InputSeq::Key(..) => { /* ignore other key inputs */ }
+            Key(b's', true) => self.save()?,
+            Key(b, false) => self.insert_char(b as char),
+            Key(..) => { /* ignore other key inputs */ }
             _ => unreachable!(),
         }
 
