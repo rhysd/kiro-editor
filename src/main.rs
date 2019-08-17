@@ -391,10 +391,13 @@ impl Row {
         self.update_render();
     }
 
-    fn delete_char(&mut self, at: usize) {
+    fn delete_char(&mut self, at: usize) -> Option<char> {
         if at < self.buf.as_bytes().len() {
-            self.buf.remove(at);
+            let c = self.buf.remove(at);
             self.update_render();
+            Some(c)
+        } else {
+            None
         }
     }
 
@@ -414,9 +417,9 @@ impl Row {
         }
     }
 
-    fn remove_until(&mut self, at: usize) {
-        if 0 < at {
-            self.buf.drain(..at);
+    fn remove(&mut self, start: usize, end: usize) {
+        if start < end {
+            self.buf.drain(start..end);
             self.update_render();
         }
     }
@@ -1098,17 +1101,19 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.hl.update(&self.row);
     }
 
-    fn delete_char(&mut self) {
+    fn delete_char(&mut self) -> Option<char> {
         if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
-            return;
+            return None;
         }
         if self.cx > 0 {
-            self.row[self.cy].delete_char(self.cx - 1);
+            let c = self.row[self.cy].delete_char(self.cx - 1);
             self.cx -= 1;
             self.dirty = true;
             self.hl.update(&self.row);
+            c
         } else {
             self.squash_to_previous_line();
+            Some('\n')
         }
     }
 
@@ -1138,8 +1143,31 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         if self.cx == 0 {
             self.squash_to_previous_line();
         } else {
-            self.row[self.cy].remove_until(self.cx);
+            self.row[self.cy].remove(0, self.cx);
             self.cx = 0;
+            self.dirty = true;
+            self.hl.update(&self.row);
+        }
+    }
+
+    fn delete_word(&mut self) {
+        if self.cx == 0 || self.cy == self.row.len() {
+            return;
+        }
+
+        let mut x = self.cx - 1;
+        let buf = self.row[self.cy].buf.as_bytes();
+        while x > 0 && buf[x].is_ascii_whitespace() {
+            x -= 1;
+        }
+        // `x - 1` since x should stop at the last non-whitespace character to remove
+        while x > 0 && !buf[x - 1].is_ascii_whitespace() {
+            x -= 1;
+        }
+
+        if x < self.cx {
+            self.row[self.cy].remove(x, self.cx);
+            self.cx = x;
             self.dirty = true;
             self.hl.update(&self.row);
         }
@@ -1300,12 +1328,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
                 self.delete_char();
             }
-            Key(b'k', true) => {
-                self.delete_until_end_of_line();
-            }
-            Key(b'u', true) => {
-                self.delete_until_head_of_line();
-            }
+            Key(b'k', true) => self.delete_until_end_of_line(),
+            Key(b'u', true) => self.delete_until_head_of_line(),
+            Key(b'w', true) => self.delete_word(),
             Key(b'l', true) | Key(0x1b, false) => {
                 // Our editor refresh screen after any key
             }
