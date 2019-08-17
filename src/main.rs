@@ -1261,6 +1261,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.message = StatusMessage::new(HELP_TEXT);
             }
             Key(b's', true) => self.save()?,
+            Key(b'i', true) => self.insert_char('\t'),
             Key(b, false) if !b.is_ascii_control() => self.insert_char(b as char),
             Key(..) => { /* ignore other key inputs */ }
             _ => unreachable!(),
