@@ -122,74 +122,76 @@ impl InputSequences {
         }
     }
 
+    fn decode_escape_sequence(&mut self) -> io::Result<InputSeq> {
+        // Try to read expecting '[' as escape sequence header. Note that, if next input does
+        // not arrive within next tick, it means that it is not an escape sequence.
+        // TODO?: Should we consider sequences not starting with '['?
+        match self.read_byte()? {
+            b'[' => { /* fall throught */ }
+            0 => return Ok(InputSeq::Key(0x1b, false)),
+            b => {
+                self.next_byte = b; // Already read the next byte so remember it
+                return Ok(InputSeq::Key(0x1b, false));
+            }
+        };
+
+        // Now confirmed \1xb[ which is a header of escape sequence. Eat it until the end
+        // of sequence with blocking
+        let mut buf = vec![];
+        let cmd = loop {
+            let b = self.read_blocking()?;
+            match b {
+                // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
+                b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c' | b'f'
+                | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
+                b'O' => {
+                    buf.push(b'O');
+                    let b = self.read_blocking()?;
+                    match b {
+                        b'F' | b'H' => break b, // OF/OH are the same as F/H
+                        _ => buf.push(b),
+                    };
+                }
+                _ => buf.push(b),
+            }
+        };
+
+        let mut args = buf.split(|b| *b == b';');
+        match cmd {
+            b'R' => {
+                // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
+                let mut i =
+                    args.map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
+                match (i.next(), i.next()) {
+                    (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::Cursor(r, c)),
+                    _ => Ok(InputSeq::Unidentified),
+                }
+            }
+            b'A' => Ok(InputSeq::UpKey),
+            b'B' => Ok(InputSeq::DownKey),
+            b'C' => Ok(InputSeq::RightKey),
+            b'D' => Ok(InputSeq::LeftKey),
+            b'~' => {
+                // e.g. \x1b[5~
+                match args.next() {
+                    Some(b"5") => Ok(InputSeq::PageUpKey),
+                    Some(b"6") => Ok(InputSeq::PageDownKey),
+                    Some(b"1") | Some(b"7") => Ok(InputSeq::HomeKey),
+                    Some(b"4") | Some(b"8") => Ok(InputSeq::EndKey),
+                    Some(b"3") => Ok(InputSeq::DeleteKey),
+                    _ => Ok(InputSeq::Unidentified),
+                }
+            }
+            b'H' => Ok(InputSeq::HomeKey),
+            b'F' => Ok(InputSeq::EndKey),
+            _ => unreachable!(),
+        }
+    }
+
     fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
         match b {
             // (Maybe) Escape sequence
-            0x1b => {
-                // Try to read expecting '[' as escape sequence header. Note that, if next input does
-                // not arrive within next tick, it means that it is not an escape sequence.
-                // TODO?: Should we consider sequences not starting with '['?
-                match self.read_byte()? {
-                    b'[' => { /* fall throught */ }
-                    0 => return Ok(InputSeq::Key(0x1b, false)),
-                    b => {
-                        self.next_byte = b; // Already read the next byte so remember it
-                        return Ok(InputSeq::Key(0x1b, false));
-                    }
-                };
-
-                // Now confirmed \1xb[ which is a header of escape sequence. Eat it until the end
-                // of sequence with blocking
-                let mut buf = vec![];
-                let cmd = loop {
-                    let b = self.read_blocking()?;
-                    match b {
-                        // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
-                        b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c'
-                        | b'f' | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
-                        b'O' => {
-                            buf.push(b'O');
-                            let b = self.read_blocking()?;
-                            match b {
-                                b'F' | b'H' => break b, // OF/OH are the same as F/H
-                                _ => buf.push(b),
-                            };
-                        }
-                        _ => buf.push(b),
-                    }
-                };
-
-                let mut args = buf.split(|b| *b == b';');
-                match cmd {
-                    b'R' => {
-                        // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
-                        let mut i = args
-                            .map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
-                        match (i.next(), i.next()) {
-                            (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::Cursor(r, c)),
-                            _ => Ok(InputSeq::Unidentified),
-                        }
-                    }
-                    b'A' => Ok(InputSeq::UpKey),
-                    b'B' => Ok(InputSeq::DownKey),
-                    b'C' => Ok(InputSeq::RightKey),
-                    b'D' => Ok(InputSeq::LeftKey),
-                    b'~' => {
-                        // e.g. \x1b[5~
-                        match args.next() {
-                            Some(b"5") => Ok(InputSeq::PageUpKey),
-                            Some(b"6") => Ok(InputSeq::PageDownKey),
-                            Some(b"1") | Some(b"7") => Ok(InputSeq::HomeKey),
-                            Some(b"4") | Some(b"8") => Ok(InputSeq::EndKey),
-                            Some(b"3") => Ok(InputSeq::DeleteKey),
-                            _ => Ok(InputSeq::Unidentified),
-                        }
-                    }
-                    b'H' => Ok(InputSeq::HomeKey),
-                    b'F' => Ok(InputSeq::EndKey),
-                    _ => unreachable!(),
-                }
-            }
+            0x1b => self.decode_escape_sequence(),
             // Ascii key inputs
             0x20..=0x7f => Ok(InputSeq::Key(b, false)),
             // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
@@ -1077,11 +1079,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         let right = format!(
-            "{} {} {}/{}",
-            self.rowoff,
+            "{} {}/{}",
             self.hl.syntax.lang.name(),
             self.cy,
-            self.row.len()
+            self.row.len(),
         );
         if right.len() > rest_len {
             for _ in 0..rest_len {
@@ -1118,6 +1119,20 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
+    fn draw_welcome_message<W: Write>(&self, mut buf: W) -> io::Result<()> {
+        let msg_buf = format!("Kilo editor -- version {}", VERSION);
+        let welcome = self.trim_line(&msg_buf);
+        let padding = (self.screen_cols - welcome.len()) / 2;
+        if padding > 0 {
+            buf.write(b"~")?;
+            for _ in 0..padding - 1 {
+                buf.write(b" ")?;
+            }
+        }
+        buf.write(welcome.as_bytes())?;
+        Ok(())
+    }
+
     fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         let mut prev_color = AnsiColor::Reset;
 
@@ -1126,16 +1141,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
             if file_row >= self.row.len() {
                 if self.row.is_empty() && y == self.screen_rows / 3 {
-                    let msg_buf = format!("Kilo editor -- version {}", VERSION);
-                    let welcome = self.trim_line(&msg_buf);
-                    let padding = (self.screen_cols - welcome.len()) / 2;
-                    if padding > 0 {
-                        buf.write(b"~")?;
-                        for _ in 0..padding - 1 {
-                            buf.write(b" ")?;
-                        }
-                    }
-                    buf.write(welcome.as_bytes())?;
+                    self.draw_welcome_message(&mut buf)?;
                 } else {
                     if prev_color != AnsiColor::Reset {
                         buf.write(AnsiColor::Reset.sequence())?;
@@ -1598,7 +1604,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             Key(b'b', true) | LeftKey => self.move_cursor(CursorDir::Left),
             Key(b'n', true) | DownKey => self.move_cursor(CursorDir::Down),
             Key(b'f', true) | RightKey => self.move_cursor(CursorDir::Right),
-            PageUpKey => {
+            Key(b'y', true) | PageUpKey => {
                 self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Up);
