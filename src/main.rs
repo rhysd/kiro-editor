@@ -464,7 +464,26 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     ],
 };
 
-const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[&PLAIN_SYNTAX, &C_SYNTAX];
+const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    name: "rust",
+    file_exts: &["rs"],
+    number: true,
+    string: true,
+    line_comment: Some("//"),
+    block_comment: Some(("/*", "*/")),
+    keywords: &[
+        "as", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
+        "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
+        "ref", "return", "Self", "self", "static", "struct", "super", "trait", "true", "type",
+        "unsafe", "use", "while", "where",
+    ],
+    builtin_types: &[
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usuze",
+        "f32", "f64", "bool", "char",
+    ],
+};
+
+const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[&PLAIN_SYNTAX, &C_SYNTAX, &RUST_SYNTAX];
 
 impl SyntaxHighlight {
     fn detect<P: AsRef<Path>>(path: P) -> &'static SyntaxHighlight {
