@@ -430,8 +430,8 @@ impl Row {
 struct SyntaxHighlight {
     name: &'static str,
     file_exts: &'static [&'static str],
+    string_quotes: &'static [char],
     number: bool,
-    string: bool,
     character: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
@@ -443,7 +443,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     name: "plain",
     file_exts: &[],
     number: false,
-    string: false,
+    string_quotes: &[],
     character: false,
     line_comment: None,
     block_comment: None,
@@ -455,7 +455,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     name: "c",
     file_exts: &["c", "h"],
     number: true,
-    string: true,
+    string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
@@ -473,7 +473,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     name: "rust",
     file_exts: &["rs"],
     number: true,
-    string: true,
+    string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
@@ -489,7 +489,90 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     ],
 };
 
-const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[&PLAIN_SYNTAX, &C_SYNTAX, &RUST_SYNTAX];
+const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    name: "javascript",
+    file_exts: &["js"],
+    number: true,
+    string_quotes: &['"', '\''],
+    character: false,
+    line_comment: Some("//"),
+    block_comment: Some(("/*", "*/")),
+    keywords: &[
+        "break",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "continue",
+        "debugger",
+        "default",
+        "delete",
+        "do",
+        "else",
+        "export",
+        "extends",
+        "finally",
+        "for",
+        "function",
+        "if",
+        "import",
+        "in",
+        "instanceof",
+        "new",
+        "return",
+        "super",
+        "switch",
+        "this",
+        "throw",
+        "try",
+        "typeof",
+        "var",
+        "void",
+        "while",
+        "with",
+        "yield",
+    ],
+    builtin_types: &[
+        "Object",
+        "Function",
+        "Boolean",
+        "Symbol",
+        "Error",
+        "Number",
+        "BigInt",
+        "Math",
+        "Date",
+        "String",
+        "RegExp",
+        "Array",
+        "Int8Array",
+        "Int16Array",
+        "Int32Array",
+        "BigInt64Array",
+        "Uint8Array",
+        "Uint16Array",
+        "Uint32Array",
+        "BigUint64Array",
+        "Float32Array",
+        "Float64Array",
+        "ArrayBuffer",
+        "SharedArrayBuffer",
+        "Atomics",
+        "DataView",
+        "JSON",
+        "Promise",
+        "Generator",
+        "GeneratorFunction",
+        "AsyncFunction",
+        "Refrect",
+        "Proxy",
+        "Intl",
+        "WebAssembly",
+    ],
+};
+
+const ALL_SYNTAX: &'static [&SyntaxHighlight] =
+    &[&PLAIN_SYNTAX, &C_SYNTAX, &RUST_SYNTAX, &JAVASCRIPT_SYNTAX];
 
 impl SyntaxHighlight {
     fn detect<P: AsRef<Path>>(path: P) -> &'static SyntaxHighlight {
@@ -633,16 +716,14 @@ impl Highlighting {
                     }
                 }
 
-                if hl == Highlight::Normal && self.syntax.string {
+                if hl == Highlight::Normal && self.syntax.string_quotes.len() > 0 {
                     if let Some(q) = prev_quote {
-                        // In string literal
-                        match (q, b) {
-                            (b'"', b'"') if prev_char != b'\\' => prev_quote = None,
-                            (b'\'', b'\'') if prev_char != b'\\' => prev_quote = None,
-                            _ => {}
+                        // In string literal. XXX: "\\" is not highlighted correctly
+                        if prev_char != b'\\' && q == b {
+                            prev_quote = None;
                         }
                         hl = Highlight::String;
-                    } else if b == b'\'' && !self.syntax.character || b == b'"' {
+                    } else if self.syntax.string_quotes.contains(&(b as char)) {
                         prev_quote = Some(b);
                         hl = Highlight::String;
                     }
