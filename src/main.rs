@@ -247,16 +247,32 @@ impl FilePath {
     }
 }
 
+#[derive(PartialEq)]
+enum StatusMessageKind {
+    Info,
+    Error,
+}
+
 struct StatusMessage {
     text: String,
     timestamp: SystemTime,
+    kind: StatusMessageKind,
 }
 
 impl StatusMessage {
-    fn new<S: Into<String>>(message: S) -> StatusMessage {
+    fn info<S: Into<String>>(message: S) -> StatusMessage {
+        StatusMessage::with_kind(message, StatusMessageKind::Info)
+    }
+
+    fn error<S: Into<String>>(message: S) -> StatusMessage {
+        StatusMessage::with_kind(message, StatusMessageKind::Error)
+    }
+
+    fn with_kind<S: Into<String>>(message: S, kind: StatusMessageKind) -> StatusMessage {
         StatusMessage {
             text: message.into(),
             timestamp: SystemTime::now(),
+            kind,
         }
     }
 }
@@ -271,6 +287,7 @@ enum AnsiColor {
     Blue,
     Purple,
     CyanUnderline,
+    RedBG,
     Invert,
 }
 
@@ -288,6 +305,7 @@ impl AnsiColor {
             Blue => b"\x1b[94m",
             Purple => b"\x1b[95m",
             CyanUnderline => b"\x1b[96;4m",
+            RedBG => b"\x1b[41m",
             Invert => b"\x1b[7m",
         }
     }
@@ -697,7 +715,7 @@ impl Highlighting {
         self.lines.resize_with(rows.len(), Default::default);
 
         fn is_sep(b: u8) -> bool {
-            b.is_ascii_whitespace() || b.is_ascii_punctuation() || b == b'\0'
+            b.is_ascii_whitespace() || (b.is_ascii_punctuation() && b != b'_') || b == b'\0'
         }
 
         fn starts_with_word(input: &[u8], word: &[u8]) -> bool {
@@ -944,7 +962,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             row: Vec::with_capacity(h),
             rowoff: 0,
             coloff: 0,
-            message: StatusMessage::new(HELP_TEXT),
+            message: StatusMessage::info(HELP_TEXT),
             dirty: false,
             quitting: false,
             finding: FindState::new(),
@@ -1008,7 +1026,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         if let Ok(d) = SystemTime::now().duration_since(self.message.timestamp) {
             if d.as_secs() < 5 {
                 let msg = &self.message.text[..cmp::min(self.message.text.len(), self.screen_cols)];
-                buf.write(msg.as_bytes())?;
+                if self.message.kind == StatusMessageKind::Error {
+                    buf.write(AnsiColor::RedBG.sequence())?;
+                    buf.write(msg.as_bytes())?;
+                    buf.write(AnsiColor::Reset.sequence())?;
+                } else {
+                    buf.write(msg.as_bytes())?;
+                }
             }
         }
         buf.write(b"\x1b[K")?;
@@ -1151,7 +1175,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let f = match fs::File::create(&file.path) {
             Ok(f) => f,
             Err(e) => {
-                self.message = StatusMessage::new(format!("Could not save: {}", e));
+                self.message = StatusMessage::error(format!("Could not save: {}", e));
                 if create {
                     self.file = None; // Could not make file. Back to unnamed buffer
                 }
@@ -1168,8 +1192,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
         f.flush()?;
 
-        let msg = format!("{} bytes written to {}", bytes, &file.display);
-        self.message = StatusMessage::new(msg);
+        self.message = StatusMessage::info(format!("{} bytes written to {}", bytes, &file.display));
         self.dirty = false;
         Ok(())
     }
@@ -1239,12 +1262,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.coloff = coloff;
             self.rowoff = rowoff;
         } else {
-            let msg = if self.finding.last_match.is_some() {
-                "Found"
+            self.message = if self.finding.last_match.is_some() {
+                StatusMessage::info("Found")
             } else {
-                "Not Found"
+                StatusMessage::error("Not Found")
             };
-            self.message = StatusMessage::new(msg);
         }
 
         self.finding = FindState::new(); // Clear text search state for next time
@@ -1436,7 +1458,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     {
         let mut buf = String::new();
         let prompt = prompt.as_ref();
-        self.message = StatusMessage::new(prompt.replacen("{}", "", 1));
+        self.message = StatusMessage::info(prompt.replacen("{}", "", 1));
         self.setup_scroll();
         self.refresh_screen()?;
 
@@ -1449,7 +1471,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     buf.pop();
                 }
                 k @ Key(b'g', true) | k @ Key(0x1b, false) => {
-                    self.message = StatusMessage::new("Canceled.");
+                    self.message = StatusMessage::info("Canceled.");
                     incremental_callback(self, buf.as_str(), k, true);
                     return Ok(None);
                 }
@@ -1465,14 +1487,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
             incremental_callback(self, buf.as_str(), key, false);
 
-            self.message = StatusMessage::new(prompt.replacen("{}", &buf, 1));
+            self.message = StatusMessage::info(prompt.replacen("{}", &buf, 1));
             self.setup_scroll();
             self.refresh_screen()?;
         }
 
         let input = if buf.is_empty() { None } else { Some(buf) };
 
-        self.message = StatusMessage::new("");
+        self.message = StatusMessage::info("");
         Ok(input)
     }
 
@@ -1514,7 +1536,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 } else {
                     self.quitting = true;
                     self.message =
-                        StatusMessage::new("File has unsaved changes! Press ^Q again to quit");
+                        StatusMessage::error("File has unsaved changes! Press ^Q again to quit");
                     return Ok(AfterKeyPress::Nothing);
                 }
             }
@@ -1530,7 +1552,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // Our editor refresh screen after any key
             }
             Key(b'?', true) => {
-                self.message = StatusMessage::new(HELP_TEXT);
+                self.message = StatusMessage::info(HELP_TEXT);
             }
             Key(b's', true) => self.save()?,
             Key(b'i', true) => self.insert_char('\t'),
