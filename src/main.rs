@@ -907,14 +907,20 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
         let path = path.as_ref();
-        let file = fs::File::open(path)?;
-        self.row = io::BufReader::new(file)
-            .lines()
-            .map(|r| Ok(Row::new(r?)))
-            .collect::<io::Result<_>>()?;
+        if path.exists() {
+            let file = fs::File::open(path)?;
+            self.row = io::BufReader::new(file)
+                .lines()
+                .map(|r| Ok(Row::new(r?)))
+                .collect::<io::Result<_>>()?;
+            self.dirty = false;
+        } else {
+            // When the path does not exist, consider it as a new file
+            self.row = vec![];
+            self.dirty = true;
+        }
         self.hl = Highlighting::new(path, self.row.iter());
         self.file = Some(FilePath::from(path));
-        self.dirty = false;
         Ok(())
     }
 
