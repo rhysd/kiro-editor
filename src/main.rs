@@ -413,6 +413,13 @@ impl Row {
             self.update_render();
         }
     }
+
+    fn remove_until(&mut self, at: usize) {
+        if 0 < at {
+            self.buf.drain(..at);
+            self.update_render();
+        }
+    }
 }
 
 struct SyntaxHighlight {
@@ -1081,6 +1088,16 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.hl.update(&self.row);
     }
 
+    fn squash_to_previous_line(&mut self) {
+        // At top of line, backspace concats current line to previous line
+        self.cx = self.row[self.cy - 1].buf.as_bytes().len(); // Move cursor column to end of previous line
+        let row = self.row.remove(self.cy);
+        self.cy -= 1; // Move cursor to previous line
+        self.row[self.cy].append(row.buf);
+        self.dirty = true;
+        self.hl.update(&self.row);
+    }
+
     fn delete_char(&mut self) {
         if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
             return;
@@ -1088,15 +1105,44 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         if self.cx > 0 {
             self.row[self.cy].delete_char(self.cx - 1);
             self.cx -= 1;
+            self.dirty = true;
+            self.hl.update(&self.row);
         } else {
-            // At top of line, backspace concats current line to previous line
-            self.cx = self.row[self.cy - 1].buf.as_bytes().len(); // Move cursor column to end of previous line
-            let row = self.row.remove(self.cy);
-            self.cy -= 1; // Move cursor to previous line
-            self.row[self.cy].append(row.buf);
+            self.squash_to_previous_line();
+        }
+    }
+
+    fn delete_until_end_of_line(&mut self) {
+        if self.cy == self.row.len() {
+            return;
+        }
+        if self.cx == self.row[self.cy].buf.as_bytes().len() {
+            // Do nothing when cursor is at end of line of end of text buffer
+            if self.cy == self.row.len() - 1 {
+                return;
+            }
+            // At end of line, concat with next line
+            let deleted = self.row.remove(self.cy + 1);
+            self.row[self.cy].append(deleted.buf);
+        } else {
+            self.row[self.cy].truncate(self.cx);
         }
         self.dirty = true;
         self.hl.update(&self.row);
+    }
+
+    fn delete_until_head_of_line(&mut self) {
+        if self.cx == 0 && self.cy == 0 || self.cy == self.row.len() {
+            return;
+        }
+        if self.cx == 0 {
+            self.squash_to_previous_line();
+        } else {
+            self.row[self.cy].remove_until(self.cx);
+            self.cx = 0;
+            self.dirty = true;
+            self.hl.update(&self.row);
+        }
     }
 
     fn insert_line(&mut self) {
@@ -1253,6 +1299,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             Key(b'h', true) | Key(0x08, false) | Key(0x7f, false) => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
                 self.delete_char();
+            }
+            Key(b'k', true) => {
+                self.delete_until_end_of_line();
+            }
+            Key(b'u', true) => {
+                self.delete_until_head_of_line();
             }
             Key(b'l', true) | Key(0x1b, false) => {
                 // Our editor refresh screen after any key
