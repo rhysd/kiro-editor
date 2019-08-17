@@ -571,8 +571,72 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     ],
 };
 
-const ALL_SYNTAX: &'static [&SyntaxHighlight] =
-    &[&PLAIN_SYNTAX, &C_SYNTAX, &RUST_SYNTAX, &JAVASCRIPT_SYNTAX];
+const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    name: "go",
+    file_exts: &["go"],
+    number: true,
+    string_quotes: &['"'],
+    character: true,
+    line_comment: Some("//"),
+    block_comment: Some(("/*", "*/")),
+    keywords: &[
+        "break",
+        "case",
+        "chan",
+        "const",
+        "continue",
+        "default",
+        "defer",
+        "else",
+        "fallthrough",
+        "for",
+        "func",
+        "go",
+        "goto",
+        "if",
+        "import",
+        "interface",
+        "map",
+        "package",
+        "range",
+        "return",
+        "select",
+        "struct",
+        "switch",
+        "type",
+        "var",
+    ],
+    builtin_types: &[
+        "bool",
+        "byte",
+        "complex128",
+        "complex64",
+        "error",
+        "float32",
+        "float64",
+        "int",
+        "int16",
+        "int32",
+        "int64",
+        "int8",
+        "rune",
+        "string",
+        "uint",
+        "uint16",
+        "uint32",
+        "uint64",
+        "uint8",
+        "uintptr",
+    ],
+};
+
+const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[
+    &PLAIN_SYNTAX,
+    &C_SYNTAX,
+    &RUST_SYNTAX,
+    &JAVASCRIPT_SYNTAX,
+    &GO_SYNTAX,
+];
 
 impl SyntaxHighlight {
     fn detect<P: AsRef<Path>>(path: P) -> &'static SyntaxHighlight {
