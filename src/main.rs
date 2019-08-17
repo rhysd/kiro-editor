@@ -1183,7 +1183,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
-    fn refresh_screen(&self) -> io::Result<()> {
+    fn redraw_screen(&self) -> io::Result<()> {
         let mut buf = Vec::with_capacity((self.screen_rows + 1) * self.screen_cols);
 
         // \x1b[: Escape sequence header
@@ -1207,6 +1207,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let mut stdout = io::stdout();
         stdout.write(&buf)?;
         stdout.flush()
+    }
+
+    fn refresh_screen(&mut self) -> io::Result<()> {
+        self.setup_scroll();
+        self.hl.update(&self.row, self.rowoff + self.screen_rows);
+        self.redraw_screen()
     }
 
     fn clear_screen(&self) -> io::Result<()> {
@@ -1557,7 +1563,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let mut buf = String::new();
         let prompt = prompt.as_ref();
         self.message = StatusMessage::info(prompt.replacen("{}", "", 1));
-        self.setup_scroll();
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
@@ -1568,7 +1573,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 Key(b'h', true) | Key(0x7f, false) | DeleteKey if !buf.is_empty() => {
                     buf.pop();
                 }
-                k @ Key(b'g', true) | k @ Key(0x1b, false) => {
+                k @ Key(b'g', true) | k @ Key(b'q', true) | k @ Key(0x1b, false) => {
                     self.message = StatusMessage::info("Canceled.");
                     incremental_callback(self, buf.as_str(), k, true);
                     return Ok(None);
@@ -1586,7 +1591,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             incremental_callback(self, buf.as_str(), key, false);
 
             self.message = StatusMessage::info(prompt.replacen("{}", &buf, 1));
-            self.setup_scroll();
             self.refresh_screen()?;
         }
 
@@ -1695,8 +1699,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.ensure_screen_size()?;
 
         // Render first screen
-        self.setup_scroll();
-        self.hl.update(&self.row, self.rowoff + self.screen_rows);
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
@@ -1707,8 +1709,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             if self.process_keypress(seq)? == AfterKeyPress::Quit {
                 break;
             }
-            self.setup_scroll();
-            self.hl.update(&self.row, self.rowoff + self.screen_rows);
             self.refresh_screen()?; // Update screen after keypress
         }
 
