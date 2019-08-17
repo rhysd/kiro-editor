@@ -268,8 +268,9 @@ enum AnsiColor {
     Green,
     Gray,
     Yellow,
-    Cyan,
-    BlueUnderline,
+    Blue,
+    Purple,
+    CyanUnderline,
     Invert,
 }
 
@@ -284,8 +285,9 @@ impl AnsiColor {
             Green => b"\x1b[32m",
             Gray => b"\x1b[90m",
             Yellow => b"\x1b[33m",
-            Cyan => b"\x1b[36m",
-            BlueUnderline => b"\x1b[94;4m",
+            Blue => b"\x1b[94m",
+            Purple => b"\x1b[95m",
+            CyanUnderline => b"\x1b[96;4m",
             Invert => b"\x1b[7m",
         }
     }
@@ -300,6 +302,7 @@ enum Highlight {
     Keyword,
     Type,
     Char,
+    Statement,
     Match,
 }
 
@@ -313,9 +316,10 @@ impl Highlight {
             String => Green,
             Comment => Gray,
             Keyword => Yellow,
-            Type => Cyan,
+            Type => Purple,
             Char => Green,
-            Match => BlueUnderline,
+            Statement => Blue,
+            Match => CyanUnderline,
         }
     }
 }
@@ -436,6 +440,7 @@ struct SyntaxHighlight {
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
     keywords: &'static [&'static str],
+    control_statements: &'static [&'static str],
     builtin_types: &'static [&'static str],
 }
 
@@ -448,6 +453,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: None,
     block_comment: None,
     keywords: &[],
+    control_statements: &[],
     builtin_types: &[],
 };
 
@@ -460,9 +466,12 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
-        "auto", "break", "case", "const", "continue", "default", "do", "else", "enum", "extern",
-        "for", "goto", "if", "inline", "register", "restrict", "return", "sizeof", "static",
-        "struct", "switch", "typedef", "union", "volatile", "while",
+        "auto", "const", "enum", "extern", "inline", "register", "restrict", "sizeof", "static",
+        "struct", "typedef", "union", "volatile",
+    ],
+    control_statements: &[
+        "break", "case", "continue", "default", "do", "else", "for", "goto", "if", "return",
+        "switch", "while",
     ],
     builtin_types: &[
         "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void",
@@ -478,10 +487,12 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
-        "as", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false",
-        "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
-        "ref", "return", "Self", "self", "static", "struct", "super", "trait", "true", "type",
-        "unsafe", "use", "while", "where",
+        "as", "const", "crate", "dyn", "enum", "extern", "false", "fn", "impl", "let", "mod",
+        "move", "mut", "pub", "ref", "Self", "self", "static", "struct", "super", "trait", "true",
+        "type", "unsafe", "use", "where",
+    ],
+    control_statements: &[
+        "break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while",
     ],
     builtin_types: &[
         "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usuze",
@@ -498,39 +509,28 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
-        "break",
-        "case",
-        "catch",
         "class",
         "const",
-        "continue",
         "debugger",
-        "default",
         "delete",
-        "do",
-        "else",
         "export",
         "extends",
-        "finally",
-        "for",
         "function",
-        "if",
         "import",
         "in",
         "instanceof",
         "new",
-        "return",
         "super",
-        "switch",
         "this",
-        "throw",
-        "try",
         "typeof",
         "var",
         "void",
-        "while",
         "with",
         "yield",
+    ],
+    control_statements: &[
+        "break", "case", "catch", "continue", "default", "do", "else", "finally", "for", "if",
+        "return", "switch", "throw", "try", "while",
     ],
     builtin_types: &[
         "Object",
@@ -580,31 +580,33 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
-        "break",
-        "case",
         "chan",
         "const",
-        "continue",
-        "default",
         "defer",
-        "else",
-        "fallthrough",
-        "for",
         "func",
         "go",
-        "goto",
-        "if",
         "import",
         "interface",
         "map",
         "package",
         "range",
-        "return",
-        "select",
         "struct",
-        "switch",
         "type",
         "var",
+    ],
+    control_statements: &[
+        "break",
+        "case",
+        "continue",
+        "default",
+        "else",
+        "fallthrough",
+        "for",
+        "goto",
+        "if",
+        "return",
+        "select",
+        "switch",
     ],
     builtin_types: &[
         "bool",
@@ -803,6 +805,12 @@ impl Highlighting {
                         .keywords
                         .iter()
                         .zip(iter::repeat(Highlight::Keyword))
+                        .chain(
+                            self.syntax
+                                .control_statements
+                                .iter()
+                                .zip(iter::repeat(Highlight::Statement)),
+                        )
                         .chain(
                             self.syntax
                                 .builtin_types
