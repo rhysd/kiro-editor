@@ -299,6 +299,7 @@ enum Highlight {
     Comment,
     Keyword,
     Type,
+    Char,
     Match,
 }
 
@@ -313,6 +314,7 @@ impl Highlight {
             Comment => Gray,
             Keyword => Yellow,
             Type => Cyan,
+            Char => Green,
             Match => BlueUnderline,
         }
     }
@@ -430,6 +432,7 @@ struct SyntaxHighlight {
     file_exts: &'static [&'static str],
     number: bool,
     string: bool,
+    character: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
     keywords: &'static [&'static str],
@@ -441,6 +444,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     file_exts: &[],
     number: false,
     string: false,
+    character: false,
     line_comment: None,
     block_comment: None,
     keywords: &[],
@@ -452,6 +456,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     file_exts: &["c", "h"],
     number: true,
     string: true,
+    character: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -469,6 +474,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     file_exts: &["rs"],
     number: true,
     string: true,
+    character: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -610,6 +616,23 @@ impl Highlighting {
                     }
                 }
 
+                if hl == Highlight::Normal && self.syntax.character {
+                    let mut i = row.render.as_bytes()[x..].iter();
+                    let len = match (i.next(), i.next(), i.next(), i.next()) {
+                        (Some(b'\''), Some(b'\\'), _, Some(b'\'')) => Some(4),
+                        (Some(b'\''), _, Some(b'\''), _) => Some(3),
+                        _ => None,
+                    };
+
+                    if let Some(len) = len {
+                        self.lines[y].splice(x..x + len, iter::repeat(Highlight::Char).take(len));
+                        prev_hl = Highlight::Char;
+                        prev_char = b'\'';
+                        iter.nth(len - 2);
+                        continue;
+                    }
+                }
+
                 if hl == Highlight::Normal && self.syntax.string {
                     if let Some(q) = prev_quote {
                         // In string literal
@@ -619,7 +642,7 @@ impl Highlighting {
                             _ => {}
                         }
                         hl = Highlight::String;
-                    } else if b"\"'".contains(&b) {
+                    } else if b == b'\'' && !self.syntax.character || b == b'"' {
                         prev_quote = Some(b);
                         hl = Highlight::String;
                     }
