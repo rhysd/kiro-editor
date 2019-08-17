@@ -415,6 +415,15 @@ impl Row {
         self.update_render();
     }
 
+    fn insert_str<S: AsRef<str>>(&mut self, at: usize, s: S) {
+        if self.buf.as_bytes().len() <= at {
+            self.buf.push_str(s.as_ref());
+        } else {
+            self.buf.insert_str(at, s.as_ref());
+        }
+        self.update_render();
+    }
+
     fn delete_char(&mut self, at: usize) -> Option<char> {
         if at < self.buf.as_bytes().len() {
             let c = self.buf.remove(at);
@@ -449,6 +458,11 @@ impl Row {
     }
 }
 
+enum Indent {
+    AsIs,
+    Fixed(&'static str),
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Language {
     Plain,
@@ -478,6 +492,18 @@ impl Language {
             Rust => &["rs"],
             JavaScript => &["js"],
             Go => &["go"],
+        }
+    }
+
+    fn indent(&self) -> Indent {
+        use Indent::*;
+        use Language::*;
+        match self {
+            Plain => AsIs,
+            C => Fixed("    "),
+            Rust => Fixed("    "),
+            JavaScript => Fixed("  "),
+            Go => AsIs,
         }
     }
 
@@ -689,22 +715,16 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     ],
 };
 
-const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[
-    &PLAIN_SYNTAX,
-    &C_SYNTAX,
-    &RUST_SYNTAX,
-    &JAVASCRIPT_SYNTAX,
-    &GO_SYNTAX,
-];
-
 impl SyntaxHighlight {
     fn for_lang(lang: Language) -> &'static SyntaxHighlight {
-        for syntax in ALL_SYNTAX {
-            if lang == syntax.lang {
-                return syntax;
-            }
+        use Language::*;
+        match lang {
+            Plain => &PLAIN_SYNTAX,
+            C => &C_SYNTAX,
+            Rust => &RUST_SYNTAX,
+            JavaScript => &JAVASCRIPT_SYNTAX,
+            Go => &GO_SYNTAX,
         }
-        unreachable!()
     }
 }
 
@@ -1369,6 +1389,17 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.hl.needs_update = true;
     }
 
+    fn insert_str<S: AsRef<str>>(&mut self, s: S) {
+        if self.cy == self.row.len() {
+            self.row.push(Row::default());
+        }
+        let s = s.as_ref();
+        self.row[self.cy].insert_str(self.cx, s);
+        self.cx += s.as_bytes().len();
+        self.dirty = true;
+        self.hl.needs_update = true;
+    }
+
     fn squash_to_previous_line(&mut self) {
         // At top of line, backspace concats current line to previous line
         self.cx = self.row[self.cy - 1].buf.as_bytes().len(); // Move cursor column to end of previous line
@@ -1617,7 +1648,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.message = StatusMessage::info(HELP_TEXT);
             }
             Key(b's', true) => self.save()?,
-            Key(b'i', true) => self.insert_char('\t'),
+            Key(b'i', true) => match self.lang.indent() {
+                Indent::AsIs => self.insert_char('\t'),
+                Indent::Fixed(indent) => self.insert_str(indent),
+            },
             Key(b, false) if !b.is_ascii_control() => self.insert_char(b as char),
             Key(..) => { /* ignore other key inputs */ }
             _ => unreachable!(),
