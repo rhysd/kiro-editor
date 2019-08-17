@@ -513,7 +513,7 @@ impl Highlighting {
         self.lines.resize_with(rows.len(), Default::default);
 
         fn is_sep(b: u8) -> bool {
-            b.is_ascii_whitespace() || b",.()+-/*=~%<>[];\0".contains(&b)
+            b.is_ascii_whitespace() || b.is_ascii_punctuation() || b == b'\0'
         }
 
         fn starts_with_word(input: &[u8], word: &[u8]) -> bool {
@@ -538,7 +538,6 @@ impl Highlighting {
             let mut iter = row.render.as_bytes().iter().cloned().enumerate();
 
             while let Some((x, b)) = iter.next() {
-                let is_bound = is_sep(prev_char) ^ is_sep(b);
                 let mut hl = Highlight::Normal;
 
                 if let Some((comment_start, comment_end)) = self.syntax.block_comment {
@@ -596,6 +595,8 @@ impl Highlighting {
                         hl = Highlight::String;
                     }
                 }
+
+                let is_bound = is_sep(prev_char) ^ is_sep(b);
 
                 // Highlight identifiers
                 if hl == Highlight::Normal && is_bound {
@@ -1254,7 +1255,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.message = StatusMessage::new(HELP_TEXT);
             }
             Key(b's', true) => self.save()?,
-            Key(b, false) => self.insert_char(b as char),
+            Key(b, false) if !b.is_ascii_control() => self.insert_char(b as char),
             Key(..) => { /* ignore other key inputs */ }
             _ => unreachable!(),
         }
