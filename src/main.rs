@@ -449,9 +449,53 @@ impl Row {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Language {
+    Plain,
+    C,
+    Rust,
+    JavaScript,
+    Go,
+}
+
+impl Language {
+    fn name(&self) -> &'static str {
+        use Language::*;
+        match self {
+            Plain => "plain",
+            C => "c",
+            Rust => "rust",
+            JavaScript => "javascript",
+            Go => "go",
+        }
+    }
+
+    fn file_exts(&self) -> &'static [&'static str] {
+        use Language::*;
+        match self {
+            Plain => &[],
+            C => &["c", "h"],
+            Rust => &["rs"],
+            JavaScript => &["js"],
+            Go => &["go"],
+        }
+    }
+
+    fn detect<P: AsRef<Path>>(path: P) -> Language {
+        use Language::*;
+        if let Some(ext) = path.as_ref().extension().and_then(OsStr::to_str) {
+            for lang in &[C, Rust, JavaScript, Go] {
+                if lang.file_exts().contains(&ext) {
+                    return *lang;
+                }
+            }
+        }
+        Plain
+    }
+}
+
 struct SyntaxHighlight {
-    name: &'static str,
-    file_exts: &'static [&'static str],
+    lang: Language,
     string_quotes: &'static [char],
     number: bool,
     character: bool,
@@ -463,8 +507,7 @@ struct SyntaxHighlight {
 }
 
 const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
-    name: "plain",
-    file_exts: &[],
+    lang: Language::Plain,
     number: false,
     string_quotes: &[],
     character: false,
@@ -476,8 +519,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 };
 
 const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
-    name: "c",
-    file_exts: &["c", "h"],
+    lang: Language::C,
     number: true,
     string_quotes: &['"'],
     character: true,
@@ -497,8 +539,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 };
 
 const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
-    name: "rust",
-    file_exts: &["rs"],
+    lang: Language::Rust,
     number: true,
     string_quotes: &['"'],
     character: true,
@@ -519,8 +560,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 };
 
 const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
-    name: "javascript",
-    file_exts: &["js"],
+    lang: Language::JavaScript,
     number: true,
     string_quotes: &['"', '\''],
     character: false,
@@ -590,8 +630,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 };
 
 const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
-    name: "go",
-    file_exts: &["go"],
+    lang: Language::Go,
     number: true,
     string_quotes: &['"'],
     character: true,
@@ -659,15 +698,13 @@ const ALL_SYNTAX: &'static [&SyntaxHighlight] = &[
 ];
 
 impl SyntaxHighlight {
-    fn detect<P: AsRef<Path>>(path: P) -> &'static SyntaxHighlight {
-        if let Some(ext) = path.as_ref().extension().and_then(OsStr::to_str) {
-            for syntax in ALL_SYNTAX {
-                if syntax.file_exts.contains(&ext) {
-                    return syntax;
-                }
+    fn for_lang(lang: Language) -> &'static SyntaxHighlight {
+        for syntax in ALL_SYNTAX {
+            if lang == syntax.lang {
+                return syntax;
             }
         }
-        &PLAIN_SYNTAX
+        unreachable!()
     }
 }
 
@@ -692,7 +729,7 @@ impl Default for Highlighting {
 }
 
 impl Highlighting {
-    fn new<'a, R: Iterator<Item = &'a Row>, P: AsRef<Path>>(path: P, iter: R) -> Highlighting {
+    fn new<'a, R: Iterator<Item = &'a Row>>(lang: Language, iter: R) -> Highlighting {
         Highlighting {
             needs_update: true,
             previous_bottom_of_screen: 0,
@@ -704,16 +741,15 @@ impl Highlighting {
                 })
                 .collect(),
             matched: None,
-            syntax: SyntaxHighlight::detect(path.as_ref()),
+            syntax: SyntaxHighlight::for_lang(lang),
         }
     }
 
-    fn path_changed<P: AsRef<Path>>(&mut self, new_path: P) {
-        let syntax = SyntaxHighlight::detect(new_path.as_ref());
-        if self.syntax.name == syntax.name {
+    fn lang_changed(&mut self, new_lang: Language) {
+        if self.syntax.lang == new_lang {
             return;
         }
-        self.syntax = syntax;
+        self.syntax = SyntaxHighlight::for_lang(new_lang);
         self.needs_update = true;
     }
 
@@ -957,6 +993,9 @@ struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     quitting: bool,
     // Text search state
     finding: FindState,
+    // Language which current buffer belongs to
+    lang: Language,
+    // Syntax highlighting
     hl: Highlighting,
 }
 
@@ -979,6 +1018,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             dirty: false,
             quitting: false,
             finding: FindState::new(),
+            lang: Language::Plain,
             hl: Highlighting::default(),
         }
     }
@@ -1019,7 +1059,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let right = format!(
             "{} {} {}/{}",
             self.rowoff,
-            self.hl.syntax.name,
+            self.hl.syntax.lang.name(),
             self.cy,
             self.row.len()
         );
@@ -1167,7 +1207,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.row = vec![];
             self.dirty = true;
         }
-        self.hl = Highlighting::new(path, self.row.iter());
+        self.lang = Language::detect(path);
+        self.hl = Highlighting::new(self.lang, self.row.iter());
         self.file = Some(FilePath::from(path));
         Ok(())
     }
@@ -1179,7 +1220,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| {})?
             {
                 let file = FilePath::from_string(input);
-                self.hl.path_changed(&file.path);
+                self.lang = Language::detect(&file.path);
+                self.hl.lang_changed(self.lang);
                 self.file = Some(file);
                 create = true;
             }
@@ -1554,8 +1596,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     return Ok(AfterKeyPress::Quit);
                 } else {
                     self.quitting = true;
-                    self.message =
-                        StatusMessage::error("File has unsaved changes! Press ^Q again to quit");
+                    self.message = StatusMessage::error(
+                        "File has unsaved changes! Press ^Q again to quit or ^S to save",
+                    );
                     return Ok(AfterKeyPress::Nothing);
                 }
             }
