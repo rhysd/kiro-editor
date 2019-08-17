@@ -672,6 +672,8 @@ impl SyntaxHighlight {
 }
 
 struct Highlighting {
+    needs_update: bool,
+    previous_bottom_of_screen: usize,
     lines: Vec<Vec<Highlight>>,
     matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
     syntax: &'static SyntaxHighlight,
@@ -680,6 +682,8 @@ struct Highlighting {
 impl Default for Highlighting {
     fn default() -> Self {
         Highlighting {
+            needs_update: false,
+            previous_bottom_of_screen: 0,
             lines: vec![],
             matched: None,
             syntax: &PLAIN_SYNTAX,
@@ -690,6 +694,8 @@ impl Default for Highlighting {
 impl Highlighting {
     fn new<'a, R: Iterator<Item = &'a Row>, P: AsRef<Path>>(path: P, iter: R) -> Highlighting {
         Highlighting {
+            needs_update: true,
+            previous_bottom_of_screen: 0,
             lines: iter
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
@@ -702,16 +708,20 @@ impl Highlighting {
         }
     }
 
-    fn path_changed<P: AsRef<Path>>(&mut self, new_path: P, rows: &Vec<Row>) {
+    fn path_changed<P: AsRef<Path>>(&mut self, new_path: P) {
         let syntax = SyntaxHighlight::detect(new_path.as_ref());
         if self.syntax.name == syntax.name {
             return;
         }
         self.syntax = syntax;
-        self.update(rows);
+        self.needs_update = true;
     }
 
-    fn update(&mut self, rows: &Vec<Row>) {
+    fn update(&mut self, rows: &Vec<Row>, bottom_of_screen: usize) {
+        if !self.needs_update && bottom_of_screen <= self.previous_bottom_of_screen {
+            return;
+        }
+
         self.lines.resize_with(rows.len(), Default::default);
 
         fn is_sep(b: u8) -> bool {
@@ -732,7 +742,7 @@ impl Highlighting {
 
         let mut prev_quote = None;
         let mut in_block_comment = false;
-        for (y, ref row) in rows.iter().enumerate() {
+        for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
             self.lines[y].resize(row.render.as_bytes().len(), Highlight::Normal);
 
             let mut prev_hl = Highlight::Normal;
@@ -863,6 +873,9 @@ impl Highlighting {
                 prev_char = b;
             }
         }
+
+        self.needs_update = false;
+        self.previous_bottom_of_screen = bottom_of_screen;
     }
 
     fn set_match(&mut self, y: usize, start: usize, end: usize) {
@@ -1003,7 +1016,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             return Ok(());
         }
 
-        let right = format!("{} {}/{}", self.hl.syntax.name, self.cy, self.row.len());
+        let right = format!(
+            "{} {} {}/{}",
+            self.rowoff,
+            self.hl.syntax.name,
+            self.cy,
+            self.row.len()
+        );
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -1160,7 +1179,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| {})?
             {
                 let file = FilePath::from_string(input);
-                self.hl.path_changed(&file.path, &self.row);
+                self.hl.path_changed(&file.path);
                 self.file = Some(file);
                 create = true;
             }
@@ -1305,7 +1324,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.row[self.cy].insert_char(self.cx, ch);
         self.cx += 1;
         self.dirty = true;
-        self.hl.update(&self.row);
+        self.hl.needs_update = true;
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -1315,7 +1334,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cy -= 1; // Move cursor to previous line
         self.row[self.cy].append(row.buf);
         self.dirty = true;
-        self.hl.update(&self.row);
+        self.hl.needs_update = true;
     }
 
     fn delete_char(&mut self) -> Option<char> {
@@ -1326,7 +1345,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             let c = self.row[self.cy].delete_char(self.cx - 1);
             self.cx -= 1;
             self.dirty = true;
-            self.hl.update(&self.row);
+            self.hl.needs_update = true;
             c
         } else {
             self.squash_to_previous_line();
@@ -1350,7 +1369,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.row[self.cy].truncate(self.cx);
         }
         self.dirty = true;
-        self.hl.update(&self.row);
+        self.hl.needs_update = true;
     }
 
     fn delete_until_head_of_line(&mut self) {
@@ -1363,7 +1382,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.row[self.cy].remove(0, self.cx);
             self.cx = 0;
             self.dirty = true;
-            self.hl.update(&self.row);
+            self.hl.needs_update = true;
         }
     }
 
@@ -1386,7 +1405,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.row[self.cy].remove(x, self.cx);
             self.cx = x;
             self.dirty = true;
-            self.hl.update(&self.row);
+            self.hl.needs_update = true;
         }
     }
 
@@ -1402,7 +1421,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
         self.cy += 1;
         self.cx = 0;
-        self.hl.update(&self.row);
+        self.hl.needs_update = true;
     }
 
     fn move_cursor(&mut self, dir: CursorDir) {
@@ -1594,7 +1613,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         // Render first screen
         self.setup_scroll();
-        self.hl.update(&self.row);
+        self.hl.update(&self.row, self.rowoff + self.screen_rows);
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
@@ -1606,6 +1625,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 break;
             }
             self.setup_scroll();
+            self.hl.update(&self.row, self.rowoff + self.screen_rows);
             self.refresh_screen()?; // Update screen after keypress
         }
 
