@@ -4,6 +4,7 @@
 
 use std::cmp;
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::iter;
@@ -102,6 +103,34 @@ struct InputSeq {
     key: KeySeq,
     ctrl: bool,
     alt: bool,
+}
+
+impl fmt::Display for InputSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use KeySeq::*;
+        if self.ctrl {
+            write!(f, "C-")?;
+        }
+        if self.alt {
+            write!(f, "M-")?;
+        }
+        match self.key {
+            Unidentified => write!(f, "UNKNOWN"),
+            Key(b' ') => write!(f, "SPACE"),
+            Key(b) if b.is_ascii_control() => write!(f, "\\x{:x}", b),
+            Key(b) => write!(f, "{}", b as char),
+            LeftKey => write!(f, "LEFT"),
+            RightKey => write!(f, "RIGHT"),
+            UpKey => write!(f, "UP"),
+            DownKey => write!(f, "DOWN"),
+            PageUpKey => write!(f, "PAGEUP"),
+            PageDownKey => write!(f, "PAGEDOWN"),
+            HomeKey => write!(f, "HOME"),
+            EndKey => write!(f, "END"),
+            DeleteKey => write!(f, "DELETE"),
+            Cursor(_, _) => unreachable!(),
+        }
+    }
 }
 
 impl InputSeq {
@@ -1801,7 +1830,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 (0x7f, false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
                 (0x1b, false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
                 (b'\r', false, false) => self.insert_line(),
-                (b, false, false) if !b.is_ascii_control() => self.insert_char(b as char),
+                (byte, false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
                 (b'q', true, ..) => {
                     if !self.modified || self.quitting {
                         return Ok(AfterKeyPress::Quit);
@@ -1813,7 +1842,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                         return Ok(AfterKeyPress::Nothing);
                     }
                 }
-                _ => { /* Ignored (TODO: Add message) */ }
+                _ => self.message = StatusMessage::error(format!("Key '{}' not mapped", seq)),
             },
             UpKey => self.move_cursor(CursorDir::Up),
             LeftKey => self.move_cursor(CursorDir::Left),
