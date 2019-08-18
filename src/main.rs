@@ -1499,6 +1499,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.hl.needs_update = true;
     }
 
+    fn insert_tab(&mut self) {
+        match self.lang.indent() {
+            Indent::AsIs => self.insert_char('\t'),
+            Indent::Fixed(indent) => self.insert_str(indent),
+        }
+    }
+
     fn insert_str<S: AsRef<str>>(&mut self, s: S) {
         if self.cy == self.row.len() {
             self.row.push(Row::default());
@@ -1593,6 +1600,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
+    fn delete_right_char(&mut self) {
+        self.move_cursor(CursorDir::Right);
+        self.delete_char();
+    }
+
     fn insert_line(&mut self) {
         if self.cy >= self.row.len() {
             self.row.push(Row::new(""));
@@ -1650,6 +1662,38 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let len = self.row.get(self.cy).map(|r| r.buffer().len()).unwrap_or(0);
         if self.cx > len {
             self.cx = len;
+        }
+    }
+
+    fn move_page_cursor(&mut self, dir: CursorDir) {
+        match dir {
+            CursorDir::Up => {
+                self.cy = self.rowoff; // Set cursor to top of screen
+                for _ in 0..self.screen_rows {
+                    self.move_cursor(CursorDir::Up);
+                }
+            }
+            CursorDir::Down => {
+                // Set cursor to bottom of screen considering end of buffer
+                self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
+                for _ in 0..self.screen_rows {
+                    self.move_cursor(CursorDir::Down)
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn move_edge_cursor(&mut self, dir: CursorDir) {
+        // TODO: Add M-< and M->
+        match dir {
+            CursorDir::Left => self.cx = 0,
+            CursorDir::Right => {
+                if self.cy < self.row.len() {
+                    self.cx = self.row[self.cy].buffer().len();
+                }
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -1733,169 +1777,55 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn process_keypress(&mut self, seq: InputSeq) -> io::Result<AfterKeyPress> {
         use KeySeq::*;
 
-        match seq {
-            InputSeq {
-                key: Key(b'p'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: UpKey, .. } => self.move_cursor(CursorDir::Up),
-            InputSeq {
-                key: Key(b'b'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: LeftKey, .. } => self.move_cursor(CursorDir::Left),
-            InputSeq {
-                key: Key(b'n'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: DownKey, .. } => self.move_cursor(CursorDir::Down),
-            InputSeq {
-                key: Key(b'f'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: RightKey, .. } => self.move_cursor(CursorDir::Right),
-            InputSeq {
-                key: Key(b'v'),
-                alt: true,
-                ..
-            }
-            | InputSeq { key: PageUpKey, .. } => {
-                self.cy = self.rowoff; // Set cursor to top of screen
-                for _ in 0..self.screen_rows {
-                    self.move_cursor(CursorDir::Up);
+        match seq.key {
+            Key(key) => match (key, seq.ctrl, seq.alt) {
+                (b'p', true, false) => self.move_cursor(CursorDir::Up),
+                (b'b', true, false) => self.move_cursor(CursorDir::Left),
+                (b'n', true, false) => self.move_cursor(CursorDir::Down),
+                (b'f', true, false) => self.move_cursor(CursorDir::Right),
+                (b'v', true, false) => self.move_page_cursor(CursorDir::Down),
+                (b'a', true, false) => self.move_edge_cursor(CursorDir::Left),
+                (b'e', true, false) => self.move_edge_cursor(CursorDir::Right),
+                (b'd', true, false) => self.delete_right_char(),
+                (b'g', true, false) => self.find()?,
+                (b'h', true, false) => self.delete_char(),
+                (b'k', true, false) => self.delete_until_end_of_line(),
+                (b'u', true, false) => self.delete_until_head_of_line(),
+                (b'w', true, false) => self.delete_word(),
+                (b'l', true, false) => self.set_dirty_rows(self.rowoff), // Clear
+                (b's', true, false) => self.save()?,
+                (b'i', true, false) => self.insert_tab(),
+                (b'?', true, false) => self.message = StatusMessage::info(HELP_TEXT),
+                (b'v', false, true) => self.move_page_cursor(CursorDir::Up),
+                (0x08, false, false) => self.delete_char(), // Backspace
+                (0x7f, false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
+                (0x1b, false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
+                (b'\r', false, false) => self.insert_line(),
+                (b, false, false) if !b.is_ascii_control() => self.insert_char(b as char),
+                (b'q', true, ..) => {
+                    if !self.modified || self.quitting {
+                        return Ok(AfterKeyPress::Quit);
+                    } else {
+                        self.quitting = true;
+                        self.message = StatusMessage::error(
+                            "File has unsaved changes! Press ^Q again to quit or ^S to save",
+                        );
+                        return Ok(AfterKeyPress::Nothing);
+                    }
                 }
-            }
-            InputSeq {
-                key: Key(b'v'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq {
-                key: PageDownKey, ..
-            } => {
-                // Set cursor to bottom of screen considering end of buffer
-                self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
-                for _ in 0..self.screen_rows {
-                    self.move_cursor(CursorDir::Down)
-                }
-            }
-            InputSeq {
-                key: Key(b'a'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: HomeKey, .. } => self.cx = 0,
-            InputSeq {
-                key: Key(b'e'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: EndKey, .. } => {
-                if self.cy < self.row.len() {
-                    self.cx = self.row[self.cy].buffer().len();
-                }
-            }
-            InputSeq {
-                key: Key(b'd'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: DeleteKey, .. } => {
-                self.move_cursor(CursorDir::Right);
-                self.delete_char();
-            }
-            InputSeq {
-                key: Key(b'g'),
-                ctrl: true,
-                ..
-            } => self.find()?,
-            InputSeq {
-                key: Key(b'q'),
-                ctrl: true,
-                ..
-            } => {
-                if !self.modified || self.quitting {
-                    return Ok(AfterKeyPress::Quit);
-                } else {
-                    self.quitting = true;
-                    self.message = StatusMessage::error(
-                        "File has unsaved changes! Press ^Q again to quit or ^S to save",
-                    );
-                    return Ok(AfterKeyPress::Nothing);
-                }
-            }
-            InputSeq {
-                key: Key(b'\r'),
-                ctrl: false,
-                ..
-            }
-            | InputSeq {
-                key: Key(b'm'),
-                ctrl: true,
-                ..
-            } => self.insert_line(),
-            InputSeq {
-                key: Key(b'h'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: Key(0x08), .. }
-            | InputSeq { key: Key(0x7f), .. } => {
-                // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
-                self.delete_char();
-            }
-            InputSeq {
-                key: Key(b'k'),
-                ctrl: true,
-                ..
-            } => self.delete_until_end_of_line(),
-            InputSeq {
-                key: Key(b'u'),
-                ctrl: true,
-                ..
-            } => self.delete_until_head_of_line(),
-            InputSeq {
-                key: Key(b'w'),
-                ctrl: true,
-                ..
-            } => self.delete_word(),
-            InputSeq {
-                key: Key(b'l'),
-                ctrl: true,
-                ..
-            }
-            | InputSeq { key: Key(0x1b), .. } => self.set_dirty_rows(self.rowoff), // Redraw all lines
-            InputSeq {
-                key: Key(b'?'),
-                ctrl: true,
-                ..
-            } => {
-                self.message = StatusMessage::info(HELP_TEXT);
-            }
-            InputSeq {
-                key: Key(b's'),
-                ctrl: true,
-                ..
-            } => self.save()?,
-            InputSeq {
-                key: Key(b'i'),
-                ctrl: true,
-                alt: false,
-            } => match self.lang.indent() {
-                Indent::AsIs => self.insert_char('\t'),
-                Indent::Fixed(indent) => self.insert_str(indent),
+                _ => { /* Ignored (TODO: Add message) */ }
             },
-            InputSeq {
-                key: Key(b),
-                ctrl: false,
-                alt: false,
-            } if !b.is_ascii_control() => self.insert_char(b as char),
-            InputSeq { key: Key(..), .. } => { /* ignore other key inputs */ }
-            _ => unreachable!(),
+            UpKey => self.move_cursor(CursorDir::Up),
+            LeftKey => self.move_cursor(CursorDir::Left),
+            DownKey => self.move_cursor(CursorDir::Down),
+            RightKey => self.move_cursor(CursorDir::Right),
+            PageUpKey => self.move_page_cursor(CursorDir::Up),
+            PageDownKey => self.move_page_cursor(CursorDir::Down),
+            HomeKey => self.move_edge_cursor(CursorDir::Left),
+            EndKey => self.move_edge_cursor(CursorDir::Right),
+            DeleteKey => self.delete_right_char(),
+            Unidentified => unreachable!(),
+            Cursor(_, _) => unreachable!(),
         }
 
         self.quitting = false;
