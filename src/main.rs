@@ -98,27 +98,14 @@ enum KeySeq {
     Cursor(usize, usize), // Pseudo key
 }
 
-#[derive(PartialEq, Debug)]
-struct InputSeq {
-    key: KeySeq,
-    ctrl: bool,
-    alt: bool,
-}
-
-impl fmt::Display for InputSeq {
+impl fmt::Display for KeySeq {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use KeySeq::*;
-        if self.ctrl {
-            write!(f, "C-")?;
-        }
-        if self.alt {
-            write!(f, "M-")?;
-        }
-        match self.key {
+        match self {
             Unidentified => write!(f, "UNKNOWN"),
             Key(b' ') => write!(f, "SPACE"),
             Key(b) if b.is_ascii_control() => write!(f, "\\x{:x}", b),
-            Key(b) => write!(f, "{}", b as char),
+            Key(b) => write!(f, "{}", *b as char),
             LeftKey => write!(f, "LEFT"),
             RightKey => write!(f, "RIGHT"),
             UpKey => write!(f, "UP"),
@@ -128,9 +115,16 @@ impl fmt::Display for InputSeq {
             HomeKey => write!(f, "HOME"),
             EndKey => write!(f, "END"),
             DeleteKey => write!(f, "DELETE"),
-            Cursor(_, _) => unreachable!(),
+            Cursor(r, c) => write!(f, "CURSOR({},{})", r, c),
         }
     }
+}
+
+#[derive(PartialEq, Debug)]
+struct InputSeq {
+    key: KeySeq,
+    ctrl: bool,
+    alt: bool,
 }
 
 impl InputSeq {
@@ -1803,58 +1797,66 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         })
     }
 
-    fn process_keypress(&mut self, seq: InputSeq) -> io::Result<AfterKeyPress> {
+    fn handle_quit(&mut self) -> io::Result<AfterKeyPress> {
+        if !self.modified || self.quitting {
+            Ok(AfterKeyPress::Quit)
+        } else {
+            self.quitting = true;
+            self.message = StatusMessage::error(
+                "File has unsaved changes! Press ^Q again to quit or ^S to save",
+            );
+            Ok(AfterKeyPress::Nothing)
+        }
+    }
+
+    fn process_keypress(&mut self, s: InputSeq) -> io::Result<AfterKeyPress> {
         use KeySeq::*;
 
-        match seq.key {
-            Key(key) => match (key, seq.ctrl, seq.alt) {
-                (b'p', true, false) => self.move_cursor(CursorDir::Up),
-                (b'b', true, false) => self.move_cursor(CursorDir::Left),
-                (b'n', true, false) => self.move_cursor(CursorDir::Down),
-                (b'f', true, false) => self.move_cursor(CursorDir::Right),
-                (b'v', true, false) => self.move_page_cursor(CursorDir::Down),
-                (b'a', true, false) => self.move_edge_cursor(CursorDir::Left),
-                (b'e', true, false) => self.move_edge_cursor(CursorDir::Right),
-                (b'd', true, false) => self.delete_right_char(),
-                (b'g', true, false) => self.find()?,
-                (b'h', true, false) => self.delete_char(),
-                (b'k', true, false) => self.delete_until_end_of_line(),
-                (b'u', true, false) => self.delete_until_head_of_line(),
-                (b'w', true, false) => self.delete_word(),
-                (b'l', true, false) => self.set_dirty_rows(self.rowoff), // Clear
-                (b's', true, false) => self.save()?,
-                (b'i', true, false) => self.insert_tab(),
-                (b'?', true, false) => self.message = StatusMessage::info(HELP_TEXT),
-                (b'v', false, true) => self.move_page_cursor(CursorDir::Up),
-                (0x08, false, false) => self.delete_char(), // Backspace
-                (0x7f, false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
-                (0x1b, false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
-                (b'\r', false, false) => self.insert_line(),
-                (byte, false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
-                (b'q', true, ..) => {
-                    if !self.modified || self.quitting {
-                        return Ok(AfterKeyPress::Quit);
-                    } else {
-                        self.quitting = true;
-                        self.message = StatusMessage::error(
-                            "File has unsaved changes! Press ^Q again to quit or ^S to save",
-                        );
-                        return Ok(AfterKeyPress::Nothing);
-                    }
-                }
-                _ => self.message = StatusMessage::error(format!("Key '{}' not mapped", seq)),
-            },
-            UpKey => self.move_cursor(CursorDir::Up),
-            LeftKey => self.move_cursor(CursorDir::Left),
-            DownKey => self.move_cursor(CursorDir::Down),
-            RightKey => self.move_cursor(CursorDir::Right),
-            PageUpKey => self.move_page_cursor(CursorDir::Up),
-            PageDownKey => self.move_page_cursor(CursorDir::Down),
-            HomeKey => self.move_edge_cursor(CursorDir::Left),
-            EndKey => self.move_edge_cursor(CursorDir::Right),
-            DeleteKey => self.delete_right_char(),
-            Unidentified => unreachable!(),
-            Cursor(_, _) => unreachable!(),
+        match (s.key, s.ctrl, s.alt) {
+            (Key(b'p'), true, false) => self.move_cursor(CursorDir::Up),
+            (Key(b'b'), true, false) => self.move_cursor(CursorDir::Left),
+            (Key(b'n'), true, false) => self.move_cursor(CursorDir::Down),
+            (Key(b'f'), true, false) => self.move_cursor(CursorDir::Right),
+            (Key(b'v'), true, false) => self.move_page_cursor(CursorDir::Down),
+            (Key(b'a'), true, false) => self.move_edge_cursor(CursorDir::Left),
+            (Key(b'e'), true, false) => self.move_edge_cursor(CursorDir::Right),
+            (Key(b'd'), true, false) => self.delete_right_char(),
+            (Key(b'g'), true, false) => self.find()?,
+            (Key(b'h'), true, false) => self.delete_char(),
+            (Key(b'k'), true, false) => self.delete_until_end_of_line(),
+            (Key(b'u'), true, false) => self.delete_until_head_of_line(),
+            (Key(b'w'), true, false) => self.delete_word(),
+            (Key(b'l'), true, false) => self.set_dirty_rows(self.rowoff), // Clear
+            (Key(b's'), true, false) => self.save()?,
+            (Key(b'i'), true, false) => self.insert_tab(),
+            (Key(b'?'), true, false) => self.message = StatusMessage::info(HELP_TEXT),
+            (Key(b'v'), false, true) => self.move_page_cursor(CursorDir::Up),
+            (Key(0x08), false, false) => self.delete_char(), // Backspace
+            (Key(0x7f), false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
+            (Key(0x1b), false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
+            (Key(b'\r'), false, false) => self.insert_line(),
+            (Key(byte), false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
+            (Key(b'q'), true, ..) => return self.handle_quit(),
+            (UpKey, false, false) => self.move_cursor(CursorDir::Up),
+            (LeftKey, false, false) => self.move_cursor(CursorDir::Left),
+            (DownKey, false, false) => self.move_cursor(CursorDir::Down),
+            (RightKey, false, false) => self.move_cursor(CursorDir::Right),
+            (PageUpKey, false, false) => self.move_page_cursor(CursorDir::Up),
+            (PageDownKey, false, false) => self.move_page_cursor(CursorDir::Down),
+            (HomeKey, false, false) => self.move_edge_cursor(CursorDir::Left),
+            (EndKey, false, false) => self.move_edge_cursor(CursorDir::Right),
+            (DeleteKey, false, false) => self.delete_right_char(),
+            (Unidentified, ..) => unreachable!(),
+            (Cursor(_, _), ..) => unreachable!(),
+            (key, ctrl, alt) => {
+                let m = match (ctrl, alt) {
+                    (true, true) => "C-M-",
+                    (true, false) => "C-",
+                    (false, true) => "M-",
+                    (false, false) => "",
+                };
+                self.message = StatusMessage::error(format!("Key '{}{}' not mapped", m, key))
+            }
         }
 
         self.quitting = false;
