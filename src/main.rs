@@ -128,10 +128,18 @@ struct InputSeq {
 }
 
 impl InputSeq {
-    fn key(key: KeySeq) -> Self {
+    fn new(key: KeySeq) -> Self {
         Self {
             key,
             ctrl: false,
+            alt: false,
+        }
+    }
+
+    fn ctrl(key: KeySeq) -> Self {
+        Self {
+            key,
+            ctrl: true,
             alt: false,
         }
     }
@@ -166,10 +174,10 @@ impl InputSequences {
         // TODO?: Should we consider sequences not starting with '['?
         match self.read_byte()? {
             b'[' => { /* fall throught */ }
-            0 => return Ok(InputSeq::key(Key(0x1b))),
+            0 => return Ok(InputSeq::new(Key(0x1b))),
             b if b.is_ascii_control() => {
                 // Ignore control characters after ESC
-                return Ok(InputSeq::key(Key(0x1b)));
+                return Ok(InputSeq::new(Key(0x1b)));
             }
             b => {
                 let mut seq = self.decode(b)?;
@@ -182,6 +190,8 @@ impl InputSequences {
         // of sequence with blocking
         let mut buf = vec![];
         let cmd = loop {
+            // XXX: Typing ESC -> [ very quickly makes this program hang in this loop. Some kind of
+            // loop limit would be necessary
             let b = self.read_blocking()?;
             match b {
                 // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
@@ -200,36 +210,48 @@ impl InputSequences {
         };
 
         let mut args = buf.split(|b| *b == b';');
-        let key = match cmd {
+        match cmd {
             b'R' => {
                 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
                 let mut i =
                     args.map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
                 match (i.next(), i.next()) {
-                    (Some(Some(r)), Some(Some(c))) => Ok(Cursor(r, c)),
-                    _ => Ok(Unidentified),
+                    (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::new(Cursor(r, c))),
+                    _ => Ok(InputSeq::new(Unidentified)),
                 }
             }
-            b'A' => Ok(UpKey),
-            b'B' => Ok(DownKey),
-            b'C' => Ok(RightKey),
-            b'D' => Ok(LeftKey),
+            // e.g. <LEFT> => \x1b[C
+            // e.g. C-<LEFT> => \x1b[1;5C
+            b'A' | b'B' | b'C' | b'D' => {
+                let key = match cmd {
+                    b'A' => UpKey,
+                    b'B' => DownKey,
+                    b'C' => RightKey,
+                    b'D' => LeftKey,
+                    _ => unreachable!(),
+                };
+                let ctrl = args.next() == Some(b"1") && args.next() == Some(b"5");
+                Ok(InputSeq {
+                    key,
+                    ctrl,
+                    alt: false,
+                })
+            }
             b'~' => {
                 // e.g. \x1b[5~
                 match args.next() {
-                    Some(b"5") => Ok(PageUpKey),
-                    Some(b"6") => Ok(PageDownKey),
-                    Some(b"1") | Some(b"7") => Ok(HomeKey),
-                    Some(b"4") | Some(b"8") => Ok(EndKey),
-                    Some(b"3") => Ok(DeleteKey),
-                    _ => Ok(Unidentified),
+                    Some(b"5") => Ok(InputSeq::new(PageUpKey)),
+                    Some(b"6") => Ok(InputSeq::new(PageDownKey)),
+                    Some(b"1") | Some(b"7") => Ok(InputSeq::new(HomeKey)),
+                    Some(b"4") | Some(b"8") => Ok(InputSeq::new(EndKey)),
+                    Some(b"3") => Ok(InputSeq::new(DeleteKey)),
+                    _ => Ok(InputSeq::new(Unidentified)),
                 }
             }
-            b'H' => Ok(HomeKey),
-            b'F' => Ok(EndKey),
+            b'H' => Ok(InputSeq::new(HomeKey)),
+            b'F' => Ok(InputSeq::new(EndKey)),
             _ => unreachable!(),
-        };
-        key.map(InputSeq::key)
+        }
     }
 
     fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
@@ -238,21 +260,13 @@ impl InputSequences {
             // (Maybe) Escape sequence
             0x1b => self.decode_escape_sequence(),
             // Ascii key inputs
-            0x20..=0x7f => Ok(InputSeq::key(Key(b))),
+            0x20..=0x7f => Ok(InputSeq::new(Key(b))),
             // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
             // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x01..=0x1e => Ok(InputSeq {
-                key: Key(b | 0b1100000),
-                ctrl: true,
-                alt: false,
-            }),
+            0x01..=0x1e => Ok(InputSeq::ctrl(Key(b | 0b1100000))),
             // Ctrl-?
-            0x1f => Ok(InputSeq {
-                key: Key(b | 0b0100000),
-                ctrl: true,
-                alt: false,
-            }),
-            _ => Ok(InputSeq::key(Unidentified)),
+            0x1f => Ok(InputSeq::ctrl(Key(b | 0b0100000))),
+            _ => Ok(InputSeq::new(Unidentified)),
             // TODO: 0x80..=0xff => { ... } Handle UTF-8
         }
     }
@@ -1040,6 +1054,7 @@ impl FindState {
     }
 }
 
+#[derive(Clone, Copy)]
 enum CursorDir {
     Left,
     Right,
@@ -1206,7 +1221,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
 
-            if y < row_len && !self.row[file_row].dirty {
+            if file_row < row_len && !self.row[file_row].dirty {
                 continue;
             }
 
@@ -1283,7 +1298,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn refresh_screen(&mut self) -> io::Result<()> {
-        self.setup_scroll();
+        self.do_scroll();
         self.hl.update(&self.row, self.rowoff + self.screen_rows);
         self.redraw_screen()?;
 
@@ -1416,7 +1431,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // character which is rendered differently (e.g. tab character)
                 self.cy = y;
                 self.cx = self.row[y].cx_from_rx(rx);
-                // Cause setup_scroll() to scroll upwards to the matching line at next screen redraw
+                // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.rowoff = row_len;
                 self.finding.last_match = Some(y);
                 // This refresh is necessary because highlight must be updated before saving highlights
@@ -1461,7 +1476,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
-    fn setup_scroll(&mut self) {
+    fn do_scroll(&mut self) {
         let prev_rowoff = self.rowoff;
         let prev_coloff = self.coloff;
 
@@ -1606,7 +1621,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn delete_right_char(&mut self) {
-        self.move_cursor(CursorDir::Right);
+        self.move_cursor_one(CursorDir::Right);
         self.delete_char();
     }
 
@@ -1628,7 +1643,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.set_dirty_rows(self.cy);
     }
 
-    fn move_cursor(&mut self, dir: CursorDir) {
+    fn move_cursor_one(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => self.cy = self.cy.saturating_sub(1),
             CursorDir::Left => {
@@ -1670,27 +1685,26 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
-    fn move_page_cursor(&mut self, dir: CursorDir) {
+    fn move_cursor_per_page(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => {
                 self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
-                    self.move_cursor(CursorDir::Up);
+                    self.move_cursor_one(CursorDir::Up);
                 }
             }
             CursorDir::Down => {
                 // Set cursor to bottom of screen considering end of buffer
                 self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
                 for _ in 0..self.screen_rows {
-                    self.move_cursor(CursorDir::Down)
+                    self.move_cursor_one(CursorDir::Down)
                 }
             }
             _ => unreachable!(),
         }
     }
 
-    fn move_edge_cursor(&mut self, dir: CursorDir) {
-        // TODO: Add M-< and M->
+    fn move_cursor_to_buffer_edge(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Left => self.cx = 0,
             CursorDir::Right => {
@@ -1698,7 +1712,68 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     self.cx = self.row[self.cy].buffer().len();
                 }
             }
-            _ => unreachable!(),
+            CursorDir::Up => self.cy = 0,
+            CursorDir::Down => self.cy = self.row.len(),
+        }
+    }
+
+    fn move_cursor_by_word(&mut self, dir: CursorDir) {
+        #[derive(PartialEq)]
+        enum CharKind {
+            Ident,
+            Punc,
+            Space,
+        }
+
+        impl CharKind {
+            fn new_at(rows: &Vec<Row>, x: usize, y: usize) -> Self {
+                rows.get(y)
+                    .and_then(|r| r.buffer().get(x))
+                    .map(|b| {
+                        if b.is_ascii_whitespace() {
+                            CharKind::Space
+                        } else if *b == b'_' || b.is_ascii_alphanumeric() {
+                            CharKind::Ident
+                        } else {
+                            CharKind::Punc
+                        }
+                    })
+                    .unwrap_or(CharKind::Space)
+            }
+        }
+
+        fn at_word_start(left: &CharKind, right: &CharKind) -> bool {
+            match (left, right) {
+                (&CharKind::Space, &CharKind::Ident)
+                | (&CharKind::Space, &CharKind::Punc)
+                | (&CharKind::Punc, &CharKind::Ident)
+                | (&CharKind::Ident, &CharKind::Punc) => true,
+                _ => false,
+            }
+        }
+
+        self.move_cursor_one(dir);
+        let mut prev = CharKind::new_at(&self.row, self.cx, self.cy);
+        self.move_cursor_one(dir);
+        let mut current = CharKind::new_at(&self.row, self.cx, self.cy);
+
+        loop {
+            if self.cy == 0 && self.cx == 0 || self.cy == self.row.len() {
+                return;
+            }
+
+            match dir {
+                CursorDir::Right if at_word_start(&prev, &current) => return,
+                CursorDir::Left if at_word_start(&current, &prev) => {
+                    self.move_cursor_one(CursorDir::Right); // Adjust cursor position to start of word
+                    return;
+                }
+                _ => {}
+            }
+
+            prev = current;
+            self.move_cursor_one(dir);
+            current = CharKind::new_at(&self.row, self.cx, self.cy);
         }
     }
 
@@ -1768,13 +1843,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         use KeySeq::*;
 
         match (s.key, s.ctrl, s.alt) {
-            (Key(b'p'), true, false) => self.move_cursor(CursorDir::Up),
-            (Key(b'b'), true, false) => self.move_cursor(CursorDir::Left),
-            (Key(b'n'), true, false) => self.move_cursor(CursorDir::Down),
-            (Key(b'f'), true, false) => self.move_cursor(CursorDir::Right),
-            (Key(b'v'), true, false) => self.move_page_cursor(CursorDir::Down),
-            (Key(b'a'), true, false) => self.move_edge_cursor(CursorDir::Left),
-            (Key(b'e'), true, false) => self.move_edge_cursor(CursorDir::Right),
+            (Key(b'p'), true, false) => self.move_cursor_one(CursorDir::Up),
+            (Key(b'b'), true, false) => self.move_cursor_one(CursorDir::Left),
+            (Key(b'n'), true, false) => self.move_cursor_one(CursorDir::Down),
+            (Key(b'f'), true, false) => self.move_cursor_one(CursorDir::Right),
+            (Key(b'v'), true, false) => self.move_cursor_per_page(CursorDir::Down),
+            (Key(b'a'), true, false) => self.move_cursor_to_buffer_edge(CursorDir::Left),
+            (Key(b'e'), true, false) => self.move_cursor_to_buffer_edge(CursorDir::Right),
             (Key(b'd'), true, false) => self.delete_right_char(),
             (Key(b'g'), true, false) => self.find()?,
             (Key(b'h'), true, false) => self.delete_char(),
@@ -1785,22 +1860,30 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b's'), true, false) => self.save()?,
             (Key(b'i'), true, false) => self.insert_tab(),
             (Key(b'?'), true, false) => self.message = StatusMessage::info(HELP_TEXT),
-            (Key(b'v'), false, true) => self.move_page_cursor(CursorDir::Up),
+            (Key(b'v'), false, true) => self.move_cursor_per_page(CursorDir::Up),
+            (Key(b'f'), false, true) => self.move_cursor_by_word(CursorDir::Right),
+            (Key(b'b'), false, true) => self.move_cursor_by_word(CursorDir::Left),
+            (Key(b'<'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Up),
+            (Key(b'>'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Down),
             (Key(0x08), false, false) => self.delete_char(), // Backspace
             (Key(0x7f), false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
             (Key(0x1b), false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
             (Key(b'\r'), false, false) => self.insert_line(),
             (Key(byte), false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
             (Key(b'q'), true, ..) => return self.handle_quit(),
-            (UpKey, false, false) => self.move_cursor(CursorDir::Up),
-            (LeftKey, false, false) => self.move_cursor(CursorDir::Left),
-            (DownKey, false, false) => self.move_cursor(CursorDir::Down),
-            (RightKey, false, false) => self.move_cursor(CursorDir::Right),
-            (PageUpKey, false, false) => self.move_page_cursor(CursorDir::Up),
-            (PageDownKey, false, false) => self.move_page_cursor(CursorDir::Down),
-            (HomeKey, false, false) => self.move_edge_cursor(CursorDir::Left),
-            (EndKey, false, false) => self.move_edge_cursor(CursorDir::Right),
+            (UpKey, false, false) => self.move_cursor_one(CursorDir::Up),
+            (LeftKey, false, false) => self.move_cursor_one(CursorDir::Left),
+            (DownKey, false, false) => self.move_cursor_one(CursorDir::Down),
+            (RightKey, false, false) => self.move_cursor_one(CursorDir::Right),
+            (PageUpKey, false, false) => self.move_cursor_per_page(CursorDir::Up),
+            (PageDownKey, false, false) => self.move_cursor_per_page(CursorDir::Down),
+            (HomeKey, false, false) => self.move_cursor_to_buffer_edge(CursorDir::Left),
+            (EndKey, false, false) => self.move_cursor_to_buffer_edge(CursorDir::Right),
             (DeleteKey, false, false) => self.delete_right_char(),
+            (LeftKey, true, false) => self.move_cursor_by_word(CursorDir::Left),
+            (RightKey, true, false) => self.move_cursor_by_word(CursorDir::Right),
+            (LeftKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Left),
+            (RightKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Right),
             (Unidentified, ..) => unreachable!(),
             (Cursor(_, _), ..) => unreachable!(),
             (key, ctrl, alt) => {
