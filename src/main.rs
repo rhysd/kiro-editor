@@ -1369,7 +1369,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(())
     }
 
-    fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) -> io::Result<()> {
+    fn on_incremental_find(&mut self, query: &str, seq: InputSeq, end: bool) -> io::Result<()> {
         use KeySeq::*;
 
         if self.finding.last_match.is_some() {
@@ -1382,31 +1382,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             return Ok(());
         }
 
-        match key {
-            InputSeq { key: RightKey, .. }
-            | InputSeq { key: DownKey, .. }
-            | InputSeq {
-                key: Key(b'f'),
-                ctrl: true,
-                ..
+        match (seq.key, seq.ctrl, seq.alt) {
+            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true, ..) | (Key(b'n'), true, ..) => {
+                self.finding.dir = FindDir::Forward
             }
-            | InputSeq {
-                key: Key(b'n'),
-                ctrl: true,
-                ..
-            } => self.finding.dir = FindDir::Forward,
-            InputSeq { key: LeftKey, .. }
-            | InputSeq { key: UpKey, .. }
-            | InputSeq {
-                key: Key(b'b'),
-                ctrl: true,
-                ..
+            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true, ..) | (Key(b'p'), true, ..) => {
+                self.finding.dir = FindDir::Back
             }
-            | InputSeq {
-                key: Key(b'p'),
-                ctrl: true,
-                ..
-            } => self.finding.dir = FindDir::Back,
             _ => self.finding = FindState::new(),
         }
 
@@ -1734,52 +1716,25 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         while let Some(seq) = self.input.next() {
             use KeySeq::*;
 
-            let key = seq?;
+            let seq = seq?;
             let mut finished = false;
-            match key {
-                InputSeq {
-                    key: Unidentified, ..
-                } => continue,
-                InputSeq {
-                    key: Key(b'h'),
-                    ctrl: true,
-                    ..
-                }
-                | InputSeq { key: Key(0x7f), .. }
-                | InputSeq { key: DeleteKey, .. }
-                    if !buf.is_empty() =>
-                {
+            match (&seq.key, seq.ctrl, seq.alt) {
+                (&Unidentified, ..) => continue,
+                (&Key(b'h'), true, ..) | (&Key(0x7f), ..) | (&DeleteKey, ..) if !buf.is_empty() => {
                     buf.pop();
                 }
-                InputSeq {
-                    key: Key(b'g'),
-                    ctrl: true,
-                    ..
-                }
-                | InputSeq {
-                    key: Key(b'q'),
-                    ctrl: true,
-                    ..
-                }
-                | InputSeq { key: Key(0x1b), .. } => {
+                (&Key(b'g'), true, ..) | (&Key(b'q'), true, ..) | (&Key(0x1b), ..) => {
                     finished = true;
                     canceled = true;
                 }
-                InputSeq {
-                    key: Key(b'\r'), ..
-                }
-                | InputSeq {
-                    key: Key(b'm'),
-                    ctrl: true,
-                    ..
-                } => {
+                (&Key(b'\r'), ..) | (&Key(b'm'), true, ..) => {
                     finished = true;
                 }
-                InputSeq { key: Key(b), .. } => buf.push(b as char),
+                (&Key(b), ..) => buf.push(b as char),
                 _ => {}
             }
 
-            incremental_callback(self, buf.as_str(), key, finished)?;
+            incremental_callback(self, buf.as_str(), seq, finished)?;
             if finished {
                 break;
             }
