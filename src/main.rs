@@ -55,10 +55,7 @@ impl StdinRawMode {
     }
 
     fn input_keys(self) -> InputSequences {
-        InputSequences {
-            stdin: self,
-            next_byte: 0,
-        }
+        InputSequences { stdin: self }
     }
 }
 
@@ -84,10 +81,10 @@ impl DerefMut for StdinRawMode {
 }
 
 #[derive(PartialEq, Debug)]
-enum InputSeq {
+enum KeySeq {
     Unidentified,
     // TODO: Add Utf8Key(char),
-    Key(u8, bool), // Char code and ctrl mod
+    Key(u8), // Char code and ctrl mod
     LeftKey,
     RightKey,
     UpKey,
@@ -97,12 +94,28 @@ enum InputSeq {
     HomeKey,
     EndKey,
     DeleteKey,
-    Cursor(usize, usize),
+    Cursor(usize, usize), // Pseudo key
+}
+
+#[derive(PartialEq, Debug)]
+struct InputSeq {
+    key: KeySeq,
+    ctrl: bool,
+    alt: bool,
+}
+
+impl InputSeq {
+    fn key(key: KeySeq) -> Self {
+        Self {
+            key,
+            ctrl: false,
+            alt: false,
+        }
+    }
 }
 
 struct InputSequences {
     stdin: StdinRawMode,
-    next_byte: u8, // Reading sequence sometimes requires looking ahead 1 byte
 }
 
 impl InputSequences {
@@ -123,15 +136,22 @@ impl InputSequences {
     }
 
     fn decode_escape_sequence(&mut self) -> io::Result<InputSeq> {
+        use KeySeq::*;
+
         // Try to read expecting '[' as escape sequence header. Note that, if next input does
         // not arrive within next tick, it means that it is not an escape sequence.
         // TODO?: Should we consider sequences not starting with '['?
         match self.read_byte()? {
             b'[' => { /* fall throught */ }
-            0 => return Ok(InputSeq::Key(0x1b, false)),
+            0 => return Ok(InputSeq::key(Key(0x1b))),
+            b if b.is_ascii_control() => {
+                // Ignore control characters after ESC
+                return Ok(InputSeq::key(Key(0x1b)));
+            }
             b => {
-                self.next_byte = b; // Already read the next byte so remember it
-                return Ok(InputSeq::Key(0x1b, false));
+                let mut seq = self.decode(b)?;
+                seq.alt = true;
+                return Ok(seq);
             }
         };
 
@@ -157,60 +177,65 @@ impl InputSequences {
         };
 
         let mut args = buf.split(|b| *b == b';');
-        match cmd {
+        let key = match cmd {
             b'R' => {
                 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
                 let mut i =
                     args.map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
                 match (i.next(), i.next()) {
-                    (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::Cursor(r, c)),
-                    _ => Ok(InputSeq::Unidentified),
+                    (Some(Some(r)), Some(Some(c))) => Ok(Cursor(r, c)),
+                    _ => Ok(Unidentified),
                 }
             }
-            b'A' => Ok(InputSeq::UpKey),
-            b'B' => Ok(InputSeq::DownKey),
-            b'C' => Ok(InputSeq::RightKey),
-            b'D' => Ok(InputSeq::LeftKey),
+            b'A' => Ok(UpKey),
+            b'B' => Ok(DownKey),
+            b'C' => Ok(RightKey),
+            b'D' => Ok(LeftKey),
             b'~' => {
                 // e.g. \x1b[5~
                 match args.next() {
-                    Some(b"5") => Ok(InputSeq::PageUpKey),
-                    Some(b"6") => Ok(InputSeq::PageDownKey),
-                    Some(b"1") | Some(b"7") => Ok(InputSeq::HomeKey),
-                    Some(b"4") | Some(b"8") => Ok(InputSeq::EndKey),
-                    Some(b"3") => Ok(InputSeq::DeleteKey),
-                    _ => Ok(InputSeq::Unidentified),
+                    Some(b"5") => Ok(PageUpKey),
+                    Some(b"6") => Ok(PageDownKey),
+                    Some(b"1") | Some(b"7") => Ok(HomeKey),
+                    Some(b"4") | Some(b"8") => Ok(EndKey),
+                    Some(b"3") => Ok(DeleteKey),
+                    _ => Ok(Unidentified),
                 }
             }
-            b'H' => Ok(InputSeq::HomeKey),
-            b'F' => Ok(InputSeq::EndKey),
+            b'H' => Ok(HomeKey),
+            b'F' => Ok(EndKey),
             _ => unreachable!(),
-        }
+        };
+        key.map(InputSeq::key)
     }
 
     fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
+        use KeySeq::*;
         match b {
             // (Maybe) Escape sequence
             0x1b => self.decode_escape_sequence(),
             // Ascii key inputs
-            0x20..=0x7f => Ok(InputSeq::Key(b, false)),
+            0x20..=0x7f => Ok(InputSeq::key(Key(b))),
             // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
             // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x01..=0x1e => Ok(InputSeq::Key(b | 0b1100000, true)),
+            0x01..=0x1e => Ok(InputSeq {
+                key: Key(b | 0b1100000),
+                ctrl: true,
+                alt: false,
+            }),
             // Ctrl-?
-            0x1f => Ok(InputSeq::Key(b | 0b0100000, true)),
-            _ => Ok(InputSeq::Unidentified), // TODO: 0x80..=0xff => { ... } Handle UTF-8
+            0x1f => Ok(InputSeq {
+                key: Key(b | 0b0100000),
+                ctrl: true,
+                alt: false,
+            }),
+            _ => Ok(InputSeq::key(Unidentified)),
+            // TODO: 0x80..=0xff => { ... } Handle UTF-8
         }
     }
 
     fn read_seq(&mut self) -> io::Result<InputSeq> {
-        let b = match self.next_byte {
-            0 => self.read_byte()?,
-            b => {
-                self.next_byte = 0; // Next byte was read for looking ahead
-                b
-            }
-        };
+        let b = self.read_byte()?;
         self.decode(b)
     }
 }
@@ -1322,7 +1347,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn on_incremental_find(&mut self, query: &str, key: InputSeq, end: bool) -> io::Result<()> {
-        use InputSeq::*;
+        use KeySeq::*;
 
         if self.finding.last_match.is_some() {
             if let Some(y) = self.hl.clear_previous_match() {
@@ -1335,10 +1360,30 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         match key {
-            RightKey | DownKey | Key(b'f', true) | Key(b'n', true) => {
-                self.finding.dir = FindDir::Forward
+            InputSeq { key: RightKey, .. }
+            | InputSeq { key: DownKey, .. }
+            | InputSeq {
+                key: Key(b'f'),
+                ctrl: true,
+                ..
             }
-            LeftKey | UpKey | Key(b'b', true) | Key(b'p', true) => self.finding.dir = FindDir::Back,
+            | InputSeq {
+                key: Key(b'n'),
+                ctrl: true,
+                ..
+            } => self.finding.dir = FindDir::Forward,
+            InputSeq { key: LeftKey, .. }
+            | InputSeq { key: UpKey, .. }
+            | InputSeq {
+                key: Key(b'b'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq {
+                key: Key(b'p'),
+                ctrl: true,
+                ..
+            } => self.finding.dir = FindDir::Back,
             _ => self.finding = FindState::new(),
         }
 
@@ -1620,22 +1665,50 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
-            use InputSeq::*;
+            use KeySeq::*;
+
             let key = seq?;
             let mut finished = false;
             match key {
-                Unidentified => continue,
-                Key(b'h', true) | Key(0x7f, false) | DeleteKey if !buf.is_empty() => {
+                InputSeq {
+                    key: Unidentified, ..
+                } => continue,
+                InputSeq {
+                    key: Key(b'h'),
+                    ctrl: true,
+                    ..
+                }
+                | InputSeq { key: Key(0x7f), .. }
+                | InputSeq { key: DeleteKey, .. }
+                    if !buf.is_empty() =>
+                {
                     buf.pop();
                 }
-                Key(b'g', true) | Key(b'q', true) | Key(0x1b, false) => {
+                InputSeq {
+                    key: Key(b'g'),
+                    ctrl: true,
+                    ..
+                }
+                | InputSeq {
+                    key: Key(b'q'),
+                    ctrl: true,
+                    ..
+                }
+                | InputSeq { key: Key(0x1b), .. } => {
                     finished = true;
                     canceled = true;
                 }
-                Key(b'\r', false) | Key(b'm', true) => {
+                InputSeq {
+                    key: Key(b'\r'), ..
+                }
+                | InputSeq {
+                    key: Key(b'm'),
+                    ctrl: true,
+                    ..
+                } => {
                     finished = true;
                 }
-                Key(b, false) => buf.push(b as char),
+                InputSeq { key: Key(b), .. } => buf.push(b as char),
                 _ => {}
             }
 
@@ -1658,38 +1731,93 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn process_keypress(&mut self, seq: InputSeq) -> io::Result<AfterKeyPress> {
-        use InputSeq::*;
+        use KeySeq::*;
 
         match seq {
-            Key(b'p', true) | UpKey => self.move_cursor(CursorDir::Up),
-            Key(b'b', true) | LeftKey => self.move_cursor(CursorDir::Left),
-            Key(b'n', true) | DownKey => self.move_cursor(CursorDir::Down),
-            Key(b'f', true) | RightKey => self.move_cursor(CursorDir::Right),
-            Key(b'y', true) | PageUpKey => {
+            InputSeq {
+                key: Key(b'p'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: UpKey, .. } => self.move_cursor(CursorDir::Up),
+            InputSeq {
+                key: Key(b'b'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: LeftKey, .. } => self.move_cursor(CursorDir::Left),
+            InputSeq {
+                key: Key(b'n'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: DownKey, .. } => self.move_cursor(CursorDir::Down),
+            InputSeq {
+                key: Key(b'f'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: RightKey, .. } => self.move_cursor(CursorDir::Right),
+            InputSeq {
+                key: Key(b'v'),
+                alt: true,
+                ..
+            }
+            | InputSeq { key: PageUpKey, .. } => {
                 self.cy = self.rowoff; // Set cursor to top of screen
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Up);
                 }
             }
-            Key(b'v', true) | PageDownKey => {
+            InputSeq {
+                key: Key(b'v'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq {
+                key: PageDownKey, ..
+            } => {
                 // Set cursor to bottom of screen considering end of buffer
                 self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
                 for _ in 0..self.screen_rows {
                     self.move_cursor(CursorDir::Down)
                 }
             }
-            Key(b'a', true) | HomeKey => self.cx = 0,
-            Key(b'e', true) | EndKey => {
+            InputSeq {
+                key: Key(b'a'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: HomeKey, .. } => self.cx = 0,
+            InputSeq {
+                key: Key(b'e'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: EndKey, .. } => {
                 if self.cy < self.row.len() {
                     self.cx = self.row[self.cy].buffer().len();
                 }
             }
-            Key(b'd', true) | DeleteKey => {
+            InputSeq {
+                key: Key(b'd'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: DeleteKey, .. } => {
                 self.move_cursor(CursorDir::Right);
                 self.delete_char();
             }
-            Key(b'g', true) => self.find()?,
-            Key(b'q', true) => {
+            InputSeq {
+                key: Key(b'g'),
+                ctrl: true,
+                ..
+            } => self.find()?,
+            InputSeq {
+                key: Key(b'q'),
+                ctrl: true,
+                ..
+            } => {
                 if !self.modified || self.quitting {
                     return Ok(AfterKeyPress::Quit);
                 } else {
@@ -1700,25 +1828,73 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     return Ok(AfterKeyPress::Nothing);
                 }
             }
-            Key(b'\r', false) | Key(b'm', true) => self.insert_line(),
-            Key(b'h', true) | Key(0x08, false) | Key(0x7f, false) => {
+            InputSeq {
+                key: Key(b'\r'),
+                ctrl: false,
+                ..
+            }
+            | InputSeq {
+                key: Key(b'm'),
+                ctrl: true,
+                ..
+            } => self.insert_line(),
+            InputSeq {
+                key: Key(b'h'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: Key(0x08), .. }
+            | InputSeq { key: Key(0x7f), .. } => {
                 // On Ctrl-h or Backspace, remove char at cursor. Note that Delete key is mapped to \x1b[3~
                 self.delete_char();
             }
-            Key(b'k', true) => self.delete_until_end_of_line(),
-            Key(b'u', true) => self.delete_until_head_of_line(),
-            Key(b'w', true) => self.delete_word(),
-            Key(b'l', true) | Key(0x1b, false) => self.set_dirty_rows(self.rowoff), // Redraw all lines
-            Key(b'?', true) => {
+            InputSeq {
+                key: Key(b'k'),
+                ctrl: true,
+                ..
+            } => self.delete_until_end_of_line(),
+            InputSeq {
+                key: Key(b'u'),
+                ctrl: true,
+                ..
+            } => self.delete_until_head_of_line(),
+            InputSeq {
+                key: Key(b'w'),
+                ctrl: true,
+                ..
+            } => self.delete_word(),
+            InputSeq {
+                key: Key(b'l'),
+                ctrl: true,
+                ..
+            }
+            | InputSeq { key: Key(0x1b), .. } => self.set_dirty_rows(self.rowoff), // Redraw all lines
+            InputSeq {
+                key: Key(b'?'),
+                ctrl: true,
+                ..
+            } => {
                 self.message = StatusMessage::info(HELP_TEXT);
             }
-            Key(b's', true) => self.save()?,
-            Key(b'i', true) => match self.lang.indent() {
+            InputSeq {
+                key: Key(b's'),
+                ctrl: true,
+                ..
+            } => self.save()?,
+            InputSeq {
+                key: Key(b'i'),
+                ctrl: true,
+                alt: false,
+            } => match self.lang.indent() {
                 Indent::AsIs => self.insert_char('\t'),
                 Indent::Fixed(indent) => self.insert_str(indent),
             },
-            Key(b, false) if !b.is_ascii_control() => self.insert_char(b as char),
-            Key(..) => { /* ignore other key inputs */ }
+            InputSeq {
+                key: Key(b),
+                ctrl: false,
+                alt: false,
+            } if !b.is_ascii_control() => self.insert_char(b as char),
+            InputSeq { key: Key(..), .. } => { /* ignore other key inputs */ }
             _ => unreachable!(),
         }
 
@@ -1740,7 +1916,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         // Wait for response from terminal discarding other sequences
         for seq in &mut self.input {
-            if let InputSeq::Cursor(r, c) = seq? {
+            if let KeySeq::Cursor(r, c) = seq?.key {
                 self.screen_cols = c;
                 self.screen_rows = r.saturating_sub(2);
                 break;
@@ -1758,7 +1934,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         while let Some(seq) = self.input.next() {
             let seq = seq?;
-            if seq == InputSeq::Unidentified {
+            if seq.key == KeySeq::Unidentified {
                 continue; // Ignore
             }
             if self.process_keypress(seq)? == AfterKeyPress::Quit {
