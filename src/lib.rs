@@ -24,6 +24,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
+use unicode_width::UnicodeWidthChar;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const HELP: &str = r#"
@@ -322,20 +323,23 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     buf.write(b"~")?;
                 }
             } else {
-                // TODO: Support UTF-8
                 let row = &self.row[file_row];
 
-                for (c, hl) in row
-                    .render
-                    .chars()
-                    .zip(self.hl.lines[file_row].iter())
-                    .skip(self.coloff)
-                    .take(self.screen_cols)
-                {
+                let mut col = 0;
+                for (c, hl) in row.render.chars().zip(self.hl.lines[file_row].iter()) {
+                    col += c.width_cjk().unwrap_or(1);
+                    if col < self.coloff {
+                        continue;
+                    }
+
                     let color = hl.color();
                     if color != prev_color {
                         buf.write(color.sequence())?;
                         prev_color = color;
+                    }
+
+                    if col - self.coloff > self.screen_cols {
+                        break;
                     }
 
                     write!(buf, "{}", c)?;
@@ -688,7 +692,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn squash_to_previous_line(&mut self) {
         // At top of line, backspace concats current line to previous line
-        self.cx = self.row[self.cy - 1].len; // Move cursor column to end of previous line
+        self.cx = self.row[self.cy - 1].len(); // Move cursor column to end of previous line
         let row = self.row.remove(self.cy);
         self.cy -= 1; // Move cursor to previous line
         self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
@@ -716,7 +720,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         if self.cy == self.row.len() {
             return;
         }
-        if self.cx == self.row[self.cy].len {
+        if self.cx == self.row[self.cy].len() {
             // Do nothing when cursor is at end of line of end of text buffer
             if self.cy == self.row.len() - 1 {
                 return;
@@ -776,11 +780,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn insert_line(&mut self) {
         if self.cy >= self.row.len() {
-            self.row.push(Row::new(""));
-        } else if self.cx >= self.row[self.cy].len {
-            self.row.insert(self.cy + 1, Row::new(""));
+            self.row.push(Row::default());
+        } else if self.cx >= self.row[self.cy].len() {
+            self.row.insert(self.cy + 1, Row::default());
         } else {
-            let split: String = self.row[self.cy].buffer().chars().skip(self.cx).collect();
+            let split = self.row[self.cy][self.cx..].to_string();
             self.row[self.cy].truncate(self.cx);
             self.row.insert(self.cy + 1, Row::new(split));
         }
@@ -801,7 +805,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 } else if self.cy > 0 {
                     // When moving to left at top of line, move cursor to end of previous line
                     self.cy -= 1;
-                    self.cx = self.row[self.cy].len;
+                    self.cx = self.row[self.cy].len();
                 }
             }
             CursorDir::Down => {
@@ -813,7 +817,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    let len = self.row[self.cy].len;
+                    let len = self.row[self.cy].len();
                     if self.cx < len {
                         // Allow to move cursor until next col to the last col of line to enable to
                         // add a new character at the end of line.
@@ -828,7 +832,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         };
 
         // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(|r| r.len).unwrap_or(0);
+        let len = self.row.get(self.cy).map(Row::len).unwrap_or(0);
         if self.cx > len {
             self.cx = len;
         }
@@ -858,7 +862,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             CursorDir::Left => self.cx = 0,
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    self.cx = self.row[self.cy].len;
+                    self.cx = self.row[self.cy].len();
                 }
             }
             CursorDir::Up => self.cy = 0,

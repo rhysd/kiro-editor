@@ -246,7 +246,8 @@ impl SyntaxHighlight {
 
 pub struct Highlighting {
     pub needs_update: bool,
-    pub lines: Vec<Vec<Highlight>>, // One item per one character
+    // One item per render text byte
+    pub lines: Vec<Vec<Highlight>>, // TODO: One item per one character
     previous_bottom_of_screen: usize,
     matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
     syntax: &'static SyntaxHighlight,
@@ -271,7 +272,7 @@ impl Highlighting {
             lines: iter
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
-                        .take(r.render.len())
+                        .take(r.render.chars().count()) // TODO: One item per one character
                         .collect()
                 })
                 .collect(),
@@ -320,7 +321,7 @@ impl Highlighting {
         let mut prev_quote = None;
         let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
-            self.lines[y].resize(row.render.len(), Highlight::Normal);
+            self.lines[y].resize(row.render.chars().count(), Highlight::Normal); // TODO: One item per one character
 
             let mut prev_hl = Highlight::Normal;
             let mut prev_char = '\0';
