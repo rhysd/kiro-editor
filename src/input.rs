@@ -69,7 +69,7 @@ impl DerefMut for StdinRawMode {
 #[derive(PartialEq, Debug)]
 pub enum KeySeq {
     Unidentified,
-    // TODO: Add Utf8Key(char),
+    Utf8Key(char),
     Key(u8), // Char code and ctrl mod
     LeftKey,
     RightKey,
@@ -91,6 +91,7 @@ impl fmt::Display for KeySeq {
             Key(b' ') => write!(f, "SPACE"),
             Key(b) if b.is_ascii_control() => write!(f, "\\x{:x}", b),
             Key(b) => write!(f, "{}", *b as char),
+            Utf8Key(c) => write!(f, "{}", c),
             LeftKey => write!(f, "LEFT"),
             RightKey => write!(f, "RIGHT"),
             UpKey => write!(f, "UP"),
@@ -231,6 +232,28 @@ impl InputSequences {
         }
     }
 
+    fn decode_utf8(&mut self, b: u8) -> io::Result<InputSeq> {
+        use KeySeq::*;
+
+        let mut buf = Vec::with_capacity(4);
+        buf.push(b);
+        loop {
+            if let Some(b) = self.read_byte()? {
+                buf.push(b);
+            } else {
+                return Ok(InputSeq::new(Unidentified));
+            }
+
+            if let Ok(s) = str::from_utf8(&buf) {
+                return Ok(InputSeq::new(Utf8Key(s.chars().next().unwrap())));
+            }
+
+            if buf.len() == 4 {
+                return Ok(InputSeq::new(Unidentified));
+            }
+        }
+    }
+
     fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
         use KeySeq::*;
         match b {
@@ -243,8 +266,7 @@ impl InputSequences {
             0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b0110_0000))),
             // Ascii key inputs
             0x20..=0x7f => Ok(InputSeq::new(Key(b))),
-            _ => Ok(InputSeq::new(Unidentified)),
-            // TODO: 0x80..=0xff => { ... } Handle UTF-8
+            0x80..=0xff => self.decode_utf8(b),
         }
     }
 

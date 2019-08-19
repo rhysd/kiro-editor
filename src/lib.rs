@@ -213,18 +213,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
-    fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> &'a str {
-        let mut line = line.as_ref();
+    fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> String {
+        let line = line.as_ref();
         if line.len() <= self.coloff {
-            return "";
+            return "".to_string();
         }
-        if self.coloff > 0 {
-            line = &line[self.coloff..];
-        }
-        if line.len() > self.screen_cols {
-            line = &line[..self.screen_cols]
-        }
-        line
+        line.chars()
+            .skip(self.coloff)
+            .take(self.screen_cols)
+            .collect()
     }
 
     fn draw_status_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
@@ -240,6 +237,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         let modified = if self.modified { "(modified) " } else { "" };
         let left = format!("{:<20?} - {} lines {}", file, self.row.len(), modified);
+        // TODO: Handle multi-byte chars correctly
         let left = &left[..cmp::min(left.len(), self.screen_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
 
@@ -270,6 +268,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         write!(buf, "\x1b[{}H", self.screen_rows + 2)?;
         if let Ok(d) = SystemTime::now().duration_since(self.message.timestamp) {
             if d.as_secs() < 5 {
+                // TODO: Handle multi-byte chars correctly
                 let msg = &self.message.text[..cmp::min(self.message.text.len(), self.screen_cols)];
                 if self.message.kind == StatusMessageKind::Error {
                     buf.write(AnsiColor::RedBG.sequence())?;
@@ -326,11 +325,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // TODO: Support UTF-8
                 let row = &self.row[file_row];
 
-                for (b, hl) in row
+                for (c, hl) in row
                     .render
-                    .as_bytes()
-                    .iter()
-                    .cloned()
+                    .chars()
                     .zip(self.hl.lines[file_row].iter())
                     .skip(self.coloff)
                     .take(self.screen_cols)
@@ -340,7 +337,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                         buf.write(color.sequence())?;
                         prev_color = color;
                     }
-                    buf.write(&[b])?;
+
+                    write!(buf, "{}", c)?;
                 }
             }
 
@@ -457,9 +455,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let mut bytes = 0;
         for line in self.row.iter() {
             let b = line.buffer();
-            f.write(b)?;
-            f.write(b"\n")?;
-            bytes += b.len() + 1;
+            write!(f, "{}\n", b)?;
+            bytes += b.as_bytes().len() + 1;
         }
         f.flush()?;
 
@@ -522,7 +519,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // of matched region
                 self.refresh_screen()?;
                 // Set match highlight on the found line
-                self.hl.set_match(y, rx, rx + query.as_bytes().len());
+                self.hl.set_match(y, rx, rx + query.chars().count());
                 self.row[y].dirty = true;
                 break;
             }
@@ -691,10 +688,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn squash_to_previous_line(&mut self) {
         // At top of line, backspace concats current line to previous line
-        self.cx = self.row[self.cy - 1].buffer().len(); // Move cursor column to end of previous line
+        self.cx = self.row[self.cy - 1].len; // Move cursor column to end of previous line
         let row = self.row.remove(self.cy);
         self.cy -= 1; // Move cursor to previous line
-        self.row[self.cy].append(row.buffer_str());
+        self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
         self.modified = true;
         self.hl.needs_update = true;
 
@@ -719,14 +716,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         if self.cy == self.row.len() {
             return;
         }
-        if self.cx == self.row[self.cy].buffer().len() {
+        if self.cx == self.row[self.cy].len {
             // Do nothing when cursor is at end of line of end of text buffer
             if self.cy == self.row.len() - 1 {
                 return;
             }
             // At end of line, concat with next line
             let deleted = self.row.remove(self.cy + 1);
-            self.row[self.cy].append(deleted.buffer_str());
+            self.row[self.cy].append(deleted.buffer()); // TODO: Move buffer rather than copy
             self.set_dirty_rows(self.cy + 1);
         } else {
             self.row[self.cy].truncate(self.cx);
@@ -755,12 +752,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         let mut x = self.cx - 1;
-        let buf = self.row[self.cy].buffer();
-        while x > 0 && buf[x].is_ascii_whitespace() {
+        let row = &self.row[self.cy];
+        while x > 0 && row.char_at(x).is_ascii_whitespace() {
             x -= 1;
         }
         // `x - 1` since x should stop at the last non-whitespace character to remove
-        while x > 0 && !buf[x - 1].is_ascii_whitespace() {
+        while x > 0 && !row.char_at(x - 1).is_ascii_whitespace() {
             x -= 1;
         }
 
@@ -780,10 +777,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn insert_line(&mut self) {
         if self.cy >= self.row.len() {
             self.row.push(Row::new(""));
-        } else if self.cx >= self.row[self.cy].buffer().len() {
+        } else if self.cx >= self.row[self.cy].len {
             self.row.insert(self.cy + 1, Row::new(""));
         } else {
-            let split = String::from(&self.row[self.cy].buffer_str()[self.cx..]);
+            let split: String = self.row[self.cy].buffer().chars().skip(self.cx).collect();
             self.row[self.cy].truncate(self.cx);
             self.row.insert(self.cy + 1, Row::new(split));
         }
@@ -804,7 +801,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 } else if self.cy > 0 {
                     // When moving to left at top of line, move cursor to end of previous line
                     self.cy -= 1;
-                    self.cx = self.row[self.cy].buffer().len();
+                    self.cx = self.row[self.cy].len;
                 }
             }
             CursorDir::Down => {
@@ -816,7 +813,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    let len = self.row[self.cy].buffer().len();
+                    let len = self.row[self.cy].len;
                     if self.cx < len {
                         // Allow to move cursor until next col to the last col of line to enable to
                         // add a new character at the end of line.
@@ -831,7 +828,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         };
 
         // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(|r| r.buffer().len()).unwrap_or(0);
+        let len = self.row.get(self.cy).map(|r| r.len).unwrap_or(0);
         if self.cx > len {
             self.cx = len;
         }
@@ -861,7 +858,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             CursorDir::Left => self.cx = 0,
             CursorDir::Right => {
                 if self.cy < self.row.len() {
-                    self.cx = self.row[self.cy].buffer().len();
+                    self.cx = self.row[self.cy].len;
                 }
             }
             CursorDir::Up => self.cy = 0,
@@ -880,11 +877,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         impl CharKind {
             fn new_at(rows: &[Row], x: usize, y: usize) -> Self {
                 rows.get(y)
-                    .and_then(|r| r.buffer().get(x))
-                    .map(|b| {
-                        if b.is_ascii_whitespace() {
+                    .and_then(|r| r.char_at_checked(x))
+                    .map(|c| {
+                        if c.is_ascii_whitespace() {
                             CharKind::Space
-                        } else if *b == b'_' || b.is_ascii_alphanumeric() {
+                        } else if c == '_' || c.is_ascii_alphanumeric() {
                             CharKind::Ident
                         } else {
                             CharKind::Punc
@@ -958,6 +955,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     finished = true;
                 }
                 (&Key(b), ..) => buf.push(b as char),
+                (&Utf8Key(c), ..) => buf.push(c),
                 _ => {}
             }
 
@@ -1037,6 +1035,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (RightKey, true, false) => self.move_cursor_by_word(CursorDir::Right),
             (LeftKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Left),
             (RightKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Right),
+            (Utf8Key(c), ..) => self.insert_char(c),
             (Unidentified, ..) => unreachable!(),
             (Cursor(_, _), ..) => unreachable!(),
             (key, ctrl, alt) => {

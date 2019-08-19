@@ -1,10 +1,20 @@
+use unicode_width::UnicodeWidthChar;
+
 const TAB_STOP: usize = 8;
+
+fn byte_index_at<S: AsRef<str>>(at: usize, s: S) -> Option<usize> {
+    s.as_ref().char_indices().nth(at).map(|c| c.0)
+}
 
 #[derive(Default)]
 pub struct Row {
     buf: String,
+    // TODO: Remove this field since how to rendering should be calculated at rendering screen.
+    // We don't need to cache this because we have 'dirty' field to ensure that this line is
+    // rendered once per update
     pub render: String,
     pub dirty: bool,
+    pub len: usize,
 }
 
 impl Row {
@@ -13,22 +23,29 @@ impl Row {
             buf: line.into(),
             render: "".to_string(),
             dirty: false,
+            len: 0,
         };
         row.update_render();
         row
     }
 
-    pub fn buffer(&self) -> &[u8] {
-        self.buf.as_str().as_bytes()
-    }
-
-    pub fn buffer_str(&self) -> &str {
+    pub fn buffer(&self) -> &str {
         self.buf.as_str()
     }
 
+    pub fn char_at(&self, at: usize) -> char {
+        self.char_at_checked(at).unwrap()
+    }
+
+    pub fn char_at_checked(&self, at: usize) -> Option<char> {
+        // XXX: To avoid O(n) access to specific character in string by index,
+        // should we use Vec<char> instead of String for buffer?
+        self.buf.chars().nth(at)
+    }
+
     fn update_render(&mut self) {
-        // TODO: Check dirtiness more strict
-        self.render = String::with_capacity(self.buf.as_bytes().len());
+        self.render = String::with_capacity(self.len);
+        self.len = 0;
         let mut index = 0;
         for c in self.buf.chars() {
             if c == '\t' {
@@ -41,62 +58,65 @@ impl Row {
                 }
             } else {
                 self.render.push(c);
-                index += 1;
+                index += c.width_cjk().unwrap();
             }
+            self.len += 1;
         }
         self.dirty = true;
     }
 
     pub fn rx_from_cx(&self, cx: usize) -> usize {
-        // TODO: Consider UTF-8 character width
         self.buf.chars().take(cx).fold(0, |rx, ch| {
             if ch == '\t' {
                 // Proceed TAB_STOP spaces then subtract spaces by mod TAB_STOP
                 rx + TAB_STOP - (rx % TAB_STOP)
             } else {
-                rx + 1
+                rx + ch.width_cjk().unwrap()
             }
         })
     }
 
     pub fn cx_from_rx(&self, rx: usize) -> usize {
-        // TODO: Consider UTF-8 character width
         let mut current_rx = 0;
         for (cx, ch) in self.buf.chars().enumerate() {
             if ch == '\t' {
                 current_rx += TAB_STOP - (current_rx % TAB_STOP);
             } else {
-                current_rx += 1;
+                current_rx += ch.width_cjk().unwrap();
             }
             if current_rx > rx {
                 return cx; // Found
             }
         }
-        self.buf.as_bytes().len() // Fall back to end of line
+        self.len // Fall back to end of line
     }
 
     // Note: 'at' is an index of buffer, not render text
     pub fn insert_char(&mut self, at: usize, c: char) {
-        if self.buf.as_bytes().len() <= at {
+        if self.len <= at {
             self.buf.push(c);
         } else {
-            self.buf.insert(at, c);
+            let idx = byte_index_at(at, &self.buf).unwrap_or(0);
+            self.buf.insert(idx, c);
         }
+        // TODO: More efficient update for self.render
         self.update_render();
     }
 
     pub fn insert_str<S: AsRef<str>>(&mut self, at: usize, s: S) {
-        if self.buf.as_bytes().len() <= at {
+        if self.len <= at {
             self.buf.push_str(s.as_ref());
         } else {
-            self.buf.insert_str(at, s.as_ref());
+            let idx = byte_index_at(at, &self.buf).unwrap_or(0);
+            self.buf.insert_str(idx, s.as_ref());
         }
         self.update_render();
     }
 
     pub fn delete_char(&mut self, at: usize) {
-        if at < self.buf.as_bytes().len() {
-            self.buf.remove(at);
+        if at < self.len {
+            let idx = byte_index_at(at, &self.buf).unwrap_or(0);
+            self.buf.remove(idx);
             self.update_render();
         }
     }
@@ -111,15 +131,18 @@ impl Row {
     }
 
     pub fn truncate(&mut self, at: usize) {
-        if at < self.buf.as_bytes().len() {
-            self.buf.truncate(at);
+        if at < self.len {
+            let idx = byte_index_at(at, &self.buf).unwrap_or(0);
+            self.buf.truncate(idx);
             self.update_render();
         }
     }
 
     pub fn remove(&mut self, start: usize, end: usize) {
         if start < end {
-            self.buf.drain(start..end);
+            let start_idx = byte_index_at(start, &self.buf).unwrap_or(0);
+            let end_idx = byte_index_at(end, &self.buf).unwrap_or(0);
+            self.buf.drain(start_idx..end_idx);
             self.update_render();
         }
     }

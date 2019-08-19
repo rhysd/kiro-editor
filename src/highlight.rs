@@ -246,7 +246,7 @@ impl SyntaxHighlight {
 
 pub struct Highlighting {
     pub needs_update: bool,
-    pub lines: Vec<Vec<Highlight>>,
+    pub lines: Vec<Vec<Highlight>>, // One item per one character
     previous_bottom_of_screen: usize,
     matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
     syntax: &'static SyntaxHighlight,
@@ -271,7 +271,7 @@ impl Highlighting {
             lines: iter
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
-                        .take(r.render.as_bytes().len())
+                        .take(r.render.len())
                         .collect()
                 })
                 .collect(),
@@ -296,26 +296,37 @@ impl Highlighting {
 
         self.lines.resize_with(rows.len(), Default::default);
 
-        fn is_sep(b: u8) -> bool {
-            b.is_ascii_whitespace() || (b.is_ascii_punctuation() && b != b'_') || b == b'\0'
+        fn is_sep(c: char) -> bool {
+            c.is_ascii_whitespace() || (c.is_ascii_punctuation() && c != '_') || c == '\0'
         }
 
-        fn starts_with_word(input: &[u8], word: &[u8]) -> bool {
-            input.starts_with(word)
-                && (input.len() == word.len()
-                    || input.len() > word.len() && is_sep(input[word.len()]))
+        fn starts_with_word(input: &str, word: &str) -> bool {
+            if !input.starts_with(word) {
+                return false;
+            }
+
+            let word_len = word.len();
+            if input.len() == word_len {
+                return true;
+            }
+
+            if let Some(c) = input.chars().nth(word_len) {
+                is_sep(c)
+            } else {
+                false
+            }
         }
 
         let mut prev_quote = None;
         let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
-            self.lines[y].resize(row.render.as_bytes().len(), Highlight::Normal);
+            self.lines[y].resize(row.render.len(), Highlight::Normal);
 
             let mut prev_hl = Highlight::Normal;
-            let mut prev_char = b'\0';
-            let mut iter = row.render.as_bytes().iter().cloned().enumerate();
+            let mut prev_char = '\0';
+            let mut iter = row.render.char_indices().enumerate();
 
-            while let Some((x, b)) = iter.next() {
+            while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
 
                 if self.lines[y][x] == Highlight::Match {
@@ -325,11 +336,12 @@ impl Highlighting {
                 if let Some((comment_start, comment_end)) = self.syntax.block_comment {
                     if hl == Highlight::Normal && prev_quote.is_none() {
                         let comment_delim = if in_block_comment
-                            && row.render[x..].starts_with(comment_end)
+                            && row.render[idx..].starts_with(comment_end)
                         {
                             in_block_comment = false;
                             Some(comment_end)
-                        } else if !in_block_comment && row.render[x..].starts_with(comment_start) {
+                        } else if !in_block_comment && row.render[idx..].starts_with(comment_start)
+                        {
                             in_block_comment = true;
                             Some(comment_start)
                         } else {
@@ -339,12 +351,12 @@ impl Highlighting {
                         // Eat delimiter of block comment at once
                         if let Some(comment_delim) = comment_delim {
                             // Consume whole '/*' here. Otherwise such as '/*/' is wrongly accepted
-                            let len = comment_delim.as_bytes().len();
+                            let len = comment_delim.len();
                             self.lines[y]
                                 .splice(x..x + len, iter::repeat(Highlight::Comment).take(len));
 
                             prev_hl = Highlight::Comment;
-                            prev_char = comment_delim.as_bytes()[len - 1];
+                            prev_char = comment_delim.chars().last().unwrap();
                             iter.nth(len - 2);
                             continue;
                         }
@@ -356,7 +368,7 @@ impl Highlighting {
                 }
 
                 if let Some(comment_leader) = self.syntax.line_comment {
-                    if prev_quote.is_none() && row.render[x..].starts_with(comment_leader) {
+                    if prev_quote.is_none() && row.render[idx..].starts_with(comment_leader) {
                         let len = self.lines[y].len();
                         self.lines[y].splice(x.., iter::repeat(Highlight::Comment).take(len - x));
                         break;
@@ -364,17 +376,17 @@ impl Highlighting {
                 }
 
                 if hl == Highlight::Normal && self.syntax.character {
-                    let mut i = row.render.as_bytes()[x..].iter();
+                    let mut i = row.render[idx..].chars();
                     let len = match (i.next(), i.next(), i.next(), i.next()) {
-                        (Some(b'\''), Some(b'\\'), _, Some(b'\'')) => Some(4),
-                        (Some(b'\''), _, Some(b'\''), _) => Some(3),
+                        (Some('\''), Some('\\'), _, Some('\'')) => Some(4),
+                        (Some('\''), _, Some('\''), _) => Some(3),
                         _ => None,
                     };
 
                     if let Some(len) = len {
                         self.lines[y].splice(x..x + len, iter::repeat(Highlight::Char).take(len));
                         prev_hl = Highlight::Char;
-                        prev_char = b'\'';
+                        prev_char = '\'';
                         iter.nth(len - 2);
                         continue;
                     }
@@ -383,21 +395,21 @@ impl Highlighting {
                 if hl == Highlight::Normal && !self.syntax.string_quotes.is_empty() {
                     if let Some(q) = prev_quote {
                         // In string literal. XXX: "\\" is not highlighted correctly
-                        if prev_char != b'\\' && q == b {
+                        if prev_char != '\\' && q == c {
                             prev_quote = None;
                         }
                         hl = Highlight::String;
-                    } else if self.syntax.string_quotes.contains(&(b as char)) {
-                        prev_quote = Some(b);
+                    } else if self.syntax.string_quotes.contains(&c) {
+                        prev_quote = Some(c);
                         hl = Highlight::String;
                     }
                 }
 
-                let is_bound = is_sep(prev_char) ^ is_sep(b);
+                let is_bound = is_sep(prev_char) ^ is_sep(c);
 
                 // Highlight identifiers
                 if hl == Highlight::Normal && is_bound {
-                    let line = row.render[x..].as_bytes();
+                    let line = &row.render[idx..];
                     if let Some((keyword, highlight)) = self
                         .syntax
                         .keywords
@@ -415,13 +427,13 @@ impl Highlighting {
                                 .iter()
                                 .zip(iter::repeat(Highlight::Type)),
                         )
-                        .find(|(k, _)| starts_with_word(line, k.as_bytes()))
+                        .find(|(k, _)| starts_with_word(line, k))
                     {
-                        let len = keyword.as_bytes().len();
+                        let len = keyword.len();
                         self.lines[y].splice(x..x + len, iter::repeat(highlight).take(len));
 
                         prev_hl = highlight;
-                        prev_char = line[len - 1];
+                        prev_char = line.chars().nth(len - 1).unwrap();
                         // Consume keyword from input. `- 2` because first character was already
                         // consumed by the while statement
                         iter.nth(len - 2);
@@ -432,15 +444,15 @@ impl Highlighting {
 
                 if hl == Highlight::Normal
                     && self.syntax.number
-                    && (b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound)
-                        || b == b'.' && prev_hl == Highlight::Number)
+                    && (c.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound)
+                        || c == '.' && prev_hl == Highlight::Number)
                 {
                     hl = Highlight::Number;
                 }
 
                 self.lines[y][x] = hl;
                 prev_hl = hl;
-                prev_char = b;
+                prev_char = c;
             }
         }
 

@@ -11,7 +11,7 @@ fn main() -> io::Result<()> {
     let matches = App::new("kiro")
         .version(VERSION)
         .author("rhysd <https://github.com/rhysd>")
-        .about("A simplistic terminal text editor for Unix-like systems")
+        .about("A simplistic terminal UTF-8 text editor for Unix-like systems")
         .long_about(HELP)
         .arg(
             Arg::with_name("FILE")
