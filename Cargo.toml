@@ -1,16 +1,33 @@
 [package]
 name = "kiro_editor"
 version = "0.1.0"
-authors = ["rhysd <lin90162@yahoo.co.jp>"]
+authors = ["rhysd <https://rhysd.github.io>"]
 edition = "2018"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = """
+kiro is a simplistic terminal text editor.
+"""
+homepage = "https://github.com/rhysd/kiro"
+repository = "https://github.com/rhysd/kiro"
+readme = "README.md"
+keywords = ["text editor", "editor", "terminal"]
+categories = ["text-editors", "development-tools"]
+license = "MIT"
 
 [[bin]]
 path = "src/main.rs"
 name = "kiro"
 
+[package.metadata.release]
+no-dev-version = true
+
+[profile.release]
+debug = 1
+lto = true
+
 [dependencies]
 termios = "0.3"
 term_size = "0.3"
 clap = "2.33"
+
+[badges]
+maintenance = { status = "actively-developed" }
