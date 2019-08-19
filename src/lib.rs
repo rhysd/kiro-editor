@@ -4,7 +4,7 @@
 
 mod ansi_color;
 mod highlight;
-pub mod input;
+mod input;
 mod language;
 mod row;
 
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 const HELP_TEXT: &'static str = "HELP: ^S = save | ^Q = quit | ^G = find | ^? = help";
 
 // Contain both actual path sequence and display string
