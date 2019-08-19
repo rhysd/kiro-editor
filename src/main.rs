@@ -150,11 +150,13 @@ struct InputSequences {
 }
 
 impl InputSequences {
-    fn read_byte(&mut self) -> io::Result<u8> {
-        // TODO: Regarding 0 as timeout conflicts with Ctrl-`
+    fn read_byte(&mut self) -> io::Result<Option<u8>> {
         let mut one_byte: [u8; 1] = [0];
-        self.stdin.read(&mut one_byte)?;
-        Ok(one_byte[0])
+        Ok(if self.stdin.read(&mut one_byte)? == 0 {
+            None
+        } else {
+            Some(one_byte[0])
+        })
     }
 
     fn decode_escape_sequence(&mut self) -> io::Result<InputSeq> {
@@ -164,41 +166,32 @@ impl InputSequences {
         // not arrive within next tick, it means that it is not an escape sequence.
         // TODO?: Should we consider sequences not starting with '['?
         match self.read_byte()? {
-            b'[' => { /* fall throught */ }
-            0 => return Ok(InputSeq::new(Key(0x1b))),
-            b if b.is_ascii_control() => {
-                // Ignore control characters after ESC
-                return Ok(InputSeq::new(Key(0x1b)));
-            }
-            b => {
+            Some(b'[') => { /* fall throught */ }
+            Some(b) if b.is_ascii_control() => return Ok(InputSeq::new(Key(0x1b))), // Ignore control characters after ESC
+            Some(b) => {
                 // Alt key is sent as ESC prefix (e.g. Alt-A => \x1b\x61
                 // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Alt-and-Meta-Keys
                 let mut seq = self.decode(b)?;
                 seq.alt = true;
                 return Ok(seq);
             }
+            None => return Ok(InputSeq::new(Key(0x1b))),
         };
 
         // Now confirmed \1xb[ which is a header of escape sequence. Eat it until the end
         // of sequence with blocking
         let mut buf = vec![];
         let cmd = loop {
-            let b = self.read_byte()?;
-            match b {
-                // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
-                b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c' | b'f'
-                | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
-                b'O' => {
-                    buf.push(b'O');
-                    let b = self.read_byte()?;
-                    match b {
-                        b'F' | b'H' => break b, // OF/OH are the same as F/H
-                        0 => return Ok(InputSeq::new(Unidentified)),
-                        _ => buf.push(b),
-                    };
+            if let Some(b) = self.read_byte()? {
+                match b {
+                    // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
+                    b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c' | b'f'
+                    | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
+                    _ => buf.push(b),
                 }
-                0 => return Ok(InputSeq::new(Unidentified)), // Unknown escape sequence ignored
-                _ => buf.push(b),
+            } else {
+                // Unknown escape sequence ignored
+                return Ok(InputSeq::new(Unidentified));
             }
         };
 
@@ -238,8 +231,17 @@ impl InputSequences {
                     _ => Ok(InputSeq::new(Unidentified)),
                 }
             }
-            b'H' => Ok(InputSeq::new(HomeKey)),
-            b'F' => Ok(InputSeq::new(EndKey)),
+            b'H' | b'F' => {
+                // C-HOME => \x1b[1;5H
+                let key = match cmd {
+                    b'H' => HomeKey,
+                    b'F' => EndKey,
+                    _ => unreachable!(),
+                };
+                let ctrl = args.next() == Some(b"1") && args.next() == Some(b"5");
+                let alt = false;
+                Ok(InputSeq { key, ctrl, alt })
+            }
             _ => unreachable!(),
         }
     }
@@ -249,21 +251,24 @@ impl InputSequences {
         match b {
             // (Maybe) Escape sequence
             0x1b => self.decode_escape_sequence(),
-            // Ascii key inputs
-            0x20..=0x7f => Ok(InputSeq::new(Key(b))),
-            // 0x01~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
-            // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x01..=0x1e => Ok(InputSeq::ctrl(Key(b | 0b1100000))),
             // Ctrl-?
             0x1f => Ok(InputSeq::ctrl(Key(b | 0b0100000))),
+            // 0x00~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
+            // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
+            0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b1100000))),
+            // Ascii key inputs
+            0x20..=0x7f => Ok(InputSeq::new(Key(b))),
             _ => Ok(InputSeq::new(Unidentified)),
             // TODO: 0x80..=0xff => { ... } Handle UTF-8
         }
     }
 
     fn read_seq(&mut self) -> io::Result<InputSeq> {
-        let b = self.read_byte()?;
-        self.decode(b)
+        if let Some(b) = self.read_byte()? {
+            self.decode(b)
+        } else {
+            Ok(InputSeq::new(KeySeq::Unidentified))
+        }
     }
 }
 
