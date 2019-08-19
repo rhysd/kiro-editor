@@ -2,15 +2,8 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
-mod ansi_color;
-mod editor;
-mod highlight;
-mod input;
-mod language;
-mod row;
-
-use editor::Editor;
-use input::StdinRawMode;
+use kiro::input::StdinRawMode;
+use kiro::Editor;
 use std::io;
 
 fn main() -> io::Result<()> {

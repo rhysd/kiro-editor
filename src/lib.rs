@@ -2,11 +2,18 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
-use crate::ansi_color::AnsiColor;
-use crate::highlight::Highlighting;
-use crate::input::{InputSeq, KeySeq, StdinRawMode};
-use crate::language::{Indent, Language};
-use crate::row::Row;
+mod ansi_color;
+mod highlight;
+pub mod input;
+mod language;
+mod row;
+
+use ansi_color::AnsiColor;
+use highlight::Highlighting;
+pub use input::StdinRawMode;
+use input::{InputSeq, KeySeq};
+use language::{Indent, Language};
+use row::Row;
 use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Write};
