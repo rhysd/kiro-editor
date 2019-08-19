@@ -22,7 +22,48 @@ use std::str;
 use std::time::SystemTime;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-const HELP_TEXT: &'static str = "HELP: ^S = save | ^Q = quit | ^G = find | ^? = help";
+pub const HELP: &'static str = r#"
+A simplistic terminal text editor for Unix-like systems.
+
+All keymaps as follows.
+
+    Ctrl-Q     : Quit
+    Ctrl-S     : Save to file
+    Ctrl-P     : Move cursor up
+    Ctrl-N     : Move cursor down
+    Ctrl-F     : Move cursor right
+    Ctrl-B     : Move cursor left
+    Ctrl-A     : Move cursor to head of line
+    Ctrl-E     : Move cursor to end of line
+    Ctrl-V     : Next page
+    Alt-V      : Previous page
+    Alt-F      : Move cursor to next word
+    Alt-B      : Move cursor to previous word
+    Alt-<      : Move cursor to top of file
+    Alt->      : Move cursor to bottom of file
+    Ctrl-H     : Delete character
+    Ctrl-D     : Delete next character
+    Ctrl-U     : Delete until head of line
+    Ctrl-K     : Delete until end of line
+    Ctrl-G     : Search text
+    Ctrl-L     : Refresh screen
+    Ctrl-?     : Show this help
+    UP         : Move cursor up
+    DOWN       : Move cursor down
+    RIGHT      : Move cursor right
+    LEFT       : Move cursor left
+    PAGE DOWN  : Next page
+    PAGE UP    : Previous page
+    HOME       : Move cursor to head of line
+    END        : Move cursor to end of line
+    DELETE     : Delete next character
+    BACKSPACE  : Delete character
+    ESC        : Refresh screen
+    Ctrl-RIGHT : Move cursor to next word
+    Ctrl-LEFT  : Move cursor to previous word
+    Alt-RIGHT  : Move cursor to end of line
+    Alt-LEFT   : Move cursor to head of line
+"#;
 
 // Contain both actual path sequence and display string
 struct FilePath {
@@ -158,7 +199,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             row: Vec::with_capacity(h),
             rowoff: 0,
             coloff: 0,
-            message: StatusMessage::info(HELP_TEXT),
+            message: StatusMessage::info("Ctrl-? for help"),
             modified: false,
             quitting: false,
             finding: FindState::new(),
@@ -310,7 +351,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn redraw_screen(&self) -> io::Result<()> {
-        let mut buf = Vec::with_capacity((self.screen_rows + 1) * self.screen_cols);
+        let mut buf = Vec::with_capacity((self.screen_rows + 2) * self.screen_cols);
 
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
@@ -505,6 +546,74 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         self.finding = FindState::new(); // Clear text search state for next time
+        Ok(())
+    }
+
+    fn show_help(&mut self) -> io::Result<()> {
+        let help: Vec<_> = HELP
+            .split('\n')
+            .skip_while(|s| !s.contains(':'))
+            .map(str::trim_start)
+            .collect();
+
+        let vertical_margin = if help.len() < self.screen_rows {
+            (self.screen_rows - help.len()) / 2
+        } else {
+            0
+        };
+        let help_max_width = help.iter().map(|l| l.len()).max().unwrap();;
+        let left_margin = if help_max_width < self.screen_cols {
+            (self.screen_cols - help_max_width) / 2
+        } else {
+            0
+        };
+
+        let mut buf = Vec::with_capacity(self.screen_rows * self.screen_cols);
+
+        for y in 0..vertical_margin {
+            write!(buf, "\x1b[{}H", y + 1)?;
+            buf.write(b"\x1b[K")?;
+        }
+
+        let left_pad = " ".repeat(left_margin);
+        let help_height = cmp::min(vertical_margin + help.len(), self.screen_rows);
+        for y in vertical_margin..help_height {
+            let idx = y - vertical_margin;
+            write!(buf, "\x1b[{}H", y + 1)?;
+            buf.write(left_pad.as_bytes())?;
+
+            let help = &help[idx][..cmp::min(help[idx].len(), self.screen_cols)];
+            buf.write(AnsiColor::Cyan.sequence())?;
+            let mut cols = help.split(":");
+            if let Some(col) = cols.next() {
+                buf.write(col.as_bytes())?;
+            }
+            buf.write(AnsiColor::Reset.sequence())?;
+            if let Some(col) = cols.next() {
+                write!(buf, " : {}", col)?;
+            }
+
+            buf.write(b"\x1b[K")?;
+        }
+
+        for y in help_height..self.screen_rows {
+            write!(buf, "\x1b[{}H", y + 1)?;
+            buf.write(b"\x1b[K")?;
+        }
+
+        let mut stdout = io::stdout();
+        stdout.write(&buf)?;
+        stdout.flush()?;
+
+        // Consume any key
+        while let Some(seq) = self.input.next() {
+            if seq?.key != KeySeq::Unidentified {
+                break;
+            }
+        }
+
+        // Redraw screen
+        self.set_dirty_rows(self.rowoff);
         Ok(())
     }
 
@@ -897,7 +1006,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'l'), true, false) => self.set_dirty_rows(self.rowoff), // Clear
             (Key(b's'), true, false) => self.save()?,
             (Key(b'i'), true, false) => self.insert_tab(),
-            (Key(b'?'), true, false) => self.message = StatusMessage::info(HELP_TEXT),
+            (Key(b'?'), true, false) => self.show_help()?,
             (Key(b'v'), false, true) => self.move_cursor_per_page(CursorDir::Up),
             (Key(b'f'), false, true) => self.move_cursor_by_word(CursorDir::Right),
             (Key(b'b'), false, true) => self.move_cursor_by_word(CursorDir::Left),
