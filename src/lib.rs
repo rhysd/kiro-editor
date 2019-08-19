@@ -49,6 +49,7 @@ All keymaps as follows.
     Ctrl-D     : Delete next character
     Ctrl-U     : Delete until head of line
     Ctrl-K     : Delete until end of line
+    Ctrl-M     : New line
     Ctrl-G     : Search text
     Ctrl-L     : Refresh screen
     Ctrl-?     : Show this help
@@ -1010,6 +1011,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'l'), true, false) => self.set_dirty_rows(self.rowoff), // Clear
             (Key(b's'), true, false) => self.save()?,
             (Key(b'i'), true, false) => self.insert_tab(),
+            (Key(b'm'), true, false) => self.insert_line(),
             (Key(b'?'), true, false) => self.show_help()?,
             (Key(b'v'), false, true) => self.move_cursor_per_page(CursorDir::Up),
             (Key(b'f'), false, true) => self.move_cursor_by_word(CursorDir::Right),
