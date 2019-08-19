@@ -20,7 +20,7 @@ impl StdinRawMode {
         let stdin = io::stdin();
         let fd = stdin.as_raw_fd();
         let mut termios = Termios::from_fd(fd)?;
-        let orig = termios.clone();
+        let orig = termios;
 
         // Set terminal raw mode. Disable echo back, canonical mode, signals (SIGINT, SIGTSTP) and Ctrl+V.
         termios.c_lflag &= !(ECHO | ICANON | ISIG | IEXTEN);
@@ -35,7 +35,7 @@ impl StdinRawMode {
         // Set read timeout to 1/10 second it enables 100ms timeout on read()
         termios.c_cc[VTIME] = 1;
         // Apply terminal configurations
-        tcsetattr(fd, TCSAFLUSH, &mut termios)?;
+        tcsetattr(fd, TCSAFLUSH, &termios)?;
 
         Ok(StdinRawMode { stdin, orig })
     }
@@ -48,7 +48,7 @@ impl StdinRawMode {
 impl Drop for StdinRawMode {
     fn drop(&mut self) {
         // Restore original terminal mode
-        termios::tcsetattr(self.stdin.as_raw_fd(), termios::TCSAFLUSH, &mut self.orig).unwrap();
+        termios::tcsetattr(self.stdin.as_raw_fd(), termios::TCSAFLUSH, &self.orig).unwrap();
     }
 }
 
@@ -237,10 +237,10 @@ impl InputSequences {
             // (Maybe) Escape sequence
             0x1b => self.decode_escape_sequence(),
             // Ctrl-?
-            0x1f => Ok(InputSeq::ctrl(Key(b | 0b0100000))),
+            0x1f => Ok(InputSeq::ctrl(Key(b | 0b0010_0000))),
             // 0x00~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
             // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b1100000))),
+            0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b0110_0000))),
             // Ascii key inputs
             0x20..=0x7f => Ok(InputSeq::new(Key(b))),
             _ => Ok(InputSeq::new(Unidentified)),

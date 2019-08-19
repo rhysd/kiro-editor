@@ -19,7 +19,7 @@ pub enum Highlight {
 }
 
 impl Highlight {
-    pub fn color(&self) -> AnsiColor {
+    pub fn color(self) -> AnsiColor {
         use AnsiColor::*;
         use Highlight::*;
         match self {
@@ -289,7 +289,7 @@ impl Highlighting {
         self.needs_update = true;
     }
 
-    pub fn update(&mut self, rows: &Vec<Row>, bottom_of_screen: usize) {
+    pub fn update(&mut self, rows: &[Row], bottom_of_screen: usize) {
         if !self.needs_update && bottom_of_screen <= self.previous_bottom_of_screen {
             return;
         }
@@ -301,15 +301,9 @@ impl Highlighting {
         }
 
         fn starts_with_word(input: &[u8], word: &[u8]) -> bool {
-            if !input.starts_with(word) {
-                false
-            } else if input.len() == word.len() {
-                true
-            } else if input.len() > word.len() && is_sep(input[word.len()]) {
-                true
-            } else {
-                false
-            }
+            input.starts_with(word)
+                && (input.len() == word.len()
+                    || input.len() > word.len() && is_sep(input[word.len()]))
         }
 
         let mut prev_quote = None;
@@ -386,7 +380,7 @@ impl Highlighting {
                     }
                 }
 
-                if hl == Highlight::Normal && self.syntax.string_quotes.len() > 0 {
+                if hl == Highlight::Normal && !self.syntax.string_quotes.is_empty() {
                     if let Some(q) = prev_quote {
                         // In string literal. XXX: "\\" is not highlighted correctly
                         if prev_char != b'\\' && q == b {
@@ -436,12 +430,12 @@ impl Highlighting {
                     }
                 }
 
-                if hl == Highlight::Normal && self.syntax.number {
-                    if b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound) {
-                        hl = Highlight::Number;
-                    } else if b == b'.' && prev_hl == Highlight::Number {
-                        hl = Highlight::Number;
-                    }
+                if hl == Highlight::Normal
+                    && self.syntax.number
+                    && (b.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound)
+                        || b == b'.' && prev_hl == Highlight::Number)
+                {
+                    hl = Highlight::Number;
                 }
 
                 self.lines[y][x] = hl;
@@ -459,11 +453,7 @@ impl Highlighting {
             return;
         }
         self.clear_previous_match();
-        self.matched = Some((
-            start,
-            y,
-            self.lines[y][start..end].iter().cloned().collect(),
-        ));
+        self.matched = Some((start, y, self.lines[y][start..end].to_vec()));
         self.lines[y].splice(start..end, iter::repeat(Highlight::Match).take(end - start));
     }
 

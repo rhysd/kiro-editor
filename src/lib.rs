@@ -2,6 +2,10 @@
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
+#![allow(clippy::unused_io_amount)]
+#![allow(clippy::match_overlapping_arm)]
+#![allow(clippy::useless_let_if_seq)]
+
 mod ansi_color;
 mod highlight;
 mod input;
@@ -21,8 +25,8 @@ use std::path::{Path, PathBuf};
 use std::str;
 use std::time::SystemTime;
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-pub const HELP: &'static str = r#"
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const HELP: &str = r#"
 A simplistic terminal text editor for Unix-like systems.
 
 All keymaps as follows.
@@ -432,7 +436,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
         }
 
-        let ref file = if let Some(ref file) = self.file {
+        let file = if let Some(file) = &self.file {
             file
         } else {
             return Ok(()); // Canceled
@@ -584,13 +588,13 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
             let help = &help[idx][..cmp::min(help[idx].len(), self.screen_cols)];
             buf.write(AnsiColor::Cyan.sequence())?;
-            let mut cols = help.split(":");
+            let mut cols = help.split(':');
             if let Some(col) = cols.next() {
                 buf.write(col.as_bytes())?;
             }
             buf.write(AnsiColor::Reset.sequence())?;
             if let Some(col) = cols.next() {
-                write!(buf, " : {}", col)?;
+                write!(buf, ":{}", col)?;
             }
 
             buf.write(b"\x1b[K")?;
@@ -873,7 +877,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         impl CharKind {
-            fn new_at(rows: &Vec<Row>, x: usize, y: usize) -> Self {
+            fn new_at(rows: &[Row], x: usize, y: usize) -> Self {
                 rows.get(y)
                     .and_then(|r| r.buffer().get(x))
                     .map(|b| {

@@ -16,7 +16,7 @@ pub enum Language {
 }
 
 impl Language {
-    pub fn name(&self) -> &'static str {
+    pub fn name(self) -> &'static str {
         use Language::*;
         match self {
             Plain => "plain",
@@ -27,7 +27,7 @@ impl Language {
         }
     }
 
-    fn file_exts(&self) -> &'static [&'static str] {
+    fn file_exts(self) -> &'static [&'static str] {
         use Language::*;
         match self {
             Plain => &[],
@@ -38,7 +38,7 @@ impl Language {
         }
     }
 
-    pub fn indent(&self) -> Indent {
+    pub fn indent(self) -> Indent {
         use Indent::*;
         use Language::*;
         match self {
