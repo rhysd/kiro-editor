@@ -280,7 +280,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn draw_welcome_message<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        let msg_buf = format!("Kilo editor -- version {}", VERSION);
+        let msg_buf = format!("Kiro editor -- version {}", VERSION);
         let welcome = self.trim_line(&msg_buf);
         let padding = (self.screen_cols - welcome.len()) / 2;
         if padding > 0 {
