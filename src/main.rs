@@ -157,15 +157,6 @@ impl InputSequences {
         Ok(one_byte[0])
     }
 
-    fn read_blocking(&mut self) -> io::Result<u8> {
-        let mut one_byte: [u8; 1] = [0];
-        loop {
-            if self.stdin.read(&mut one_byte)? > 0 {
-                return Ok(one_byte[0]);
-            }
-        }
-    }
-
     fn decode_escape_sequence(&mut self) -> io::Result<InputSeq> {
         use KeySeq::*;
 
@@ -180,6 +171,8 @@ impl InputSequences {
                 return Ok(InputSeq::new(Key(0x1b)));
             }
             b => {
+                // Alt key is sent as ESC prefix (e.g. Alt-A => \x1b\x61
+                // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Alt-and-Meta-Keys
                 let mut seq = self.decode(b)?;
                 seq.alt = true;
                 return Ok(seq);
@@ -190,21 +183,21 @@ impl InputSequences {
         // of sequence with blocking
         let mut buf = vec![];
         let cmd = loop {
-            // XXX: Typing ESC -> [ very quickly makes this program hang in this loop. Some kind of
-            // loop limit would be necessary
-            let b = self.read_blocking()?;
+            let b = self.read_byte()?;
             match b {
                 // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
                 b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c' | b'f'
                 | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
                 b'O' => {
                     buf.push(b'O');
-                    let b = self.read_blocking()?;
+                    let b = self.read_byte()?;
                     match b {
                         b'F' | b'H' => break b, // OF/OH are the same as F/H
+                        0 => return Ok(InputSeq::new(Unidentified)),
                         _ => buf.push(b),
                     };
                 }
+                0 => return Ok(InputSeq::new(Unidentified)), // Unknown escape sequence ignored
                 _ => buf.push(b),
             }
         };
@@ -231,11 +224,8 @@ impl InputSequences {
                     _ => unreachable!(),
                 };
                 let ctrl = args.next() == Some(b"1") && args.next() == Some(b"5");
-                Ok(InputSeq {
-                    key,
-                    ctrl,
-                    alt: false,
-                })
+                let alt = false;
+                Ok(InputSeq { key, ctrl, alt })
             }
             b'~' => {
                 // e.g. \x1b[5~
