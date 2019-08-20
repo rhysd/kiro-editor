@@ -509,7 +509,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             .unwrap_or(self.cy);
 
         for _ in 0..row_len {
-            if let Some(rx) = self.row[y].render.find(query) {
+            if let Some(byte_idx) = self.row[y].render.find(query) {
+                let rx = self.row[y].render[..byte_idx].chars().count();
                 // XXX: This searches render text, not actual buffer. So it may not work properly on
                 // character which is rendered differently (e.g. tab character)
                 self.cy = y;
@@ -969,8 +970,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 (&Key(b'\r'), ..) | (&Key(b'm'), true, ..) => {
                     finished = true;
                 }
-                (&Key(b), ..) => buf.push(b as char),
-                (&Utf8Key(c), ..) => buf.push(c),
+                (&Key(b), false, ..) => buf.push(b as char),
+                (&Utf8Key(c), false, ..) => buf.push(c),
                 _ => {}
             }
 
