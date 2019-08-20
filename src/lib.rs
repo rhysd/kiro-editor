@@ -328,18 +328,16 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 let mut col = 0;
                 for (c, hl) in row.render.chars().zip(self.hl.lines[file_row].iter()) {
                     col += c.width_cjk().unwrap_or(1);
-                    if col < self.coloff {
+                    if col <= self.coloff {
                         continue;
+                    } else if col > self.screen_cols + self.coloff {
+                        break;
                     }
 
                     let color = hl.color();
                     if color != prev_color {
                         buf.write(color.sequence())?;
                         prev_color = color;
-                    }
-
-                    if col - self.coloff > self.screen_cols {
-                        break;
                     }
 
                     write!(buf, "{}", c)?;
@@ -629,6 +627,18 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
+    fn next_coloff(&self, want_stop: usize) -> usize {
+        let mut coloff = 0;
+        for c in self.row[self.cy].render.chars() {
+            coloff += c.width_cjk().unwrap_or(1);
+            if coloff >= want_stop {
+                // Screen cannot start from at the middle of double-width character
+                break;
+            }
+        }
+        coloff
+    }
+
     fn do_scroll(&mut self) {
         let prev_rowoff = self.rowoff;
         let prev_coloff = self.coloff;
@@ -653,7 +663,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.coloff = self.rx;
         }
         if self.rx >= self.coloff + self.screen_cols {
-            self.coloff = self.rx - self.screen_cols + 1;
+            // TODO: coloff must not be in the middle of character. It must be at boundary between characters
+            self.coloff = self.next_coloff(self.rx - self.screen_cols + 1);
         }
 
         if prev_rowoff != self.rowoff || prev_coloff != self.coloff {
