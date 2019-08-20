@@ -301,11 +301,17 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         let mut prev_color = AnsiColor::Reset;
         let row_len = self.row.len();
+        let mut dirty = false;
 
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
 
-            if file_row < row_len && !self.row[file_row].dirty {
+            if file_row < row_len && self.row[file_row].dirty {
+                // After first dirty line, we need to update until screen bottom to update highlighting
+                dirty = true;
+            }
+
+            if !dirty {
                 continue;
             }
 
