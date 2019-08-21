@@ -32,4 +32,8 @@ impl AnsiColor {
             Invert => b"\x1b[7m",
         }
     }
+
+    pub fn is_underlined(self) -> bool {
+        return self == AnsiColor::CyanUnderline;
+    }
 }

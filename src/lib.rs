@@ -341,6 +341,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
                     let color = hl.color();
                     if color != prev_color {
+                        if prev_color.is_underlined() {
+                            buf.write(AnsiColor::Reset.sequence())?; // Stop underline
+                        }
                         buf.write(color.sequence())?;
                         prev_color = color;
                     }
