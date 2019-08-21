@@ -6,12 +6,7 @@ const TAB_STOP: usize = 8;
 #[derive(Default)]
 pub struct Row {
     buf: String,
-    // TODO: Remove this field since how to rendering should be calculated at rendering screen.
-    // We don't need to cache this because we have 'dirty' field to ensure that this line is
-    // rendered once per update
     pub render: String,
-    // Flag represents this row should be re-rendered in next tick
-    pub dirty: bool,
     // Cache of byte indices of characters in `buf`. This will be empty when `buf` only contains
     // single byte characters not to allocate memory.
     pub indices: Vec<usize>,
@@ -22,7 +17,6 @@ impl Row {
         let mut row = Row {
             buf: line.into(),
             render: "".to_string(),
-            dirty: false,
             indices: Vec::with_capacity(0),
         };
         row.update_render();
@@ -94,8 +88,6 @@ impl Row {
             }
             v
         };
-
-        self.dirty = true;
     }
 
     pub fn rx_from_cx(&self, cx: usize) -> usize {

@@ -188,6 +188,9 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     lang: Language,
     // Syntax highlighting
     hl: Highlighting,
+    // Dirty line which requires rendering update. After this line must be updated since
+    // updating line may affect highlights of succeeding lines
+    dirty_start: Option<usize>,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -211,6 +214,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             finding: FindState::new(),
             lang: Language::Plain,
             hl: Highlighting::default(),
+            dirty_start: None,
         }
     }
 
@@ -301,17 +305,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
         let mut prev_color = AnsiColor::Reset;
         let row_len = self.row.len();
-        let mut dirty = false;
+        let dirty_start = self.dirty_start.unwrap_or(0);
 
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
 
-            if file_row < row_len && self.row[file_row].dirty {
-                // After first dirty line, we need to update until screen bottom to update highlighting
-                dirty = true;
-            }
-
-            if !dirty {
+            if file_row < dirty_start {
                 continue;
             }
 
@@ -391,11 +390,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.do_scroll();
         self.hl.update(&self.row, self.rowoff + self.screen_rows);
         self.redraw_screen()?;
-
-        for row in self.row.iter_mut().skip(self.rowoff).take(self.screen_rows) {
-            row.dirty = false; // Rendered the row. It's no longer dirty
-        }
-
+        self.dirty_start = None;
         Ok(())
     }
 
@@ -477,9 +472,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         use KeySeq::*;
 
         if self.finding.last_match.is_some() {
-            if let Some(y) = self.hl.clear_previous_match() {
-                self.row[y].dirty = true;
-            }
+            self.dirty_start = self.hl.clear_previous_match();
         }
 
         if end {
@@ -529,7 +522,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.refresh_screen()?;
                 // Set match highlight on the found line
                 self.hl.set_match(y, rx, rx + query.chars().count());
-                self.row[y].dirty = true;
+                self.dirty_start = Some(y);
                 break;
             }
             y = next_line(y, dir, row_len);
@@ -547,7 +540,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cy = cy;
             self.coloff = coloff;
             self.rowoff = rowoff;
-            self.set_dirty_rows(self.rowoff); // Redraw all lines
+            self.set_dirty_start(self.rowoff); // Redraw all lines
         } else {
             self.message = if self.finding.last_match.is_some() {
                 StatusMessage::info("Found")
@@ -624,14 +617,17 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         // Redraw screen
-        self.set_dirty_rows(self.rowoff);
+        self.set_dirty_start(self.rowoff);
         Ok(())
     }
 
-    fn set_dirty_rows(&mut self, start: usize) {
-        for row in self.row.iter_mut().skip(start).take(self.screen_rows) {
-            row.dirty = true;
+    fn set_dirty_start(&mut self, start: usize) {
+        if let Some(s) = self.dirty_start {
+            if s < start {
+                return;
+            }
         }
+        self.dirty_start = Some(start);
     }
 
     fn next_coloff(&self, want_stop: usize) -> usize {
@@ -676,7 +672,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         if prev_rowoff != self.rowoff || prev_coloff != self.coloff {
             // If scroll happens, all rows on screen must be updated
-            self.set_dirty_rows(self.rowoff);
+            self.set_dirty_start(self.rowoff);
         }
     }
 
@@ -688,6 +684,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cx += 1;
         self.modified = true;
         self.hl.needs_update = true;
+        self.set_dirty_start(self.cy);
     }
 
     fn insert_tab(&mut self) {
@@ -706,6 +703,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cx += s.as_bytes().len();
         self.modified = true;
         self.hl.needs_update = true;
+        self.set_dirty_start(self.cy);
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -716,8 +714,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
         self.modified = true;
         self.hl.needs_update = true;
-
-        self.set_dirty_rows(self.cy + 1);
+        self.set_dirty_start(self.cy);
     }
 
     fn delete_char(&mut self) {
@@ -729,6 +726,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx -= 1;
             self.modified = true;
             self.hl.needs_update = true;
+            self.set_dirty_start(self.cy);
         } else {
             self.squash_to_previous_line();
         }
@@ -746,12 +744,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             // At end of line, concat with next line
             let deleted = self.row.remove(self.cy + 1);
             self.row[self.cy].append(deleted.buffer()); // TODO: Move buffer rather than copy
-            self.set_dirty_rows(self.cy + 1);
         } else {
             self.row[self.cy].truncate(self.cx);
         }
         self.modified = true;
         self.hl.needs_update = true;
+        self.set_dirty_start(self.cy);
     }
 
     fn delete_until_head_of_line(&mut self) {
@@ -765,6 +763,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx = 0;
             self.modified = true;
             self.hl.needs_update = true;
+            self.set_dirty_start(self.cy);
         }
     }
 
@@ -788,6 +787,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx = x;
             self.modified = true;
             self.hl.needs_update = true;
+            self.set_dirty_start(self.cy);
         }
     }
 
@@ -810,8 +810,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cy += 1;
         self.cx = 0;
         self.hl.needs_update = true;
-
-        self.set_dirty_rows(self.cy);
+        self.set_dirty_start(self.cy);
     }
 
     fn move_cursor_one(&mut self, dir: CursorDir) {
@@ -1028,7 +1027,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'k'), true, false) => self.delete_until_end_of_line(),
             (Key(b'u'), true, false) => self.delete_until_head_of_line(),
             (Key(b'w'), true, false) => self.delete_word(),
-            (Key(b'l'), true, false) => self.set_dirty_rows(self.rowoff), // Clear
+            (Key(b'l'), true, false) => self.set_dirty_start(self.rowoff), // Clear
             (Key(b's'), true, false) => self.save()?,
             (Key(b'i'), true, false) => self.insert_tab(),
             (Key(b'm'), true, false) => self.insert_line(),
@@ -1040,7 +1039,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'>'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Down),
             (Key(0x08), false, false) => self.delete_char(), // Backspace
             (Key(0x7f), false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
-            (Key(0x1b), false, false) => self.set_dirty_rows(self.rowoff), // Clear on ESC
+            (Key(0x1b), false, false) => self.set_dirty_start(self.rowoff), // Clear on ESC
             (Key(b'\r'), false, false) => self.insert_line(),
             (Key(byte), false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
             (Key(b'q'), true, ..) => return self.handle_quit(),
