@@ -29,6 +29,7 @@ termios = "0.3"
 term_size = "0.3"
 clap = "2.33"
 unicode-width = "0.1.5"
+term = "0.6.1"
 
 [badges]
 maintenance = { status = "actively-developed" }

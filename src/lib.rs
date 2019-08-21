@@ -12,7 +12,7 @@ mod input;
 mod language;
 mod row;
 
-use ansi_color::AnsiColor;
+use ansi_color::{AnsiColor, ColorSupport};
 use highlight::Highlighting;
 pub use input::StdinRawMode;
 use input::{InputSeq, KeySeq};
@@ -191,6 +191,7 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     // Dirty line which requires rendering update. After this line must be updated since
     // updating line may affect highlights of succeeding lines
     dirty_start: Option<usize>,
+    color_support: ColorSupport,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -215,6 +216,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             lang: Language::Plain,
             hl: Highlighting::default(),
             dirty_start: None,
+            color_support: ColorSupport::from_env(),
         }
     }
 
@@ -232,7 +234,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn draw_status_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
         write!(buf, "\x1b[{}H", self.screen_rows + 1)?;
 
-        buf.write(AnsiColor::Invert.sequence())?;
+        buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
         let file = if let Some(ref f) = self.file {
             f.display.as_str()
@@ -265,7 +267,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         buf.write(right.as_bytes())?;
 
         // Defualt argument of 'm' command is 0 so it resets attributes
-        buf.write(AnsiColor::Reset.sequence())?;
+        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
         Ok(())
     }
 
@@ -276,9 +278,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 // TODO: Handle multi-byte chars correctly
                 let msg = &self.message.text[..cmp::min(self.message.text.len(), self.screen_cols)];
                 if self.message.kind == StatusMessageKind::Error {
-                    buf.write(AnsiColor::RedBG.sequence())?;
+                    buf.write(AnsiColor::RedBG.sequence(self.color_support))?;
                     buf.write(msg.as_bytes())?;
-                    buf.write(AnsiColor::Reset.sequence())?;
+                    buf.write(AnsiColor::Reset.sequence(self.color_support))?;
                 } else {
                     buf.write(msg.as_bytes())?;
                 }
@@ -307,6 +309,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let row_len = self.row.len();
         let dirty_start = self.dirty_start.unwrap_or(0);
 
+        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+
         for y in 0..self.screen_rows {
             let file_row = y + self.rowoff;
 
@@ -322,7 +326,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
                     if prev_color != AnsiColor::Reset {
-                        buf.write(AnsiColor::Reset.sequence())?;
+                        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
                         prev_color = AnsiColor::Reset;
                     }
                     buf.write(b"~")?;
@@ -342,9 +346,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     let color = hl.color();
                     if color != prev_color {
                         if prev_color.is_underlined() {
-                            buf.write(AnsiColor::Reset.sequence())?; // Stop underline
+                            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Stop underline
                         }
-                        buf.write(color.sequence())?;
+                        buf.write(color.sequence(self.color_support))?;
                         prev_color = color;
                     }
 
@@ -357,7 +361,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         if prev_color != AnsiColor::Reset {
-            buf.write(AnsiColor::Reset.sequence())?; // Ensure to reset color at end of screen
+            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Ensure to reset color at end of screen
         }
 
         Ok(())
@@ -590,12 +594,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             buf.write(left_pad.as_bytes())?;
 
             let help = &help[idx][..cmp::min(help[idx].len(), self.screen_cols)];
-            buf.write(AnsiColor::Cyan.sequence())?;
+            buf.write(AnsiColor::Cyan.sequence(self.color_support))?;
             let mut cols = help.split(':');
             if let Some(col) = cols.next() {
                 buf.write(col.as_bytes())?;
             }
-            buf.write(AnsiColor::Reset.sequence())?;
+            buf.write(AnsiColor::Reset.sequence(self.color_support))?;
             if let Some(col) = cols.next() {
                 write!(buf, ":{}", col)?;
             }
