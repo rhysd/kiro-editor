@@ -24,13 +24,13 @@ impl Highlight {
         use Highlight::*;
         match self {
             Normal => Reset,
-            Number => Red,
+            Number => Purple,
             String => Green,
             Comment => Gray,
-            Keyword => Yellow,
-            Type => Purple,
+            Keyword => Blue,
+            Type => Yellow,
             Char => Green,
-            Statement => Blue,
+            Statement => Red,
             Match => CyanUnderline,
         }
     }
