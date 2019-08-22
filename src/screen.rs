@@ -8,11 +8,7 @@ use std::time::SystemTime;
 use unicode_width::UnicodeWidthChar;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const HELP: &str = r#"
-A simplistic terminal text editor for Unix-like systems.
-
-All keymaps as follows.
-
+pub const HELP: &str = "\
     Ctrl-Q     : Quit
     Ctrl-S     : Save to file
     Ctrl-P     : Move cursor up
@@ -49,8 +45,7 @@ All keymaps as follows.
     Ctrl-RIGHT : Move cursor to next word
     Ctrl-LEFT  : Move cursor to previous word
     Alt-RIGHT  : Move cursor to end of line
-    Alt-LEFT   : Move cursor to head of line
-"#;
+    Alt-LEFT   : Move cursor to head of line";
 
 #[derive(PartialEq)]
 enum StatusMessageKind {
