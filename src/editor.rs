@@ -117,8 +117,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 .unwrap_or("[No Name]"),
             self.modified,
             self.lang.name(),
-            self.cx,
-            self.cy,
+            (self.cx, self.cy),
             &mut self.hl,
         )
     }
@@ -178,7 +177,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let mut bytes = 0;
         for line in self.row.iter() {
             let b = line.buffer();
-            write!(f, "{}\n", b)?;
+            writeln!(f, "{}", b)?;
             bytes += b.as_bytes().len() + 1;
         }
         f.flush()?;
@@ -264,12 +263,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.screen.coloff = coloff;
             self.screen.rowoff = rowoff;
             self.screen.set_dirty_start(self.screen.rowoff); // Redraw all lines
+        } else if self.finding.last_match.is_some() {
+            self.screen.set_info_message("Found");
         } else {
-            if self.finding.last_match.is_some() {
-                self.screen.set_info_message("Found");
-            } else {
-                self.screen.set_error_message("Not Found");
-            }
+            self.screen.set_error_message("Not Found");
         }
 
         self.finding = FindState::new(); // Clear text search state for next time

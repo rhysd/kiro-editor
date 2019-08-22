@@ -86,7 +86,7 @@ where
     stdout.flush()?;
 
     // Wait for response from terminal discarding other sequences
-    while let Some(seq) = input.next() {
+    for seq in input {
         if let KeySeq::Cursor(r, c) = seq?.key {
             return Ok((c, r));
         }
@@ -146,7 +146,7 @@ impl Screen {
     fn draw_status_bar<W: Write>(
         &self,
         mut buf: W,
-        rows: &[Row],
+        num_lines: usize,
         file: &str,
         modified: bool,
         lang_name: &str,
@@ -157,7 +157,7 @@ impl Screen {
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
         let modified = if modified { "(modified) " } else { "" };
-        let left = format!("{:<20?} - {} lines {}", file, rows.len(), modified);
+        let left = format!("{:<20?} - {} lines {}", file, num_lines, modified);
         // TODO: Handle multi-byte chars correctly
         let left = &left[..cmp::min(left.len(), self.num_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
@@ -167,7 +167,7 @@ impl Screen {
             return Ok(());
         }
 
-        let right = format!("{} {}/{}", lang_name, cy, rows.len(),);
+        let right = format!("{} {}/{}", lang_name, cy, num_lines,);
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -299,7 +299,7 @@ impl Screen {
         buf.write(b"\x1b[H")?;
 
         self.draw_rows(&mut buf, rows, hl)?;
-        self.draw_status_bar(&mut buf, rows, file_name, modified, lang_name, cy)?;
+        self.draw_status_bar(&mut buf, rows.len(), file_name, modified, lang_name, cy)?;
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor
@@ -367,10 +367,10 @@ impl Screen {
         file_name: &str,
         modified: bool,
         lang_name: &str,
-        cx: usize,
-        cy: usize,
+        cursor: (usize, usize),
         hl: &mut Highlighting,
     ) -> io::Result<()> {
+        let (cx, cy) = cursor;
         self.do_scroll(rows, cx, cy);
         hl.update(rows, self.rowoff + self.num_rows);
         self.redraw_screen(rows, file_name, modified, lang_name, cy, hl)?;

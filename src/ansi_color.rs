@@ -120,7 +120,7 @@ impl AnsiColor {
         }
     }
 
-    pub fn is_underlined(self) -> bool {
-        return self == AnsiColor::CyanUnderline;
+    pub fn is_underlined(&self) -> bool {
+        *self == AnsiColor::CyanUnderline
     }
 }
