@@ -11,20 +11,19 @@ mod highlight;
 mod input;
 mod language;
 mod row;
+mod screen;
 
-use ansi_color::{AnsiColor, ColorSupport};
 use highlight::Highlighting;
 pub use input::StdinRawMode;
 use input::{InputSeq, KeySeq};
 use language::{Indent, Language};
 use row::Row;
+use screen::Screen;
 use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::str;
-use std::time::SystemTime;
-use unicode_width::UnicodeWidthChar;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const HELP: &str = r#"
@@ -95,36 +94,6 @@ impl FilePath {
     }
 }
 
-#[derive(PartialEq)]
-enum StatusMessageKind {
-    Info,
-    Error,
-}
-
-struct StatusMessage {
-    text: String,
-    timestamp: SystemTime,
-    kind: StatusMessageKind,
-}
-
-impl StatusMessage {
-    fn info<S: Into<String>>(message: S) -> StatusMessage {
-        StatusMessage::with_kind(message, StatusMessageKind::Info)
-    }
-
-    fn error<S: Into<String>>(message: S) -> StatusMessage {
-        StatusMessage::with_kind(message, StatusMessageKind::Error)
-    }
-
-    fn with_kind<S: Into<String>>(message: S, kind: StatusMessageKind) -> StatusMessage {
-        StatusMessage {
-            text: message.into(),
-            timestamp: SystemTime::now(),
-            kind,
-        }
-    }
-}
-
 #[derive(Clone, Copy)]
 enum FindDir {
     Back,
@@ -166,18 +135,8 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
     cy: usize,
-    // (x, y) coordinate in `render` text of rows
-    rx: usize,
-    // Screen size
-    screen_rows: usize,
-    screen_cols: usize,
     // Lines of text buffer
     row: Vec<Row>,
-    // Scroll position (row/col offset)
-    rowoff: usize,
-    coloff: usize,
-    // Message in status line
-    message: StatusMessage,
     // Flag set to true when buffer is modified after loading a file
     modified: bool,
     // After first Ctrl-Q
@@ -188,227 +147,41 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     lang: Language,
     // Syntax highlighting
     hl: Highlighting,
-    // Dirty line which requires rendering update. After this line must be updated since
-    // updating line may affect highlights of succeeding lines
-    dirty_start: Option<usize>,
-    color_support: ColorSupport,
+    screen: Screen,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
-    pub fn new(window_size: Option<(usize, usize)>, input: I) -> Editor<I> {
-        let (w, h) = window_size.unwrap_or((0, 0));
-        Editor {
+    pub fn new(window_size: Option<(usize, usize)>, mut input: I) -> io::Result<Editor<I>> {
+        let screen = Screen::new(window_size, &mut input)?;
+        Ok(Editor {
             input,
             file: None,
             cx: 0,
             cy: 0,
-            rx: 0,
-            screen_cols: w,
-            // Screen height is 1 line less than window height due to status bar
-            screen_rows: h.saturating_sub(2),
-            row: Vec::with_capacity(h),
-            rowoff: 0,
-            coloff: 0,
-            message: StatusMessage::info("Ctrl-? for help"),
+            row: vec![],
             modified: false,
             quitting: false,
             finding: FindState::new(),
             lang: Language::Plain,
             hl: Highlighting::default(),
-            dirty_start: None,
-            color_support: ColorSupport::from_env(),
-        }
-    }
-
-    fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> String {
-        let line = line.as_ref();
-        if line.len() <= self.coloff {
-            return "".to_string();
-        }
-        line.chars()
-            .skip(self.coloff)
-            .take(self.screen_cols)
-            .collect()
-    }
-
-    fn draw_status_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        write!(buf, "\x1b[{}H", self.screen_rows + 1)?;
-
-        buf.write(AnsiColor::Invert.sequence(self.color_support))?;
-
-        let file = if let Some(ref f) = self.file {
-            f.display.as_str()
-        } else {
-            "[No Name]"
-        };
-
-        let modified = if self.modified { "(modified) " } else { "" };
-        let left = format!("{:<20?} - {} lines {}", file, self.row.len(), modified);
-        // TODO: Handle multi-byte chars correctly
-        let left = &left[..cmp::min(left.len(), self.screen_cols)];
-        buf.write(left.as_bytes())?; // Left of status bar
-
-        let rest_len = self.screen_cols - left.len();
-        if rest_len == 0 {
-            return Ok(());
-        }
-
-        let right = format!("{} {}/{}", self.lang.name(), self.cy, self.row.len(),);
-        if right.len() > rest_len {
-            for _ in 0..rest_len {
-                buf.write(b" ")?;
-            }
-            return Ok(());
-        }
-
-        for _ in 0..rest_len - right.len() {
-            buf.write(b" ")?; // Add spaces at center of status bar
-        }
-        buf.write(right.as_bytes())?;
-
-        // Defualt argument of 'm' command is 0 so it resets attributes
-        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-        Ok(())
-    }
-
-    fn draw_message_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        write!(buf, "\x1b[{}H", self.screen_rows + 2)?;
-        if let Ok(d) = SystemTime::now().duration_since(self.message.timestamp) {
-            if d.as_secs() < 5 {
-                // TODO: Handle multi-byte chars correctly
-                let msg = &self.message.text[..cmp::min(self.message.text.len(), self.screen_cols)];
-                if self.message.kind == StatusMessageKind::Error {
-                    buf.write(AnsiColor::RedBG.sequence(self.color_support))?;
-                    buf.write(msg.as_bytes())?;
-                    buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-                } else {
-                    buf.write(msg.as_bytes())?;
-                }
-            }
-        }
-        buf.write(b"\x1b[K")?;
-        Ok(())
-    }
-
-    fn draw_welcome_message<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        let msg_buf = format!("Kiro editor -- version {}", VERSION);
-        let welcome = self.trim_line(&msg_buf);
-        let padding = (self.screen_cols - welcome.len()) / 2;
-        if padding > 0 {
-            buf.write(b"~")?;
-            for _ in 0..padding - 1 {
-                buf.write(b" ")?;
-            }
-        }
-        buf.write(welcome.as_bytes())?;
-        Ok(())
-    }
-
-    fn draw_rows<W: Write>(&self, mut buf: W) -> io::Result<()> {
-        let mut prev_color = AnsiColor::Reset;
-        let row_len = self.row.len();
-        let dirty_start = self.dirty_start.unwrap_or(0);
-
-        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-
-        for y in 0..self.screen_rows {
-            let file_row = y + self.rowoff;
-
-            if file_row < dirty_start {
-                continue;
-            }
-
-            // Move cursor to target line
-            write!(buf, "\x1b[{}H", y + 1)?;
-
-            if file_row >= row_len {
-                if self.row.is_empty() && y == self.screen_rows / 3 {
-                    self.draw_welcome_message(&mut buf)?;
-                } else {
-                    if prev_color != AnsiColor::Reset {
-                        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-                        prev_color = AnsiColor::Reset;
-                    }
-                    buf.write(b"~")?;
-                }
-            } else {
-                let row = &self.row[file_row];
-
-                let mut col = 0;
-                for (c, hl) in row.render.chars().zip(self.hl.lines[file_row].iter()) {
-                    col += c.width_cjk().unwrap_or(1);
-                    if col <= self.coloff {
-                        continue;
-                    } else if col > self.screen_cols + self.coloff {
-                        break;
-                    }
-
-                    let color = hl.color();
-                    if color != prev_color {
-                        if prev_color.is_underlined() {
-                            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Stop underline
-                        }
-                        buf.write(color.sequence(self.color_support))?;
-                        prev_color = color;
-                    }
-
-                    write!(buf, "{}", c)?;
-                }
-            }
-
-            // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
-            buf.write(b"\x1b[K")?;
-        }
-
-        if prev_color != AnsiColor::Reset {
-            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Ensure to reset color at end of screen
-        }
-
-        Ok(())
-    }
-
-    fn redraw_screen(&self) -> io::Result<()> {
-        let mut buf = Vec::with_capacity((self.screen_rows + 2) * self.screen_cols);
-
-        // \x1b[: Escape sequence header
-        // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
-        buf.write(b"\x1b[?25l")?;
-        // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
-        buf.write(b"\x1b[H")?;
-
-        self.draw_rows(&mut buf)?;
-        self.draw_status_bar(&mut buf)?;
-        self.draw_message_bar(&mut buf)?;
-
-        // Move cursor
-        let cursor_row = self.cy - self.rowoff + 1;
-        let cursor_col = self.rx - self.coloff + 1;
-        write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
-
-        // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
-        buf.write(b"\x1b[?25h")?;
-
-        let mut stdout = io::stdout();
-        stdout.write(&buf)?;
-        stdout.flush()
+            // Screen height is 1 line less than window height due to status bar
+            screen,
+        })
     }
 
     fn refresh_screen(&mut self) -> io::Result<()> {
-        self.do_scroll();
-        self.hl.update(&self.row, self.rowoff + self.screen_rows);
-        self.redraw_screen()?;
-        self.dirty_start = None;
-        Ok(())
-    }
-
-    fn clear_screen(&self) -> io::Result<()> {
-        let mut stdout = io::stdout();
-        // 2: Argument of 'J' command to reset entire screen
-        // J: Command to erase screen http://vt100.net/docs/vt100-ug/chapter3.html#ED
-        stdout.write(b"\x1b[2J")?;
-        // Set cursor position to left-top corner
-        stdout.write(b"\x1b[H")?;
-        stdout.flush()
+        self.screen.refresh(
+            &self.row,
+            self.file
+                .as_ref()
+                .map(|f| f.display.as_str())
+                .unwrap_or("[No Name]"),
+            self.modified,
+            self.lang.name(),
+            self.cx,
+            self.cy,
+            &mut self.hl,
+        )
     }
 
     pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
@@ -454,7 +227,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let f = match fs::File::create(&file.path) {
             Ok(f) => f,
             Err(e) => {
-                self.message = StatusMessage::error(format!("Could not save: {}", e));
+                self.screen
+                    .set_error_message(format!("Could not save: {}", e));
                 if create {
                     self.file = None; // Could not make file. Back to unnamed buffer
                 }
@@ -470,7 +244,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
         f.flush()?;
 
-        self.message = StatusMessage::info(format!("{} bytes written to {}", bytes, &file.display));
+        self.screen
+            .set_info_message(format!("{} bytes written to {}", bytes, &file.display));
         self.modified = false;
         Ok(())
     }
@@ -479,7 +254,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         use KeySeq::*;
 
         if self.finding.last_match.is_some() {
-            self.dirty_start = self.hl.clear_previous_match();
+            if let Some(matched_line) = self.hl.clear_previous_match() {
+                self.screen.set_dirty_start(matched_line);
+            }
         }
 
         if end {
@@ -522,14 +299,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.cy = y;
                 self.cx = self.row[y].cx_from_rx(rx);
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
-                self.rowoff = row_len;
+                self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);
                 // This refresh is necessary because highlight must be updated before saving highlights
                 // of matched region
                 self.refresh_screen()?;
                 // Set match highlight on the found line
                 self.hl.set_match(y, rx, rx + query.chars().count());
-                self.dirty_start = Some(y);
+                self.screen.set_dirty_start(y);
                 break;
             }
             y = next_line(y, dir, row_len);
@@ -539,21 +316,21 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn find(&mut self) -> io::Result<()> {
-        let (cx, cy, coloff, rowoff) = (self.cx, self.cy, self.coloff, self.rowoff);
+        let (cx, cy, coloff, rowoff) = (self.cx, self.cy, self.screen.coloff, self.screen.rowoff);
         let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
         if self.prompt(s, Self::on_incremental_find)?.is_none() {
             // Canceled. Restore cursor position
             self.cx = cx;
             self.cy = cy;
-            self.coloff = coloff;
-            self.rowoff = rowoff;
-            self.set_dirty_start(self.rowoff); // Redraw all lines
+            self.screen.coloff = coloff;
+            self.screen.rowoff = rowoff;
+            self.screen.set_dirty_start(self.screen.rowoff); // Redraw all lines
         } else {
-            self.message = if self.finding.last_match.is_some() {
-                StatusMessage::info("Found")
+            if self.finding.last_match.is_some() {
+                self.screen.set_info_message("Found");
             } else {
-                StatusMessage::error("Not Found")
-            };
+                self.screen.set_error_message("Not Found");
+            }
         }
 
         self.finding = FindState::new(); // Clear text search state for next time
@@ -561,60 +338,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn show_help(&mut self) -> io::Result<()> {
-        let help: Vec<_> = HELP
-            .split('\n')
-            .skip_while(|s| !s.contains(':'))
-            .map(str::trim_start)
-            .collect();
-
-        let vertical_margin = if help.len() < self.screen_rows {
-            (self.screen_rows - help.len()) / 2
-        } else {
-            0
-        };
-        let help_max_width = help.iter().map(|l| l.len()).max().unwrap();;
-        let left_margin = if help_max_width < self.screen_cols {
-            (self.screen_cols - help_max_width) / 2
-        } else {
-            0
-        };
-
-        let mut buf = Vec::with_capacity(self.screen_rows * self.screen_cols);
-
-        for y in 0..vertical_margin {
-            write!(buf, "\x1b[{}H", y + 1)?;
-            buf.write(b"\x1b[K")?;
-        }
-
-        let left_pad = " ".repeat(left_margin);
-        let help_height = cmp::min(vertical_margin + help.len(), self.screen_rows);
-        for y in vertical_margin..help_height {
-            let idx = y - vertical_margin;
-            write!(buf, "\x1b[{}H", y + 1)?;
-            buf.write(left_pad.as_bytes())?;
-
-            let help = &help[idx][..cmp::min(help[idx].len(), self.screen_cols)];
-            buf.write(AnsiColor::Cyan.sequence(self.color_support))?;
-            let mut cols = help.split(':');
-            if let Some(col) = cols.next() {
-                buf.write(col.as_bytes())?;
-            }
-            buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-            if let Some(col) = cols.next() {
-                write!(buf, ":{}", col)?;
-            }
-
-            buf.write(b"\x1b[K")?;
-        }
-
-        for y in help_height..self.screen_rows {
-            write!(buf, "\x1b[{}H", y + 1)?;
-            buf.write(b"\x1b[K")?;
-        }
-
-        let mut stdout = io::stdout();
-        stdout.write(&buf)?;
-        stdout.flush()?;
+        self.screen.draw_help()?;
 
         // Consume any key
         while let Some(seq) = self.input.next() {
@@ -624,63 +348,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         // Redraw screen
-        self.set_dirty_start(self.rowoff);
+        self.screen.set_dirty_start(self.screen.rowoff);
         Ok(())
-    }
-
-    fn set_dirty_start(&mut self, start: usize) {
-        if let Some(s) = self.dirty_start {
-            if s < start {
-                return;
-            }
-        }
-        self.dirty_start = Some(start);
-    }
-
-    fn next_coloff(&self, want_stop: usize) -> usize {
-        let mut coloff = 0;
-        for c in self.row[self.cy].render.chars() {
-            coloff += c.width_cjk().unwrap_or(1);
-            if coloff >= want_stop {
-                // Screen cannot start from at the middle of double-width character
-                break;
-            }
-        }
-        coloff
-    }
-
-    fn do_scroll(&mut self) {
-        let prev_rowoff = self.rowoff;
-        let prev_coloff = self.coloff;
-
-        // Calculate X coordinate to render considering tab stop
-        if self.cy < self.row.len() {
-            self.rx = self.row[self.cy].rx_from_cx(self.cx);
-        } else {
-            self.rx = 0;
-        }
-
-        // Adjust scroll position when cursor is outside screen
-        if self.cy < self.rowoff {
-            // Scroll up when cursor is above the top of window
-            self.rowoff = self.cy;
-        }
-        if self.cy >= self.rowoff + self.screen_rows {
-            // Scroll down when cursor is below the bottom of screen
-            self.rowoff = self.cy - self.screen_rows + 1;
-        }
-        if self.rx < self.coloff {
-            self.coloff = self.rx;
-        }
-        if self.rx >= self.coloff + self.screen_cols {
-            // TODO: coloff must not be in the middle of character. It must be at boundary between characters
-            self.coloff = self.next_coloff(self.rx - self.screen_cols + 1);
-        }
-
-        if prev_rowoff != self.rowoff || prev_coloff != self.coloff {
-            // If scroll happens, all rows on screen must be updated
-            self.set_dirty_start(self.rowoff);
-        }
     }
 
     fn insert_char(&mut self, ch: char) {
@@ -691,7 +360,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cx += 1;
         self.modified = true;
         self.hl.needs_update = true;
-        self.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy);
     }
 
     fn insert_tab(&mut self) {
@@ -710,7 +379,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cx += s.as_bytes().len();
         self.modified = true;
         self.hl.needs_update = true;
-        self.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy);
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -721,7 +390,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
         self.modified = true;
         self.hl.needs_update = true;
-        self.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy);
     }
 
     fn delete_char(&mut self) {
@@ -733,7 +402,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx -= 1;
             self.modified = true;
             self.hl.needs_update = true;
-            self.set_dirty_start(self.cy);
+            self.screen.set_dirty_start(self.cy);
         } else {
             self.squash_to_previous_line();
         }
@@ -756,7 +425,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
         self.modified = true;
         self.hl.needs_update = true;
-        self.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy);
     }
 
     fn delete_until_head_of_line(&mut self) {
@@ -770,7 +439,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx = 0;
             self.modified = true;
             self.hl.needs_update = true;
-            self.set_dirty_start(self.cy);
+            self.screen.set_dirty_start(self.cy);
         }
     }
 
@@ -794,7 +463,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.cx = x;
             self.modified = true;
             self.hl.needs_update = true;
-            self.set_dirty_start(self.cy);
+            self.screen.set_dirty_start(self.cy);
         }
     }
 
@@ -817,7 +486,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cy += 1;
         self.cx = 0;
         self.hl.needs_update = true;
-        self.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy);
     }
 
     fn move_cursor_one(&mut self, dir: CursorDir) {
@@ -865,15 +534,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     fn move_cursor_per_page(&mut self, dir: CursorDir) {
         match dir {
             CursorDir::Up => {
-                self.cy = self.rowoff; // Set cursor to top of screen
-                for _ in 0..self.screen_rows {
+                self.cy = self.screen.rowoff; // Set cursor to top of screen
+                for _ in 0..self.screen.rows() {
                     self.move_cursor_one(CursorDir::Up);
                 }
             }
             CursorDir::Down => {
                 // Set cursor to bottom of screen considering end of buffer
-                self.cy = cmp::min(self.rowoff + self.screen_rows - 1, self.row.len());
-                for _ in 0..self.screen_rows {
+                self.cy = cmp::min(self.screen.rowoff + self.screen.rows() - 1, self.row.len());
+                for _ in 0..self.screen.rows() {
                     self.move_cursor_one(CursorDir::Down)
                 }
             }
@@ -962,7 +631,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let mut buf = String::new();
         let mut canceled = false;
         let prompt = prompt.as_ref();
-        self.message = StatusMessage::info(prompt.replacen("{}", "", 1));
+        self.screen.set_info_message(prompt.replacen("{}", "", 1));
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
@@ -991,11 +660,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             if finished {
                 break;
             }
-            self.message = StatusMessage::info(prompt.replacen("{}", &buf, 1));
+            self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
             self.refresh_screen()?;
         }
 
-        self.message = StatusMessage::info(if canceled { "" } else { "Canceled" });
+        self.screen
+            .set_info_message(if canceled { "" } else { "Canceled" });
         self.refresh_screen()?;
 
         Ok(if canceled || buf.is_empty() {
@@ -1010,7 +680,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             Ok(AfterKeyPress::Quit)
         } else {
             self.quitting = true;
-            self.message = StatusMessage::error(
+            self.screen.set_error_message(
                 "File has unsaved changes! Press ^Q again to quit or ^S to save",
             );
             Ok(AfterKeyPress::Nothing)
@@ -1034,7 +704,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'k'), true, false) => self.delete_until_end_of_line(),
             (Key(b'u'), true, false) => self.delete_until_head_of_line(),
             (Key(b'w'), true, false) => self.delete_word(),
-            (Key(b'l'), true, false) => self.set_dirty_start(self.rowoff), // Clear
+            (Key(b'l'), true, false) => self.screen.set_dirty_start(self.screen.rowoff), // Clear
             (Key(b's'), true, false) => self.save()?,
             (Key(b'i'), true, false) => self.insert_tab(),
             (Key(b'm'), true, false) => self.insert_line(),
@@ -1046,7 +716,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'>'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Down),
             (Key(0x08), false, false) => self.delete_char(), // Backspace
             (Key(0x7f), false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
-            (Key(0x1b), false, false) => self.set_dirty_start(self.rowoff), // Clear on ESC
+            (Key(0x1b), false, false) => self.screen.set_dirty_start(self.screen.rowoff), // Clear on ESC
             (Key(b'\r'), false, false) => self.insert_line(),
             (Key(byte), false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
             (Key(b'q'), true, ..) => return self.handle_quit(),
@@ -1073,7 +743,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                     (false, true) => "M-",
                     (false, false) => "",
                 };
-                self.message = StatusMessage::error(format!("Key '{}{}' not mapped", m, key))
+                self.screen
+                    .set_error_message(format!("Key '{}{}' not mapped", m, key));
             }
         }
 
@@ -1081,34 +752,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(AfterKeyPress::Nothing)
     }
 
-    fn ensure_screen_size(&mut self) -> io::Result<()> {
-        if self.screen_cols > 0 && self.screen_rows > 0 {
-            return Ok(());
-        }
-
-        // By moving cursor at the bottom-right corner by 'B' and 'C' commands, get the size of
-        // current screen. \x1b[9999;9999H is not available since it does not guarantee cursor
-        // stops on the corner. Finaly command 'n' queries cursor position.
-        let mut stdout = io::stdout();
-        stdout.write(b"\x1b[9999C\x1b[9999B\x1b[6n")?;
-        stdout.flush()?;
-
-        // Wait for response from terminal discarding other sequences
-        for seq in &mut self.input {
-            if let KeySeq::Cursor(r, c) = seq?.key {
-                self.screen_cols = c;
-                self.screen_rows = r.saturating_sub(2);
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn run(&mut self) -> io::Result<()> {
-        self.ensure_screen_size()?;
-
-        // Render first screen
         self.refresh_screen()?;
 
         while let Some(seq) = self.input.next() {
@@ -1122,6 +766,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.refresh_screen()?; // Update screen after keypress
         }
 
-        self.clear_screen() // Finally clear screen on exit
+        self.screen.clear() // Finally clear screen on exit
     }
 }

@@ -22,7 +22,7 @@ fn main() -> io::Result<()> {
 
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
-    let mut editor = Editor::new(term_size::dimensions_stdout(), input);
+    let mut editor = Editor::new(term_size::dimensions_stdout(), input)?;
 
     if let Some(arg) = matches.value_of("FILE") {
         editor.open_file(arg)?;
