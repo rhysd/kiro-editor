@@ -123,7 +123,7 @@ impl Screen {
             // Screen height is 1 line less than window height due to status bar
             num_rows: h.saturating_sub(2),
             message: StatusMessage::new("Ctrl-? for help", StatusMessageKind::Info),
-            dirty_start: None,
+            dirty_start: Some(0), // Render entire screen at first paint
             rowoff: 0,
             coloff: 0,
             color_support: ColorSupport::from_env(),
@@ -214,9 +214,14 @@ impl Screen {
     }
 
     fn draw_rows<W: Write>(&self, mut buf: W, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
+        let dirty_start = if let Some(s) = self.dirty_start {
+            s
+        } else {
+            return Ok(());
+        };
+
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
-        let dirty_start = self.dirty_start.unwrap_or(0);
 
         buf.write(AnsiColor::Reset.sequence(self.color_support))?;
 

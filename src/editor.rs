@@ -232,9 +232,9 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         for _ in 0..row_len {
             let row = &self.row[y];
             if let Some(byte_idx) = row.buffer().find(query) {
-                let rx = row.rx_from_cx(self.cx);
                 self.cy = y;
                 self.cx = row.char_idx_of(byte_idx);
+                let rx = row.rx_from_cx(self.cx);
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);
