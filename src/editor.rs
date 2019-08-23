@@ -421,7 +421,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.cy += 1;
         self.cx = 0;
         self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy);
+        self.screen.set_dirty_start(self.cy - 1);
     }
 
     fn move_cursor_one(&mut self, dir: CursorDir) {
