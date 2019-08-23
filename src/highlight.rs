@@ -272,7 +272,7 @@ impl Highlighting {
             lines: iter
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
-                        .take(r.render.chars().count()) // TODO: One item per one character
+                        .take(r.render_text().chars().count()) // TODO: One item per one character
                         .collect()
                 })
                 .collect(),
@@ -321,11 +321,11 @@ impl Highlighting {
         let mut prev_quote = None;
         let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
-            self.lines[y].resize(row.render.chars().count(), Highlight::Normal); // TODO: One item per one character
+            self.lines[y].resize(row.render_text().chars().count(), Highlight::Normal); // TODO: One item per one character
 
             let mut prev_hl = Highlight::Normal;
             let mut prev_char = '\0';
-            let mut iter = row.render.char_indices().enumerate();
+            let mut iter = row.render_text().char_indices().enumerate();
 
             while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
@@ -337,11 +337,12 @@ impl Highlighting {
                 if let Some((comment_start, comment_end)) = self.syntax.block_comment {
                     if hl == Highlight::Normal && prev_quote.is_none() {
                         let comment_delim = if in_block_comment
-                            && row.render[idx..].starts_with(comment_end)
+                            && row.render_text()[idx..].starts_with(comment_end)
                         {
                             in_block_comment = false;
                             Some(comment_end)
-                        } else if !in_block_comment && row.render[idx..].starts_with(comment_start)
+                        } else if !in_block_comment
+                            && row.render_text()[idx..].starts_with(comment_start)
                         {
                             in_block_comment = true;
                             Some(comment_start)
@@ -369,7 +370,8 @@ impl Highlighting {
                 }
 
                 if let Some(comment_leader) = self.syntax.line_comment {
-                    if prev_quote.is_none() && row.render[idx..].starts_with(comment_leader) {
+                    if prev_quote.is_none() && row.render_text()[idx..].starts_with(comment_leader)
+                    {
                         let len = self.lines[y].len();
                         self.lines[y].splice(x.., iter::repeat(Highlight::Comment).take(len - x));
                         break;
@@ -377,7 +379,7 @@ impl Highlighting {
                 }
 
                 if hl == Highlight::Normal && self.syntax.character {
-                    let mut i = row.render[idx..].chars();
+                    let mut i = row.render_text()[idx..].chars();
                     let len = match (i.next(), i.next(), i.next(), i.next()) {
                         (Some('\''), Some('\\'), _, Some('\'')) => Some(4),
                         (Some('\''), _, Some('\''), _) => Some(3),
@@ -410,7 +412,7 @@ impl Highlighting {
 
                 // Highlight identifiers
                 if hl == Highlight::Normal && is_bound {
-                    let line = &row.render[idx..];
+                    let line = &row.render_text()[idx..];
                     if let Some((keyword, highlight)) = self
                         .syntax
                         .keywords

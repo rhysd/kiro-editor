@@ -201,11 +201,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             return Ok(());
         }
 
-        match (seq.key, seq.ctrl, seq.alt) {
-            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true, ..) | (Key(b'n'), true, ..) => {
+        match (seq.key, seq.ctrl) {
+            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true) | (Key(b'n'), true) => {
                 self.finding.dir = FindDir::Forward
             }
-            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true, ..) | (Key(b'p'), true, ..) => {
+            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true) | (Key(b'p'), true) => {
                 self.finding.dir = FindDir::Back
             }
             _ => self.finding = FindState::new(),
@@ -230,12 +230,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             .unwrap_or(self.cy);
 
         for _ in 0..row_len {
-            if let Some(byte_idx) = self.row[y].render.find(query) {
-                let rx = self.row[y].render[..byte_idx].chars().count();
-                // XXX: This searches render text, not actual buffer. So it may not work properly on
-                // character which is rendered differently (e.g. tab character)
+            let row = &self.row[y];
+            if let Some(byte_idx) = row.buffer().find(query) {
+                let rx = row.rx_from_cx(self.cx);
                 self.cy = y;
-                self.cx = self.row[y].cx_from_rx(rx);
+                self.cx = row.char_idx_of(byte_idx);
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);

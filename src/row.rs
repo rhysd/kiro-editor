@@ -6,10 +6,10 @@ const TAB_STOP: usize = 8;
 #[derive(Default)]
 pub struct Row {
     buf: String,
-    pub render: String,
+    render: String,
     // Cache of byte indices of characters in `buf`. This will be empty when `buf` only contains
     // single byte characters not to allocate memory.
-    pub indices: Vec<usize>,
+    indices: Vec<usize>,
 }
 
 impl Row {
@@ -43,8 +43,22 @@ impl Row {
         }
     }
 
+    pub fn char_idx_of(&self, byte_idx: usize) -> usize {
+        if self.indices.len() == 0 {
+            return byte_idx;
+        }
+        self.indices
+            .iter()
+            .position(|bi| *bi == byte_idx)
+            .expect("byte index is not correct boundary of UTF-8")
+    }
+
     pub fn buffer(&self) -> &str {
         self.buf.as_str()
+    }
+
+    pub fn render_text(&self) -> &str {
+        self.render.as_str()
     }
 
     pub fn char_at(&self, at: usize) -> char {
@@ -99,21 +113,6 @@ impl Row {
                 rx + ch.width_cjk().unwrap()
             }
         })
-    }
-
-    pub fn cx_from_rx(&self, rx: usize) -> usize {
-        let mut current_rx = 0;
-        for (cx, ch) in self.buf.chars().enumerate() {
-            if ch == '\t' {
-                current_rx += TAB_STOP - (current_rx % TAB_STOP);
-            } else {
-                current_rx += ch.width_cjk().unwrap();
-            }
-            if current_rx > rx {
-                return cx; // Found
-            }
-        }
-        self.len() // Fall back to end of line
     }
 
     pub fn insert_char(&mut self, at: usize, c: char) {

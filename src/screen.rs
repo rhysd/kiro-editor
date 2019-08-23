@@ -244,7 +244,7 @@ impl Screen {
                 let row = &rows[file_row];
 
                 let mut col = 0;
-                for (c, hl) in row.render.chars().zip(hl.lines[file_row].iter()) {
+                for (c, hl) in row.render_text().chars().zip(hl.lines[file_row].iter()) {
                     col += c.width_cjk().unwrap_or(1);
                     if col <= self.coloff {
                         continue;
@@ -312,7 +312,7 @@ impl Screen {
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
         let mut coloff = 0;
-        for c in row.render.chars() {
+        for c in row.render_text().chars() {
             coloff += c.width_cjk().unwrap_or(1);
             if coloff >= want_stop {
                 // Screen cannot start from at the middle of double-width character
