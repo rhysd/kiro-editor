@@ -467,21 +467,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn move_cursor_per_page(&mut self, dir: CursorDir) {
-        match dir {
-            CursorDir::Up => {
-                self.cy = self.screen.rowoff; // Set cursor to top of screen
-                for _ in 0..self.screen.rows() {
-                    self.move_cursor_one(CursorDir::Up);
-                }
-            }
+        self.cy = match dir {
+            CursorDir::Up => self.screen.rowoff, // Top of screen
             CursorDir::Down => {
-                // Set cursor to bottom of screen considering end of buffer
-                self.cy = cmp::min(self.screen.rowoff + self.screen.rows() - 1, self.row.len());
-                for _ in 0..self.screen.rows() {
-                    self.move_cursor_one(CursorDir::Down)
-                }
+                cmp::min(self.screen.rowoff + self.screen.rows() - 1, self.row.len()) // Bottom of screen
             }
             _ => unreachable!(),
+        };
+        for _ in 0..self.screen.rows() {
+            self.move_cursor_one(dir);
         }
     }
 
