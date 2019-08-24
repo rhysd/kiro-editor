@@ -11,24 +11,25 @@ use kiro_editor::{Editor, StdinRawMode, HELP, VERSION};
 
 fn print_help(program: &str, opts: Options) {
     let description = format!(
-        r#"{prog}: A tiny UTF-8 terminal text editor.
+        "{prog}: A tiny UTF-8 terminal text editor
 
 Kiro is a tiny UTF-8 text editor on terminals for Unix-like systems.
-Specify a file to edit as a command argument or start to write a new empty text
-buffer with no argument. Help can show up with key mapping Ctrl-?.
+Specify a file path to edit as a command argument or run without argument to
+start to write a new text.
+Help can show up with key mapping Ctrl-?.
 
 Usage:
     {prog} [options] [FILE]
 
 Mappings:
-    {maps}"#,
+    {maps}",
         prog = program,
         maps = HELP,
     );
     println!("{}", opts.usage(&description));
 }
 
-fn run(file: Option<String>) -> io::Result<()> {
+fn run_editor(file: Option<String>) -> io::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
     let mut editor = Editor::new(input)?;
@@ -71,7 +72,7 @@ fn main() {
         return;
     }
 
-    if let Err(err) = run(matches.free.first().cloned()) {
+    if let Err(err) = run_editor(matches.free.first().cloned()) {
         eprintln!("Error: {}", err);
         exit(1);
     }
