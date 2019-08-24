@@ -90,8 +90,8 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
-    pub fn new(window_size: Option<(usize, usize)>, mut input: I) -> io::Result<Editor<I>> {
-        let screen = Screen::new(window_size, &mut input)?;
+    pub fn new(mut input: I) -> io::Result<Editor<I>> {
+        let screen = Screen::new(&mut input)?;
         Ok(Editor {
             input,
             file: None,
@@ -277,6 +277,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         // Consume any key
         while let Some(seq) = self.input.next() {
+            if self.screen.maybe_resize(&mut self.input)? {
+                // XXX: Status bar is not redrawn
+                self.screen.draw_help()?;
+            }
             if seq?.key != KeySeq::Unidentified {
                 break;
             }
@@ -580,6 +584,10 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         while let Some(seq) = self.input.next() {
             use KeySeq::*;
 
+            if self.screen.maybe_resize(&mut self.input)? {
+                self.refresh_screen()?;
+            }
+
             let seq = seq?;
             let mut finished = false;
             match (&seq.key, seq.ctrl, seq.alt) {
@@ -701,16 +709,22 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     pub fn run(&mut self) -> io::Result<()> {
-        self.refresh_screen()?;
+        self.refresh_screen()?; // First paint
 
         while let Some(seq) = self.input.next() {
+            if self.screen.maybe_resize(&mut self.input)? {
+                self.refresh_screen()?;
+            }
+
             let seq = seq?;
             if seq.key == KeySeq::Unidentified {
                 continue; // Ignore
             }
+
             if self.process_keypress(seq)? == AfterKeyPress::Quit {
                 break;
             }
+
             self.refresh_screen()?; // Update screen after keypress
         }
 

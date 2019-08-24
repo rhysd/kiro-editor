@@ -29,7 +29,8 @@ termios = "0.3"
 term_size = "0.3"
 unicode-width = "0.1"
 term = "0.6"
-getopts = "0.2.21"
+getopts = "0.2"
+signal-hook = "0.1"
 
 [badges]
 maintenance = { status = "actively-developed" }

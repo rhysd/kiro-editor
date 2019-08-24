@@ -2,6 +2,7 @@ use crate::ansi_color::{AnsiColor, ColorSupport};
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
+use crate::signal::SigwinchWatcher;
 use std::cmp;
 use std::io::{self, Write};
 use std::time::SystemTime;
@@ -56,10 +57,14 @@ impl StatusMessage {
     }
 }
 
-fn get_window_size_fallback<I>(input: &mut I) -> io::Result<(usize, usize)>
+fn get_window_size<I>(input: I) -> io::Result<(usize, usize)>
 where
     I: Iterator<Item = io::Result<InputSeq>>,
 {
+    if let Some(s) = term_size::dimensions_stdout() {
+        return Ok(s);
+    }
+
     // By moving cursor at the bottom-right corner by 'B' and 'C' commands, get the size of
     // current screen. \x1b[9999;9999H is not available since it does not guarantee cursor
     // stops on the corner. Finaly command 'n' queries cursor position.
@@ -87,6 +92,8 @@ pub struct Screen {
     // Dirty line which requires rendering update. After this line must be updated since
     // updating line may affect highlights of succeeding lines
     dirty_start: Option<usize>,
+    // Watch resize signal
+    sigwinch: SigwinchWatcher,
     // Scroll position (row/col offset)
     pub rowoff: usize,
     pub coloff: usize,
@@ -94,16 +101,11 @@ pub struct Screen {
 }
 
 impl Screen {
-    pub fn new<I>(window_size: Option<(usize, usize)>, input: &mut I) -> io::Result<Self>
+    pub fn new<I>(input: I) -> io::Result<Self>
     where
         I: Iterator<Item = io::Result<InputSeq>>,
     {
-        let (w, h) = if let Some(s) = window_size {
-            s
-        } else {
-            get_window_size_fallback(input)?
-        };
-
+        let (w, h) = get_window_size(input)?;
         Ok(Self {
             rx: 0,
             num_cols: w,
@@ -111,6 +113,7 @@ impl Screen {
             num_rows: h.saturating_sub(2),
             message: StatusMessage::new("Ctrl-? for help", StatusMessageKind::Info),
             dirty_start: Some(0), // Render entire screen at first paint
+            sigwinch: SigwinchWatcher::new()?,
             rowoff: 0,
             coloff: 0,
             color_support: ColorSupport::from_env(),
@@ -442,6 +445,21 @@ impl Screen {
             }
         }
         self.dirty_start = Some(start);
+    }
+
+    pub fn maybe_resize<I>(&mut self, input: I) -> io::Result<bool>
+    where
+        I: Iterator<Item = io::Result<InputSeq>>,
+    {
+        if !self.sigwinch.notified() {
+            return Ok(false); // Did not receive signal
+        }
+
+        let (w, h) = get_window_size(input)?;
+        self.num_rows = h.saturating_sub(2);
+        self.num_cols = w;
+        self.dirty_start = Some(0);
+        Ok(true)
     }
 
     pub fn set_info_message<S: Into<String>>(&mut self, message: S) {

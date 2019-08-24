@@ -80,7 +80,7 @@ pub enum KeySeq {
     HomeKey,
     EndKey,
     DeleteKey,
-    Cursor(usize, usize), // Pseudo key
+    Cursor(usize, usize), // Pseudo key (x, y)
 }
 
 impl fmt::Display for KeySeq {
@@ -172,7 +172,7 @@ impl InputSequences {
                 match b {
                     // Control command chars from http://ascii-table.com/ansi-escape-sequences-vt-100.php
                     b'A' | b'B' | b'C' | b'D' | b'F' | b'H' | b'K' | b'J' | b'R' | b'c' | b'f'
-                    | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b'y' | b'~' => break b,
+                    | b'g' | b'h' | b'l' | b'm' | b'n' | b'q' | b't' | b'y' | b'~' => break b,
                     _ => buf.push(b),
                 }
             } else {
@@ -181,14 +181,17 @@ impl InputSequences {
             }
         };
 
+        fn parse_bytes_as_usize(b: &[u8]) -> Option<usize> {
+            str::from_utf8(b).ok().and_then(|s| s.parse().ok())
+        }
+
         let mut args = buf.split(|b| *b == b';');
         match cmd {
             b'R' => {
                 // https://vt100.net/docs/vt100-ug/chapter3.html#CPR e.g. \x1b[24;80R
-                let mut i =
-                    args.map(|b| str::from_utf8(b).ok().and_then(|s| s.parse::<usize>().ok()));
+                let mut i = args.filter_map(parse_bytes_as_usize);
                 match (i.next(), i.next()) {
-                    (Some(Some(r)), Some(Some(c))) => Ok(InputSeq::new(Cursor(r, c))),
+                    (Some(r), Some(c)) => Ok(InputSeq::new(Cursor(r, c))),
                     _ => Ok(InputSeq::new(Unidentified)),
                 }
             }

@@ -31,7 +31,7 @@ Mappings:
 fn run(file: Option<String>) -> io::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
-    let mut editor = Editor::new(term_size::dimensions_stdout(), input)?;
+    let mut editor = Editor::new(input)?;
 
     if let Some(f) = file {
         editor.open_file(f)?;

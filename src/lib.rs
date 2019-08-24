@@ -14,6 +14,7 @@ mod input;
 mod language;
 mod row;
 mod screen;
+mod signal;
 
 pub use editor::Editor;
 pub use input::StdinRawMode;
