@@ -666,14 +666,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Unidentified, ..) => unreachable!(),
             (Cursor(_, _), ..) => unreachable!(),
             (key, ctrl, alt) => {
-                let m = match (ctrl, alt) {
+                let modifier = match (ctrl, alt) {
                     (true, true) => "C-M-",
                     (true, false) => "C-",
                     (false, true) => "M-",
                     (false, false) => "",
                 };
-                self.screen
-                    .set_error_message(format!("Key '{}{}' not mapped", m, key));
+                let msg = format!("Key '{}{}' not mapped", modifier, key);
+                self.screen.set_error_message(msg);
             }
         }
 

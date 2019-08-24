@@ -44,7 +44,7 @@ impl Row {
     }
 
     pub fn char_idx_of(&self, byte_idx: usize) -> usize {
-        if self.indices.len() == 0 {
+        if self.indices.is_empty() {
             return byte_idx;
         }
         self.indices

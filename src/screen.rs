@@ -357,6 +357,9 @@ impl Screen {
 
         if prev_rowoff != self.rowoff || prev_coloff != self.coloff {
             // If scroll happens, all rows on screen must be updated
+            // TODO: Improve rendering on scrolling up/down using scroll region commands \x1b[M/\x1b[D.
+            // But scroll down region command was implemented in tmux recently and not included in
+            // stable release: https://github.com/tmux/tmux/commit/45f4ff54850ff9b448070a96b33e63451f973e33
             self.set_dirty_start(self.rowoff);
         }
     }
