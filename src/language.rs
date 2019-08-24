@@ -13,6 +13,7 @@ pub enum Language {
     Rust,
     JavaScript,
     Go,
+    Cpp,
 }
 
 impl Language {
@@ -24,6 +25,7 @@ impl Language {
             Rust => "rust",
             JavaScript => "javascript",
             Go => "go",
+            Cpp => "c++",
         }
     }
 
@@ -35,6 +37,7 @@ impl Language {
             Rust => &["rs"],
             JavaScript => &["js"],
             Go => &["go"],
+            Cpp => &["cpp", "hpp", "cxx", "hxx", "cc", "hh"],
         }
     }
 
@@ -42,18 +45,16 @@ impl Language {
         use Indent::*;
         use Language::*;
         match self {
-            Plain => AsIs,
-            C => Fixed("    "),
-            Rust => Fixed("    "),
+            Plain | Go => AsIs,
+            C | Rust | Cpp => Fixed("    "),
             JavaScript => Fixed("  "),
-            Go => AsIs,
         }
     }
 
     pub fn detect<P: AsRef<Path>>(path: P) -> Language {
         use Language::*;
         if let Some(ext) = path.as_ref().extension().and_then(OsStr::to_str) {
-            for lang in &[C, Rust, JavaScript, Go] {
+            for lang in &[C, Rust, JavaScript, Go, Cpp] {
                 if lang.file_exts().contains(&ext) {
                     return *lang;
                 }
