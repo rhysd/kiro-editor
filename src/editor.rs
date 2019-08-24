@@ -52,7 +52,7 @@ impl FindState {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum CursorDir {
     Left,
     Right,
@@ -552,6 +552,20 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
+    fn move_cursor_per_paragraph(&mut self, dir: CursorDir) {
+        debug_assert!(dir != CursorDir::Left && dir != CursorDir::Right);
+        loop {
+            self.move_cursor_one(dir);
+            if self.cy == 0
+                || self.cy == self.row.len()
+                || self.row[self.cy - 1].buffer().is_empty()
+                    && !self.row[self.cy].buffer().is_empty()
+            {
+                break;
+            }
+        }
+    }
+
     fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> io::Result<Option<String>>
     where
         S: AsRef<str>,
@@ -643,6 +657,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             (Key(b'v'), false, true) => self.move_cursor_per_page(CursorDir::Up),
             (Key(b'f'), false, true) => self.move_cursor_by_word(CursorDir::Right),
             (Key(b'b'), false, true) => self.move_cursor_by_word(CursorDir::Left),
+            (Key(b'n'), false, true) => self.move_cursor_per_paragraph(CursorDir::Down),
+            (Key(b'p'), false, true) => self.move_cursor_per_paragraph(CursorDir::Up),
             (Key(b'<'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Up),
             (Key(b'>'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Down),
             (Key(0x08), false, false) => self.delete_char(), // Backspace

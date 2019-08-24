@@ -23,6 +23,8 @@ pub const HELP: &str = "\
     Alt-V      : Previous page
     Alt-F      : Move cursor to next word
     Alt-B      : Move cursor to previous word
+    Alt-N      : Move cursor to next paragraph
+    Alt-P      : Move cursor to previous paragraph
     Alt-<      : Move cursor to top of file
     Alt->      : Move cursor to bottom of file
     Ctrl-H     : Delete character

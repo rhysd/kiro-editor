@@ -42,12 +42,11 @@ impl Language {
     }
 
     pub fn indent(self) -> Indent {
-        use Indent::*;
         use Language::*;
         match self {
-            Plain | Go => AsIs,
-            C | Rust | Cpp => Fixed("    "),
-            JavaScript => Fixed("  "),
+            Plain | Go => Indent::AsIs,
+            C | Rust | Cpp => Indent::Fixed("    "),
+            JavaScript => Indent::Fixed("  "),
         }
     }
 
