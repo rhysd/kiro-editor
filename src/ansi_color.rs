@@ -76,7 +76,7 @@ impl AnsiColor {
             ColorSupport::TrueColor => match self {
                 Reset => concat!(
                     "\x1b[39;0m",
-                    rgb_color!(fg, 0xeb, 0xdb, 0xb2),
+                    rgb_color!(fg, 0xfb, 0xf1, 0xc7),
                     rgb_color!(bg, 0x28, 0x28, 0x28),
                 )
                 .as_bytes(),

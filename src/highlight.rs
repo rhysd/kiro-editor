@@ -174,7 +174,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Go,
     number: true,
-    string_quotes: &['"'],
+    string_quotes: &['"', '`'],
     character: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),

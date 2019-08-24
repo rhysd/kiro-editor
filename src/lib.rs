@@ -1,6 +1,7 @@
 // Refs:
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
-//   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
+//   VT100 User Guide:           https://vt100.net/docs/vt100-ug/chapter3.html
+//   Xterm Control Sequences:    https://www.xfree86.org/current/ctlseqs.html
 
 #![allow(clippy::unused_io_amount)]
 #![allow(clippy::match_overlapping_arm)]
