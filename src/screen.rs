@@ -9,47 +9,30 @@ use unicode_width::UnicodeWidthChar;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const HELP: &str = "\
-    Ctrl-Q     : Quit
-    Ctrl-S     : Save to file
-    Ctrl-P     : Move cursor up
-    Ctrl-N     : Move cursor down
-    Ctrl-F     : Move cursor right
-    Ctrl-B     : Move cursor left
-    Ctrl-A     : Move cursor to head of line
-    Ctrl-E     : Move cursor to end of line
-    Ctrl-[     : Next page
-    Ctrl-]     : Previous page
-    Ctrl-V     : Next page
-    Alt-V      : Previous page
-    Alt-F      : Move cursor to next word
-    Alt-B      : Move cursor to previous word
-    Alt-N      : Move cursor to next paragraph
-    Alt-P      : Move cursor to previous paragraph
-    Alt-<      : Move cursor to top of file
-    Alt->      : Move cursor to bottom of file
-    Ctrl-H     : Delete character
-    Ctrl-D     : Delete next character
-    Ctrl-U     : Delete until head of line
-    Ctrl-K     : Delete until end of line
-    Ctrl-M     : New line
-    Ctrl-G     : Search text
-    Ctrl-L     : Refresh screen
-    Ctrl-?     : Show this help
-    UP         : Move cursor up
-    DOWN       : Move cursor down
-    RIGHT      : Move cursor right
-    LEFT       : Move cursor left
-    PAGE DOWN  : Next page
-    PAGE UP    : Previous page
-    HOME       : Move cursor to head of line
-    END        : Move cursor to end of line
-    DELETE     : Delete next character
-    BACKSPACE  : Delete character
-    ESC        : Refresh screen
-    Ctrl-RIGHT : Move cursor to next word
-    Ctrl-LEFT  : Move cursor to previous word
-    Alt-RIGHT  : Move cursor to end of line
-    Alt-LEFT   : Move cursor to head of line";
+    Ctrl-Q                        : Quit
+    Ctrl-S                        : Save to file
+    Ctrl-P or UP                  : Move cursor up
+    Ctrl-N or DOWN                : Move cursor down
+    Ctrl-F or RIGHT               : Move cursor right
+    Ctrl-B or LEFT                : Move cursor left
+    Ctrl-A or Alt-LEFT or HOME    : Move cursor to head of line
+    Ctrl-E or Alt-RIGHT or END    : Move cursor to end of line
+    Ctrl-[ or Ctrl-V or PAGE DOWN : Next page
+    Ctrl-] or Alt-V or PAGE UP    : Previous page
+    Alt-F or Ctrl-RIGHT           : Move cursor to next word
+    Alt-B or Ctrl-LEFT            : Move cursor to previous word
+    Alt-N                         : Move cursor to next paragraph
+    Alt-P                         : Move cursor to previous paragraph
+    Alt-<                         : Move cursor to top of file
+    Alt->                         : Move cursor to bottom of file
+    Ctrl-H or BACKSPACE           : Delete character
+    Ctrl-D or DELETE              : Delete next character
+    Ctrl-U                        : Delete until head of line
+    Ctrl-K                        : Delete until end of line
+    Ctrl-M                        : New line
+    Ctrl-G                        : Search text
+    Ctrl-L                        : Refresh screen
+    Ctrl-?                        : Show this help";
 
 #[derive(PartialEq)]
 enum StatusMessageKind {
