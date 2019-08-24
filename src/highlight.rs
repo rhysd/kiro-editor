@@ -418,6 +418,11 @@ impl Highlighting {
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
             self.lines[y].resize(row.render_text().chars().count(), Highlight::Normal); // TODO: One item per one character
 
+            if self.syntax.lang == Language::Plain {
+                // On 'plain' syntax, skip highlighting since nothing is highlighted.
+                continue;
+            }
+
             let mut prev_hl = Highlight::Normal;
             let mut prev_char = '\0';
             let mut iter = row.render_text().char_indices().enumerate();
