@@ -232,7 +232,7 @@ impl Screen {
                 continue;
             }
 
-            // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
+            // Move cursor to target line
             write!(buf, "\x1b[{}H", y + 1)?;
 
             if file_row >= row_len {
@@ -281,9 +281,8 @@ impl Screen {
         Ok(())
     }
 
-    fn redraw_screen<W: Write>(
+    fn redraw_screen(
         &self,
-        mut buf: W,
         rows: &[Row],
         file_name: &str,
         modified: bool,
@@ -291,6 +290,14 @@ impl Screen {
         cy: usize,
         hl: &Highlighting,
     ) -> io::Result<()> {
+        let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
+
+        // \x1b[: Escape sequence header
+        // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
+        buf.write(b"\x1b[?25l")?;
+        // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
+        buf.write(b"\x1b[H")?;
+
         self.draw_rows(&mut buf, rows, hl)?;
         self.draw_status_bar(&mut buf, rows.len(), file_name, modified, lang_name, cy)?;
         self.draw_message_bar(&mut buf)?;
@@ -299,7 +306,13 @@ impl Screen {
         let cursor_row = cy - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
         write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
-        Ok(())
+
+        // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
+        buf.write(b"\x1b[?25h")?;
+
+        let mut stdout = io::stdout();
+        stdout.write(&buf)?;
+        stdout.flush()
     }
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
@@ -314,13 +327,7 @@ impl Screen {
         coloff
     }
 
-    fn do_scroll<W: Write>(
-        &mut self,
-        mut buf: W,
-        rows: &[Row],
-        cx: usize,
-        cy: usize,
-    ) -> io::Result<()> {
+    fn do_scroll(&mut self, rows: &[Row], cx: usize, cy: usize) {
         let prev_rowoff = self.rowoff;
         let prev_coloff = self.coloff;
 
@@ -348,28 +355,10 @@ impl Screen {
             self.coloff = self.next_coloff(self.rx - self.num_cols + 1, &rows[cy]);
         }
 
-        if prev_coloff != self.coloff {
+        if prev_rowoff != self.rowoff || prev_coloff != self.coloff {
             // If scroll happens, all rows on screen must be updated
             self.set_dirty_start(self.rowoff);
-        } else if prev_rowoff < self.rowoff {
-            // Scroll down text buffer
-            let delta = self.rowoff - prev_rowoff;
-            if let Some(s) = self.dirty_start {
-                self.dirty_start = Some(s - delta);
-            } else {
-                self.dirty_start = Some(self.rowoff + self.num_rows - delta);
-            }
-            // \x1b[<n>S: Scroll up screen by <n> lines.
-            write!(buf, "\x1b[{}S", delta)?;
-        } else if self.rowoff < prev_rowoff {
-            // Scroll up text buffer
-            self.set_dirty_start(self.rowoff);
-            // XXX: Always redraw entire screen on scrolling up text buffer.
-            // Tmux does not scrolls down screen when an escape sequence \x1b[<n>T which scrolls down
-            // screen by <n> lines.
         }
-
-        Ok(())
     }
 
     pub fn refresh(
@@ -381,26 +370,12 @@ impl Screen {
         cursor: (usize, usize),
         hl: &mut Highlighting,
     ) -> io::Result<()> {
-        let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
-
-        // \x1b[: Escape sequence header
-        // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
-        buf.write(b"\x1b[?25l")?;
-
         let (cx, cy) = cursor;
-        self.do_scroll(&mut buf, rows, cx, cy)?;
+        self.do_scroll(rows, cx, cy);
         hl.update(rows, self.rowoff + self.num_rows);
-        self.redraw_screen(&mut buf, rows, file_name, modified, lang_name, cy, hl)?;
-
-        // Reset state
+        self.redraw_screen(rows, file_name, modified, lang_name, cy, hl)?;
         self.dirty_start = None;
-
-        // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
-        buf.write(b"\x1b[?25h")?;
-
-        let mut stdout = io::stdout();
-        stdout.write(&buf)?;
-        stdout.flush()
+        Ok(())
     }
 
     pub fn clear(&self) -> io::Result<()> {
