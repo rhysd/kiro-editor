@@ -17,6 +17,8 @@ pub const HELP: &str = "\
     Ctrl-B     : Move cursor left
     Ctrl-A     : Move cursor to head of line
     Ctrl-E     : Move cursor to end of line
+    Ctrl-[     : Next page
+    Ctrl-]     : Previous page
     Ctrl-V     : Next page
     Alt-V      : Previous page
     Alt-F      : Move cursor to next word
