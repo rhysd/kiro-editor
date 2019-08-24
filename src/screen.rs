@@ -21,8 +21,8 @@ pub const HELP: &str = "\
     Ctrl-] or Alt-V or PAGE UP    : Previous page
     Alt-F or Ctrl-RIGHT           : Move cursor to next word
     Alt-B or Ctrl-LEFT            : Move cursor to previous word
-    Alt-N                         : Move cursor to next paragraph
-    Alt-P                         : Move cursor to previous paragraph
+    Alt-N or Ctrl-DOWN            : Move cursor to next paragraph
+    Alt-P or Ctrl-UP              : Move cursor to previous paragraph
     Alt-<                         : Move cursor to top of file
     Alt->                         : Move cursor to bottom of file
     Ctrl-H or BACKSPACE           : Delete character
