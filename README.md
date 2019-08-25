@@ -1,5 +1,6 @@
 Kiro
 ====
+[![Build Status][build-badge]][travis-ci]
 
 [Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. [Kiro][] was implemented
 based on awesome minimal text editor [kilo][] and ['Build Your Own Text Editor' tutorial][byote]
@@ -229,3 +230,5 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [byote]: https://viewsourcecode.org/snaptoken/kilo/
 [gruvbox]: https://github.com/morhetz/gruvbox
 [cargo]: https://github.com/rust-lang/cargo
+[build-badge]: https://travis-ci.org/rhysd/kiro-editor.svg?branch=master
+[travis-ci]: https://travis-ci.org/rhysd/kiro-editor
