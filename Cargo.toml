@@ -10,7 +10,7 @@ homepage = "https://github.com/rhysd/kiro"
 repository = "https://github.com/rhysd/kiro"
 readme = "README.md"
 include = ["src/**/*.rs", "Cargo.toml"]
-keywords = ["text editor", "editor", "terminal"]
+keywords = ["text-editor", "editor", "terminal", "utf-8"]
 categories = ["text-editors", "development-tools"]
 license = "MIT"
 
