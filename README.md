@@ -1,9 +1,10 @@
 Kiro
 ====
+[![crates.io][crates-io-badge]][crates-io]
 [![Build Status][build-badge]][travis-ci]
 
 [Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. [Kiro][] was implemented
-based on awesome minimal text editor [kilo][] and ['Build Your Own Text Editor' tutorial][byote]
+based on awesome minimal text editor [kilo][] and ['Build Your Own Text Editor' guide][byote]
 with various improvements.
 
 <img width=589 height=412 src="https://github.com/rhysd/ss/blob/master/kiro-editor/main.gif?raw=true" alt="main screenshot"/>
@@ -33,10 +34,14 @@ and 'Implementation' section below for more details):
 [Kiro][] aims to support kinds of xterm terminals on Unix-like systems. For example Terminal.app,
 iTerm2.app, Gnome-Terminal, (hopefully) Windows Terminal on WSL.
 
+I leaned various things by making this project. Please read 'Implementation' section below to find
+some interesting topics.
+
+
 
 ## Installation
 
-Please install `kiro` command by building from sources using [cargo][].
+Please install [`kiro-editor`][crates-io] package by building from sources using [cargo][].
 
 ```
 $ cargo install kiro-editor
@@ -47,6 +52,8 @@ $ cargo install kiro-editor
 ## Usage
 
 ### CLI
+
+Installing [`kiro-editor`][crates-io] package introduces `kiro` command in your system.
 
 ```sh
 $ kiro                 # Start with an empty text buffer
@@ -194,19 +201,144 @@ stops calculating highlights at the line of bottom of screen.
 
 ### Porting C editor to Rust
 
-TBD
+#### Separate one C source into several Rust modules
+
+To simplify and minimize implementation, [kilo][] uses some global variables and local `static`
+variables. Editor's state is stored in a global variable `E` and it is referred everywhere.
+
+While porting the code to Rust, I split `kilo.c` into some Rust modules for each logics. I removed
+the global variables and local static variables by moving them to each logic's structs.
+
+- [`editor.rs`](src/editor.rs): Exports `Editor` struct, which manages an editor lifecycle; Runs loop
+  which gets key input, updates buffer and highlight then renders screen. It also contains text buffer
+  as `Vec<Row>`.
+- [`row.rs`](src/row.rs): Exports `Row` struct which represents one line of text buffer and contains
+  actual text and rendered text. Since Kiro is dedicated for UTF-8 text editing, internal text buffer
+  is also kept as UTF-8 string. When the internal text buffer is updated by `Editor`, it automatically
+  updates rendered text also. It may also contain character indices for UTF-8 non-ASCII characters
+  (Please see below 'UTF-8 Support' section).
+- [`input.rs`](src/input.rs): Exports `StdinRawMode` struct and `InputSequences` iterator.
+  `StdinRawMode` setups STDIN as raw mode (disable various terminal features such as echo back).
+  `InputSequences` reads user's key input as byte sequence with timeout and parses it as stream of
+  key sequence. VT100 and xterm escape sequences like `\x1b[D` for `←` key are parsed here.
+- [`highlight.rs`](src/highlight.rs): Exports `Highlighting` struct, which contains highlight information
+  of each character in text buffer. It also manages highlighting in an editor lifecycle. It calculates
+  highlights of characters which is rendered and updates its information.
+- [`screen.rs`](src/screen.rs): Exports `Screen` struct, which represents screen rendering. It renders
+  each `Row` with highlight colors by outputting characters and escape sequences to STDOUT. As described
+  in previous section, it manages efficient rendering. It also manages and renders status bar and message
+  bar located at bottom of screen.
+- [`ansi_color.rs`](src/ansi_color.rs): Exports small `AnsiColor` struct, which represents terminal
+  colors. This module also has logic to detect 24-bit colors and 256 colors support of terminal.
+- [`language.rs`](src/language.rs): Exports small `Language` enum, which represents file types like
+  C, Rust, Go, JavaScript, C++. It contains logic to detect a file type from file name.
+- [`signal.rs`](src/signal.rs): Exports `SigwinchWatcher` struct, which receives SIGWINCH signal and
+  notifies it to `Screen`. The signal is sent when terminal window size changed. `Screen` requires
+  the notification for resizing the screen.
+
+#### Error handling and resource clean up
+
+[kilo][] outputs message by `perror()` and immediately exits on error. It also cleans up STDIN
+configuration with `atexit` hook.
+
+Kiro is implemented in Rust. So it utilizes Rust idioms to handle errors with `io::Result` and `?`
+operator. It reduces codes for error handling so that I could focus on implementing editor logics.
+
+For resource clean up, Rust's `Drop` crate works greatly in `input.rs`.
+
+```rust
+struct StdinRawMode {
+    stdin: io::Stdin,
+    // ...
+}
+
+impl StdinRawMode {
+    fn new() -> io::Result<StdinRawMode> {
+        // Setup terminal raw mode of stdin here
+        // ...
+    }
+}
+
+impl Drop for StdinRawMode {
+    fn drop(&mut self) {
+        // Restore original terminal mode of stdin here
+    }
+}
+
+impl Deref for StdinRawMode {
+    type Target = io::Stdin;
+    fn deref(&self) -> &Self::Target {
+        &self.stdin
+    }
+}
+
+impl DerefMut for StdinRawMode {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.stdin
+    }
+}
+```
+
+The `drop()` method is called when `StdinRawMode` instance dies. So user doesn't need to remember
+the clean up. And `StdinRawMode` also implements `Deref` and `DerefMut` so that it behaves almost
+as if it were `Stdin`. By wrapping `io::Stdin` like this, I could add the ability to enter/leave
+terminal raw mode to `io::Stdin`.
 
 
 ### UTF-8 Support
 
-TBD
+[kilo][] only supports ASCII text. Width of ASCII character is fixed to 1 byte. This assumption reduces
+complexity of implementation of kilo greatly because:
+
+- every character can be represented as `char` (almost the same as `u8` in Rust)
+- any character in ASCII text can be accessed via byte index in O(1)
+- length of text is the same as number of bytes of the text
+
+So kilo can contain text buffer as simple `char *` and accesses characters in it via byte index.
+In addition, display width of all printable ASCII characters is fixed except for `0x09` tab character.
+
+But actually there are more characters in the world defined as Unicode characters. Since I'm Japanese,
+the characters such as Kanji or Hiragana I'm daily using are not ASCII. And the most major text encoding
+is UTF-8. So I determined to extend Kiro editor to support UTF-8.
+
+In UTF-8, byte length of character is variable. Any character takes 1~4 bytes (or more in special case).
+The important point here is that accessing to character in UTF-8 text is not O(1). To access to N-th
+character or to know length of text, it requires to check characters from head of the text.
+
+Accessing to character in text and getting text length happen frequently while updating text buffer
+and highlights. So checking them in O(N) for each time is not efficient. To solve this problem, Kiro
+contains byte indices of each characters in line text as `Vec<usize>`. These indices are only existing
+when at least one character in line text is non-ASCII character.
+
+![UTF-8 support diagram](./images/utf-8-support-diagram.png)
+
+In `Row` struct which represents one text line, `indices` field (`Vec<usize>`) is dedicated to store
+byte indices of each character.
+
+In the first case `"Rust is nice"`, all characters are ASCII so byte index can be used to access to
+characters in the text. In the case, `indices` field is an empty (and capacity is set to zero). A `Vec`
+instance with zero capacity is guaranteed not to allocate heap memory. So the memory overhead here is
+24 bytes of `Vec<usize>` instance itself (pointer, capacity as `usize` and length as `usize`) only.
+
+In the second case `"Rust良い🐶"`, there are some non-ASCII characters so `self.indices` caches byte
+indices of each bytes. Thanks to this cache, each character can be accessed in O(1) and its text length
+can be obtained in O(1) as `self.indices.len()`. `Row` also contains a rendered text and updates it
+when internal text buffer is updated by `Editor`. So `self.indices` cache is also updated at the same
+timing.
+
+Though keeping byte indices in `Vec<usize>` is quite memory inefficient, the indices are only required
+when text contains non-ASCII characters. In terms of programming code editor, it is relatively rare
+case, I believe.
+
 
 
 ### TODO
 
-- Unit tests are not sufficient. More tests are necessary
+- Unit tests are not sufficient. More tests should be added
 - Undo/Redo is not implemented yet
 - Text selection and copy from or paste to system clipboard
+- Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
+  screen (`rowoff..rowoff+num_rows`)
 
 
 ### Future Works
@@ -217,6 +349,7 @@ TBD
 - Look editor configuration file such as [EditorConfig](https://editorconfig.org/)
   or [`.vscode` VS Code workspace settings](https://code.visualstudio.com/docs/getstarted/settings)
 - Support emojis using `U+200D`
+- WebAssembly support
 
 
 
@@ -232,3 +365,5 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [cargo]: https://github.com/rust-lang/cargo
 [build-badge]: https://travis-ci.org/rhysd/kiro-editor.svg?branch=master
 [travis-ci]: https://travis-ci.org/rhysd/kiro-editor
+[crates-io]: https://crates.io/crates/kiro-editor
+[crates-io-badge]: https://img.shields.io/crates/v/kiro-editor.svg
