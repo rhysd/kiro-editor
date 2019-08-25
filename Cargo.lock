@@ -161,7 +161,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kiro_editor"
+name = "kiro-editor"
 version = "0.1.0"
 dependencies = [
  "getopts 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
