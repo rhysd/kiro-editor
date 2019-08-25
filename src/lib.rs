@@ -16,6 +16,10 @@ mod row;
 mod screen;
 mod signal;
 
-pub use editor::Editor;
+#[cfg(test)]
+mod test;
+
+pub use editor::{Editor, TextLines};
 pub use input::StdinRawMode;
-pub use screen::{HELP, VERSION};
+pub use language::Language;
+pub use screen::{Screen, HELP, VERSION};

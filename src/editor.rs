@@ -7,6 +7,7 @@ use std::cmp;
 use std::fs;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::slice;
 use std::str;
 
 // Contain both actual path sequence and display string
@@ -708,7 +709,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         Ok(AfterKeyPress::Nothing)
     }
 
-    pub fn run(&mut self) -> io::Result<()> {
+    pub fn edit(&mut self) -> io::Result<()> {
         self.refresh_screen()?; // First paint
 
         while let Some(seq) = self.input.next() {
@@ -729,5 +730,36 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         self.screen.clear() // Finally clear screen on exit
+    }
+
+    pub fn text_lines(&self) -> TextLines<'_> {
+        TextLines {
+            iter: self.row.iter(),
+        }
+    }
+
+    pub fn screen(&self) -> &'_ Screen {
+        &self.screen
+    }
+
+    pub fn lang(&self) -> &'_ Language {
+        &self.lang
+    }
+}
+
+pub struct TextLines<'a> {
+    iter: slice::Iter<'a, Row>,
+}
+
+impl<'a> Iterator for TextLines<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|r| r.buffer())
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.iter.as_slice().len();
+        (len, Some(len))
     }
 }

@@ -473,4 +473,12 @@ impl Screen {
     pub fn rows(&self) -> usize {
         self.num_rows
     }
+
+    pub fn cols(&self) -> usize {
+        self.num_cols
+    }
+
+    pub fn message_text(&self) -> &'_ str {
+        self.message.text.as_str()
+    }
 }

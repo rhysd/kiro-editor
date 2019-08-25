@@ -114,7 +114,7 @@ pub struct InputSeq {
 }
 
 impl InputSeq {
-    fn new(key: KeySeq) -> Self {
+    pub fn new(key: KeySeq) -> Self {
         Self {
             key,
             ctrl: false,
@@ -122,7 +122,7 @@ impl InputSeq {
         }
     }
 
-    fn ctrl(key: KeySeq) -> Self {
+    pub fn ctrl(key: KeySeq) -> Self {
         Self {
             key,
             ctrl: true,

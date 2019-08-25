@@ -29,7 +29,7 @@ Mappings:
     println!("{}", opts.usage(&description));
 }
 
-fn run_editor(file: Option<String>) -> io::Result<()> {
+fn edit(file: Option<String>) -> io::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
     let mut editor = Editor::new(input)?;
@@ -38,7 +38,7 @@ fn run_editor(file: Option<String>) -> io::Result<()> {
         editor.open_file(f)?;
     }
 
-    editor.run()
+    editor.edit()
 }
 
 fn main() {
@@ -72,7 +72,7 @@ fn main() {
         return;
     }
 
-    if let Err(err) = run_editor(matches.free.first().cloned()) {
+    if let Err(err) = edit(matches.free.first().cloned()) {
         eprintln!("Error: {}", err);
         exit(1);
     }

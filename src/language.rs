@@ -6,7 +6,7 @@ pub enum Indent {
     Fixed(&'static str),
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Language {
     Plain,
     C,
