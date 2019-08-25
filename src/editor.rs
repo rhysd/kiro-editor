@@ -150,9 +150,14 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))?
             {
                 let file = FilePath::from_string(input);
-                self.lang = Language::detect(&file.path);
-                self.hl.lang_changed(self.lang);
+                let new_lang = Language::detect(&file.path);
+                self.hl.lang_changed(new_lang);
                 self.file = Some(file);
+                if new_lang != self.lang {
+                    // Render entire screen since highglight udpated
+                    self.screen.set_dirty_start(self.screen.rowoff);
+                    self.lang = new_lang;
+                }
                 create = true;
             }
         }
