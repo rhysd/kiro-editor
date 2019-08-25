@@ -28,6 +28,7 @@ pub const HELP: &str = "\
     Alt->                         : Move cursor to bottom of file
     Ctrl-H or BACKSPACE           : Delete character
     Ctrl-D or DELETE              : Delete next character
+    Ctrl-W                        : Delete a word
     Ctrl-U                        : Delete until head of line
     Ctrl-K                        : Delete until end of line
     Ctrl-M                        : New line
