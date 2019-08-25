@@ -6,8 +6,8 @@ edition = "2018"
 description = """
 kiro is a simplistic terminal text editor.
 """
-homepage = "https://github.com/rhysd/kiro"
-repository = "https://github.com/rhysd/kiro"
+homepage = "https://github.com/rhysd/kiro-editor"
+repository = "https://github.com/rhysd/kiro-editor"
 readme = "README.md"
 include = ["src/**/*.rs", "Cargo.toml"]
 keywords = ["text-editor", "editor", "terminal", "utf-8"]
@@ -35,3 +35,4 @@ signal-hook = "0.1"
 
 [badges]
 maintenance = { status = "actively-developed" }
+travis-ci = { repository = "rhysd/kiro-editor" }
