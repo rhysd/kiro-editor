@@ -1,38 +1,11 @@
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
-use crate::language::{Indent, Language};
-use crate::row::Row;
+use crate::language::Language;
 use crate::screen::Screen;
-use std::cmp;
-use std::fs;
-use std::io::{self, BufRead, Write};
-use std::path::{Path, PathBuf};
-use std::slice;
+use crate::text_buffer::{CursorDir, Lines, TextBuffer};
+use std::io;
+use std::path::Path;
 use std::str;
-
-// Contain both actual path sequence and display string
-struct FilePath {
-    path: PathBuf,
-    display: String,
-}
-
-impl FilePath {
-    fn from<P: AsRef<Path>>(path: P) -> Self {
-        let path = path.as_ref();
-        FilePath {
-            path: PathBuf::from(path),
-            display: path.to_string_lossy().to_string(),
-        }
-    }
-
-    fn from_string<S: Into<String>>(s: S) -> Self {
-        let display = s.into();
-        FilePath {
-            path: PathBuf::from(&display),
-            display,
-        }
-    }
-}
 
 #[derive(Clone, Copy)]
 enum FindDir {
@@ -53,41 +26,20 @@ impl FindState {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum CursorDir {
-    Left,
-    Right,
-    Up,
-    Down,
-}
-
 #[derive(PartialEq)]
 enum AfterKeyPress {
     Quit,
-    Nothing,
+    Refresh,
+    DoNothing,
 }
 
 pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
-    // VT100 sequence stream represented as Iterator
-    input: I,
-    // File editor is opening
-    file: Option<FilePath>,
-    // (x, y) coordinate in internal text buffer of rows
-    cx: usize,
-    cy: usize,
-    // Lines of text buffer
-    row: Vec<Row>,
-    // Flag set to true when buffer is modified after loading a file
-    modified: bool,
-    // After first Ctrl-Q
-    quitting: bool,
-    // Text search state
-    finding: FindState,
-    // Language which current buffer belongs to
-    lang: Language,
-    // Syntax highlighting
+    input: I,           // Escape sequences stream represented as Iterator
+    quitting: bool,     // After first Ctrl-Q
+    finding: FindState, // Text search state
     hl: Highlighting,
     screen: Screen,
+    buf: TextBuffer,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -95,102 +47,58 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let screen = Screen::new(&mut input)?;
         Ok(Editor {
             input,
-            file: None,
-            cx: 0,
-            cy: 0,
-            row: vec![],
-            modified: false,
             quitting: false,
             finding: FindState::new(),
-            lang: Language::Plain,
             hl: Highlighting::default(),
-            // Screen height is 1 line less than window height due to status bar
             screen,
+            buf: TextBuffer::new(),
         })
     }
 
     fn refresh_screen(&mut self) -> io::Result<()> {
         self.screen.refresh(
-            &self.row,
-            self.file
-                .as_ref()
-                .map(|f| f.display.as_str())
-                .unwrap_or("[No Name]"),
-            self.modified,
-            self.lang.name(),
-            (self.cx, self.cy),
+            self.buf.rows(),
+            self.buf.filename(),
+            self.buf.modified(),
+            self.buf.lang().name(),
+            (self.buf.cx(), self.buf.cy()),
             &mut self.hl,
         )
     }
 
     pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let path = path.as_ref();
-        if path.exists() {
-            let file = fs::File::open(path)?;
-            self.row = io::BufReader::new(file)
-                .lines()
-                .map(|r| Ok(Row::new(r?)))
-                .collect::<io::Result<_>>()?;
-            self.modified = false;
-        } else {
-            // When the path does not exist, consider it as a new file
-            self.row = vec![];
-            self.modified = true;
-        }
-        self.lang = Language::detect(path);
-        self.hl = Highlighting::new(self.lang, self.row.iter());
-        self.file = Some(FilePath::from(path));
+        self.buf = TextBuffer::open(path)?;
+        self.hl = Highlighting::new(self.buf.lang(), self.buf.rows().iter()); // TODO: Use &[Row] instead of Iterator<Row>
         Ok(())
     }
 
     fn save(&mut self) -> io::Result<()> {
         let mut create = false;
-        if self.file.is_none() {
+        if !self.buf.has_file() {
             if let Some(input) =
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))?
             {
-                let file = FilePath::from_string(input);
-                let new_lang = Language::detect(&file.path);
-                self.hl.lang_changed(new_lang);
-                self.file = Some(file);
-                if new_lang != self.lang {
+                let prev_lang = self.buf.lang();
+                self.buf.set_file(input);
+                self.hl.lang_changed(self.buf.lang());
+                if prev_lang != self.buf.lang() {
                     // Render entire screen since highglight udpated
                     self.screen.set_dirty_start(self.screen.rowoff);
-                    self.lang = new_lang;
                 }
                 create = true;
             }
         }
 
-        let file = if let Some(file) = &self.file {
-            file
-        } else {
-            return Ok(()); // Canceled
-        };
-
-        let f = match fs::File::create(&file.path) {
-            Ok(f) => f,
-            Err(e) => {
-                self.screen
-                    .set_error_message(format!("Could not save: {}", e));
+        match self.buf.save() {
+            Ok(msg) => self.screen.set_info_message(msg),
+            Err(msg) => {
+                self.screen.set_error_message(msg);
                 if create {
-                    self.file = None; // Could not make file. Back to unnamed buffer
+                    self.buf.set_unnamed();
                 }
-                return Ok(()); // This is not a fatal error
             }
-        };
-        let mut f = io::BufWriter::new(f);
-        let mut bytes = 0;
-        for line in self.row.iter() {
-            let b = line.buffer();
-            writeln!(f, "{}", b)?;
-            bytes += b.as_bytes().len() + 1;
         }
-        f.flush()?;
 
-        self.screen
-            .set_info_message(format!("{} bytes written to {}", bytes, &file.display));
-        self.modified = false;
         Ok(())
     }
 
@@ -227,20 +135,22 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
         }
 
-        let row_len = self.row.len();
+        let row_len = self.buf.rows().len();
         let dir = self.finding.dir;
         let mut y = self
             .finding
             .last_match
             .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
-            .unwrap_or(self.cy);
+            .unwrap_or_else(|| self.buf.cy());
 
         for _ in 0..row_len {
-            let row = &self.row[y];
+            let row = &self.buf.rows()[y];
             if let Some(byte_idx) = row.buffer().find(query) {
-                self.cy = y;
-                self.cx = row.char_idx_of(byte_idx);
-                let rx = row.rx_from_cx(self.cx);
+                let idx = row.char_idx_of(byte_idx);
+                self.buf.set_cursor(idx, y);
+
+                let row = &self.buf.rows()[y]; // Immutable borrow again since self.buf.set_cursor() yields mutable borrow
+                let rx = row.rx_from_cx(self.buf.cx());
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);
@@ -259,12 +169,16 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn find(&mut self) -> io::Result<()> {
-        let (cx, cy, coloff, rowoff) = (self.cx, self.cy, self.screen.coloff, self.screen.rowoff);
+        let (cx, cy, coloff, rowoff) = (
+            self.buf.cx(),
+            self.buf.cy(),
+            self.screen.coloff,
+            self.screen.rowoff,
+        );
         let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
         if self.prompt(s, Self::on_incremental_find)?.is_none() {
             // Canceled. Restore cursor position
-            self.cx = cx;
-            self.cy = cy;
+            self.buf.set_cursor(cx, cy);
             self.screen.coloff = coloff;
             self.screen.rowoff = rowoff;
             self.screen.set_dirty_start(self.screen.rowoff); // Redraw all lines
@@ -295,285 +209,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         // Redraw screen
         self.screen.set_dirty_start(self.screen.rowoff);
         Ok(())
-    }
-
-    fn insert_char(&mut self, ch: char) {
-        if self.cy == self.row.len() {
-            self.row.push(Row::default());
-        }
-        self.row[self.cy].insert_char(self.cx, ch);
-        self.cx += 1;
-        self.modified = true;
-        self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy);
-    }
-
-    fn insert_tab(&mut self) {
-        match self.lang.indent() {
-            Indent::AsIs => self.insert_char('\t'),
-            Indent::Fixed(indent) => self.insert_str(indent),
-        }
-    }
-
-    fn insert_str<S: AsRef<str>>(&mut self, s: S) {
-        if self.cy == self.row.len() {
-            self.row.push(Row::default());
-        }
-        let s = s.as_ref();
-        self.row[self.cy].insert_str(self.cx, s);
-        self.cx += s.as_bytes().len();
-        self.modified = true;
-        self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy);
-    }
-
-    fn squash_to_previous_line(&mut self) {
-        // At top of line, backspace concats current line to previous line
-        self.cx = self.row[self.cy - 1].len(); // Move cursor column to end of previous line
-        let row = self.row.remove(self.cy);
-        self.cy -= 1; // Move cursor to previous line
-        self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
-        self.modified = true;
-        self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy);
-    }
-
-    fn delete_char(&mut self) {
-        if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
-            return;
-        }
-        if self.cx > 0 {
-            self.row[self.cy].delete_char(self.cx - 1);
-            self.cx -= 1;
-            self.modified = true;
-            self.hl.needs_update = true;
-            self.screen.set_dirty_start(self.cy);
-        } else {
-            self.squash_to_previous_line();
-        }
-    }
-
-    fn delete_until_end_of_line(&mut self) {
-        if self.cy == self.row.len() {
-            return;
-        }
-        if self.cx == self.row[self.cy].len() {
-            // Do nothing when cursor is at end of line of end of text buffer
-            if self.cy == self.row.len() - 1 {
-                return;
-            }
-            // At end of line, concat with next line
-            let deleted = self.row.remove(self.cy + 1);
-            self.row[self.cy].append(deleted.buffer()); // TODO: Move buffer rather than copy
-        } else {
-            self.row[self.cy].truncate(self.cx);
-        }
-        self.modified = true;
-        self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy);
-    }
-
-    fn delete_until_head_of_line(&mut self) {
-        if self.cx == 0 && self.cy == 0 || self.cy == self.row.len() {
-            return;
-        }
-        if self.cx == 0 {
-            self.squash_to_previous_line();
-        } else {
-            self.row[self.cy].remove(0, self.cx);
-            self.cx = 0;
-            self.modified = true;
-            self.hl.needs_update = true;
-            self.screen.set_dirty_start(self.cy);
-        }
-    }
-
-    fn delete_word(&mut self) {
-        if self.cx == 0 || self.cy == self.row.len() {
-            return;
-        }
-
-        let mut x = self.cx - 1;
-        let row = &self.row[self.cy];
-        while x > 0 && row.char_at(x).is_ascii_whitespace() {
-            x -= 1;
-        }
-        // `x - 1` since x should stop at the last non-whitespace character to remove
-        while x > 0 && !row.char_at(x - 1).is_ascii_whitespace() {
-            x -= 1;
-        }
-
-        if x < self.cx {
-            self.row[self.cy].remove(x, self.cx);
-            self.cx = x;
-            self.modified = true;
-            self.hl.needs_update = true;
-            self.screen.set_dirty_start(self.cy);
-        }
-    }
-
-    fn delete_right_char(&mut self) {
-        self.move_cursor_one(CursorDir::Right);
-        self.delete_char();
-    }
-
-    fn insert_line(&mut self) {
-        if self.cy >= self.row.len() {
-            self.row.push(Row::default());
-        } else if self.cx >= self.row[self.cy].len() {
-            self.row.insert(self.cy + 1, Row::default());
-        } else {
-            let split = self.row[self.cy][self.cx..].to_string();
-            self.row[self.cy].truncate(self.cx);
-            self.row.insert(self.cy + 1, Row::new(split));
-        }
-
-        self.cy += 1;
-        self.cx = 0;
-        self.hl.needs_update = true;
-        self.screen.set_dirty_start(self.cy - 1);
-    }
-
-    fn move_cursor_one(&mut self, dir: CursorDir) {
-        match dir {
-            CursorDir::Up => self.cy = self.cy.saturating_sub(1),
-            CursorDir::Left => {
-                if self.cx > 0 {
-                    self.cx -= 1;
-                } else if self.cy > 0 {
-                    // When moving to left at top of line, move cursor to end of previous line
-                    self.cy -= 1;
-                    self.cx = self.row[self.cy].len();
-                }
-            }
-            CursorDir::Down => {
-                // Allow to move cursor until next line to the last line of file to enable to add a
-                // new line at the end.
-                if self.cy < self.row.len() {
-                    self.cy += 1;
-                }
-            }
-            CursorDir::Right => {
-                if self.cy < self.row.len() {
-                    let len = self.row[self.cy].len();
-                    if self.cx < len {
-                        // Allow to move cursor until next col to the last col of line to enable to
-                        // add a new character at the end of line.
-                        self.cx += 1;
-                    } else if self.cx >= len {
-                        // When moving to right at the end of line, move cursor to top of next line.
-                        self.cy += 1;
-                        self.cx = 0;
-                    }
-                }
-            }
-        };
-
-        // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(Row::len).unwrap_or(0);
-        if self.cx > len {
-            self.cx = len;
-        }
-    }
-
-    fn move_cursor_per_page(&mut self, dir: CursorDir) {
-        self.cy = match dir {
-            CursorDir::Up => self.screen.rowoff, // Top of screen
-            CursorDir::Down => {
-                cmp::min(self.screen.rowoff + self.screen.rows() - 1, self.row.len()) // Bottom of screen
-            }
-            _ => unreachable!(),
-        };
-        for _ in 0..self.screen.rows() {
-            self.move_cursor_one(dir);
-        }
-    }
-
-    fn move_cursor_to_buffer_edge(&mut self, dir: CursorDir) {
-        match dir {
-            CursorDir::Left => self.cx = 0,
-            CursorDir::Right => {
-                if self.cy < self.row.len() {
-                    self.cx = self.row[self.cy].len();
-                }
-            }
-            CursorDir::Up => self.cy = 0,
-            CursorDir::Down => self.cy = self.row.len(),
-        }
-    }
-
-    fn move_cursor_by_word(&mut self, dir: CursorDir) {
-        #[derive(PartialEq)]
-        enum CharKind {
-            Ident,
-            Punc,
-            Space,
-        }
-
-        impl CharKind {
-            fn new_at(rows: &[Row], x: usize, y: usize) -> Self {
-                rows.get(y)
-                    .and_then(|r| r.char_at_checked(x))
-                    .map(|c| {
-                        if c.is_ascii_whitespace() {
-                            CharKind::Space
-                        } else if c == '_' || c.is_ascii_alphanumeric() {
-                            CharKind::Ident
-                        } else {
-                            CharKind::Punc
-                        }
-                    })
-                    .unwrap_or(CharKind::Space)
-            }
-        }
-
-        fn at_word_start(left: &CharKind, right: &CharKind) -> bool {
-            match (left, right) {
-                (&CharKind::Space, &CharKind::Ident)
-                | (&CharKind::Space, &CharKind::Punc)
-                | (&CharKind::Punc, &CharKind::Ident)
-                | (&CharKind::Ident, &CharKind::Punc) => true,
-                _ => false,
-            }
-        }
-
-        self.move_cursor_one(dir);
-        let mut prev = CharKind::new_at(&self.row, self.cx, self.cy);
-        self.move_cursor_one(dir);
-        let mut current = CharKind::new_at(&self.row, self.cx, self.cy);
-
-        loop {
-            if self.cy == 0 && self.cx == 0 || self.cy == self.row.len() {
-                return;
-            }
-
-            match dir {
-                CursorDir::Right if at_word_start(&prev, &current) => return,
-                CursorDir::Left if at_word_start(&current, &prev) => {
-                    self.move_cursor_one(CursorDir::Right); // Adjust cursor position to start of word
-                    return;
-                }
-                _ => {}
-            }
-
-            prev = current;
-            self.move_cursor_one(dir);
-            current = CharKind::new_at(&self.row, self.cx, self.cy);
-        }
-    }
-
-    fn move_cursor_per_paragraph(&mut self, dir: CursorDir) {
-        debug_assert!(dir != CursorDir::Left && dir != CursorDir::Right);
-        loop {
-            self.move_cursor_one(dir);
-            if self.cy == 0
-                || self.cy == self.row.len()
-                || self.row[self.cy - 1].buffer().is_empty()
-                    && !self.row[self.cy].buffer().is_empty()
-            {
-                break;
-            }
-        }
     }
 
     fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> io::Result<Option<String>>
@@ -633,70 +268,74 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn handle_quit(&mut self) -> io::Result<AfterKeyPress> {
-        if !self.modified || self.quitting {
+        if !self.buf.modified() || self.quitting {
             Ok(AfterKeyPress::Quit)
         } else {
             self.quitting = true;
             self.screen.set_error_message(
                 "File has unsaved changes! Press ^Q again to quit or ^S to save",
             );
-            Ok(AfterKeyPress::Nothing)
+            Ok(AfterKeyPress::Refresh)
         }
     }
 
     fn process_keypress(&mut self, s: InputSeq) -> io::Result<AfterKeyPress> {
         use KeySeq::*;
 
+        let rowoff = self.screen.rowoff;
+        let rows = self.screen.rows();
+        self.buf.dirty = false;
+
         match (s.key, s.ctrl, s.alt) {
-            (Key(b'p'), true, false) => self.move_cursor_one(CursorDir::Up),
-            (Key(b'b'), true, false) => self.move_cursor_one(CursorDir::Left),
-            (Key(b'n'), true, false) => self.move_cursor_one(CursorDir::Down),
-            (Key(b'f'), true, false) => self.move_cursor_one(CursorDir::Right),
-            (Key(b'v'), true, false) => self.move_cursor_per_page(CursorDir::Down),
-            (Key(b'a'), true, false) => self.move_cursor_to_buffer_edge(CursorDir::Left),
-            (Key(b'e'), true, false) => self.move_cursor_to_buffer_edge(CursorDir::Right),
-            (Key(b'd'), true, false) => self.delete_right_char(),
+            (Unidentified, ..) => return Ok(AfterKeyPress::DoNothing),
+            (Key(b'p'), true, false) => self.buf.move_cursor_one(CursorDir::Up),
+            (Key(b'b'), true, false) => self.buf.move_cursor_one(CursorDir::Left),
+            (Key(b'n'), true, false) => self.buf.move_cursor_one(CursorDir::Down),
+            (Key(b'f'), true, false) => self.buf.move_cursor_one(CursorDir::Right),
+            (Key(b'v'), true, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+            (Key(b'a'), true, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+            (Key(b'e'), true, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+            (Key(b'd'), true, false) => self.buf.delete_right_char(),
             (Key(b'g'), true, false) => self.find()?,
-            (Key(b'h'), true, false) => self.delete_char(),
-            (Key(b'k'), true, false) => self.delete_until_end_of_line(),
-            (Key(b'u'), true, false) => self.delete_until_head_of_line(),
-            (Key(b'w'), true, false) => self.delete_word(),
+            (Key(b'h'), true, false) => self.buf.delete_char(),
+            (Key(b'k'), true, false) => self.buf.delete_until_end_of_line(),
+            (Key(b'u'), true, false) => self.buf.delete_until_head_of_line(),
+            (Key(b'w'), true, false) => self.buf.delete_word(),
             (Key(b'l'), true, false) => self.screen.set_dirty_start(self.screen.rowoff), // Clear
             (Key(b's'), true, false) => self.save()?,
-            (Key(b'i'), true, false) => self.insert_tab(),
-            (Key(b'm'), true, false) => self.insert_line(),
+            (Key(b'i'), true, false) => self.buf.insert_tab(),
+            (Key(b'm'), true, false) => self.buf.insert_line(),
             (Key(b'?'), true, false) => self.show_help()?,
-            (Key(0x1b), false, false) => self.move_cursor_per_page(CursorDir::Up), // Clash with Ctrl-[
-            (Key(b']'), true, false) => self.move_cursor_per_page(CursorDir::Down),
-            (Key(b'v'), false, true) => self.move_cursor_per_page(CursorDir::Up),
-            (Key(b'f'), false, true) => self.move_cursor_by_word(CursorDir::Right),
-            (Key(b'b'), false, true) => self.move_cursor_by_word(CursorDir::Left),
-            (Key(b'n'), false, true) => self.move_cursor_per_paragraph(CursorDir::Down),
-            (Key(b'p'), false, true) => self.move_cursor_per_paragraph(CursorDir::Up),
-            (Key(b'<'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Up),
-            (Key(b'>'), false, true) => self.move_cursor_to_buffer_edge(CursorDir::Down),
-            (Key(0x08), false, false) => self.delete_char(), // Backspace
-            (Key(0x7f), false, false) => self.delete_char(), // Delete key is mapped to \x1b[3~
-            (Key(b'\r'), false, false) => self.insert_line(),
-            (Key(byte), false, false) if !byte.is_ascii_control() => self.insert_char(byte as char),
+            (Key(0x1b), false, false) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
+            (Key(b']'), true, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+            (Key(b'v'), false, true) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
+            (Key(b'f'), false, true) => self.buf.move_cursor_by_word(CursorDir::Right),
+            (Key(b'b'), false, true) => self.buf.move_cursor_by_word(CursorDir::Left),
+            (Key(b'n'), false, true) => self.buf.move_cursor_paragraph(CursorDir::Down),
+            (Key(b'p'), false, true) => self.buf.move_cursor_paragraph(CursorDir::Up),
+            (Key(b'<'), false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Up),
+            (Key(b'>'), false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Down),
+            (Key(0x08), false, false) => self.buf.delete_char(), // Backspace
+            (Key(0x7f), false, false) => self.buf.delete_char(), // Delete key is mapped to \x1b[3~
+            (Key(b'\r'), false, false) => self.buf.insert_line(),
+            (Key(b), false, false) if !b.is_ascii_control() => self.buf.insert_char(b as char),
             (Key(b'q'), true, ..) => return self.handle_quit(),
-            (UpKey, false, false) => self.move_cursor_one(CursorDir::Up),
-            (LeftKey, false, false) => self.move_cursor_one(CursorDir::Left),
-            (DownKey, false, false) => self.move_cursor_one(CursorDir::Down),
-            (RightKey, false, false) => self.move_cursor_one(CursorDir::Right),
-            (PageUpKey, false, false) => self.move_cursor_per_page(CursorDir::Up),
-            (PageDownKey, false, false) => self.move_cursor_per_page(CursorDir::Down),
-            (HomeKey, false, false) => self.move_cursor_to_buffer_edge(CursorDir::Left),
-            (EndKey, false, false) => self.move_cursor_to_buffer_edge(CursorDir::Right),
-            (DeleteKey, false, false) => self.delete_right_char(),
-            (LeftKey, true, false) => self.move_cursor_by_word(CursorDir::Left),
-            (RightKey, true, false) => self.move_cursor_by_word(CursorDir::Right),
-            (DownKey, true, false) => self.move_cursor_per_paragraph(CursorDir::Down),
-            (UpKey, true, false) => self.move_cursor_per_paragraph(CursorDir::Up),
-            (LeftKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Left),
-            (RightKey, false, true) => self.move_cursor_to_buffer_edge(CursorDir::Right),
-            (Utf8Key(c), ..) => self.insert_char(c),
-            (Unidentified, ..) => unreachable!(),
+            (UpKey, false, false) => self.buf.move_cursor_one(CursorDir::Up),
+            (LeftKey, false, false) => self.buf.move_cursor_one(CursorDir::Left),
+            (DownKey, false, false) => self.buf.move_cursor_one(CursorDir::Down),
+            (RightKey, false, false) => self.buf.move_cursor_one(CursorDir::Right),
+            (PageUpKey, false, false) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
+            (PageDownKey, false, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+            (HomeKey, false, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+            (EndKey, false, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+            (DeleteKey, false, false) => self.buf.delete_right_char(),
+            (LeftKey, true, false) => self.buf.move_cursor_by_word(CursorDir::Left),
+            (RightKey, true, false) => self.buf.move_cursor_by_word(CursorDir::Right),
+            (DownKey, true, false) => self.buf.move_cursor_paragraph(CursorDir::Down),
+            (UpKey, true, false) => self.buf.move_cursor_paragraph(CursorDir::Up),
+            (LeftKey, false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+            (RightKey, false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+            (Utf8Key(c), ..) => self.buf.insert_char(c),
             (Cursor(_, _), ..) => unreachable!(),
             (key, ctrl, alt) => {
                 let modifier = match (ctrl, alt) {
@@ -710,8 +349,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
         }
 
+        if self.buf.dirty {
+            self.hl.needs_update = true;
+            self.screen.set_dirty_start(self.buf.cy());
+        }
         self.quitting = false;
-        Ok(AfterKeyPress::Nothing)
+        Ok(AfterKeyPress::Refresh)
     }
 
     pub fn edit(&mut self) -> io::Result<()> {
@@ -722,49 +365,25 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.refresh_screen()?;
             }
 
-            let seq = seq?;
-            if seq.key == KeySeq::Unidentified {
-                continue; // Ignore
+            match self.process_keypress(seq?)? {
+                AfterKeyPress::DoNothing => continue,
+                AfterKeyPress::Refresh => self.refresh_screen()?,
+                AfterKeyPress::Quit => break,
             }
-
-            if self.process_keypress(seq)? == AfterKeyPress::Quit {
-                break;
-            }
-
-            self.refresh_screen()?; // Update screen after keypress
         }
 
         self.screen.clear() // Finally clear screen on exit
     }
 
-    pub fn text_lines(&self) -> TextLines<'_> {
-        TextLines {
-            iter: self.row.iter(),
-        }
+    pub fn lines(&self) -> Lines<'_> {
+        self.buf.lines()
     }
 
     pub fn screen(&self) -> &'_ Screen {
         &self.screen
     }
 
-    pub fn lang(&self) -> &'_ Language {
-        &self.lang
-    }
-}
-
-pub struct TextLines<'a> {
-    iter: slice::Iter<'a, Row>,
-}
-
-impl<'a> Iterator for TextLines<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|r| r.buffer())
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let len = self.iter.as_slice().len();
-        (len, Some(len))
+    pub fn lang(&self) -> Language {
+        self.buf.lang()
     }
 }

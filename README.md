@@ -210,8 +210,9 @@ While porting the code to Rust, I split `kilo.c` into some Rust modules for each
 the global variables and local static variables by moving them to each logic's structs.
 
 - [`editor.rs`](src/editor.rs): Exports `Editor` struct, which manages an editor lifecycle; Runs loop
-  which gets key input, updates buffer and highlight then renders screen. It also contains text buffer
-  as `Vec<Row>`.
+  which gets key input, updates a text buffer and highlight then renders screen.
+- [`text_buffer.rs`](src/text_buffer.rs): Exports `TextBuffer` struct, which manages an editing text
+  buffer as `Vec<Row>`. It also contains metadata such as file name and file type of the buffer.
 - [`row.rs`](src/row.rs): Exports `Row` struct which represents one line of text buffer and contains
   actual text and rendered text. Since Kiro is dedicated for UTF-8 text editing, internal text buffer
   is also kept as UTF-8 string. When the internal text buffer is updated by `Editor`, it automatically
@@ -339,6 +340,7 @@ case, I believe.
 - Text selection and copy from or paste to system clipboard
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
   screen (`rowoff..rowoff+num_rows`)
+- Support editing multiple files
 
 
 ### Future Works

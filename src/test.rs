@@ -28,7 +28,7 @@ fn test_empty_buffer() {
 
     assert!(editor.screen().rows() > 0);
     assert!(editor.screen().cols() > 0);
-    assert_eq!(editor.text_lines().count(), 0);
+    assert_eq!(editor.lines().count(), 0);
 
     let msg = editor.screen().message_text();
     assert_eq!(msg, "Ctrl-? for help");
@@ -48,7 +48,7 @@ fn test_write_to_empty_buffer() {
     let mut editor = Editor::new(input).unwrap();
     editor.edit().unwrap();
 
-    let lines = editor.text_lines().collect::<Vec<_>>();
+    let lines = editor.lines().collect::<Vec<_>>();
     assert_eq!(lines, vec!["abc"]);
 
     let msg = editor.screen().message_text();
@@ -74,7 +74,7 @@ fn test_move_cursor_down() {
     assert!(editor.screen().rows() > 0);
     assert!(editor.screen().cols() > 0);
 
-    let lines = editor.text_lines().collect::<Vec<_>>();
+    let lines = editor.lines().collect::<Vec<_>>();
     assert_eq!(lines, vec!["a", "b", "c"]);
 }
 
@@ -90,9 +90,9 @@ fn test_open_file() {
     editor.edit().unwrap();
 
     let f = BufReader::new(File::open(this_file).unwrap());
-    for (i, (expected, actual)) in f.lines().zip(editor.text_lines()).enumerate() {
+    for (i, (expected, actual)) in f.lines().zip(editor.lines()).enumerate() {
         assert_eq!(expected.unwrap(), actual, "Line: {}", i + 1);
     }
 
-    assert_eq!(editor.lang(), &Language::Rust);
+    assert_eq!(editor.lang(), Language::Rust);
 }

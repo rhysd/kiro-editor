@@ -15,11 +15,13 @@ mod language;
 mod row;
 mod screen;
 mod signal;
+mod text_buffer;
 
 #[cfg(test)]
 mod test;
 
-pub use editor::{Editor, TextLines};
+pub use editor::Editor;
 pub use input::StdinRawMode;
 pub use language::Language;
 pub use screen::{Screen, HELP, VERSION};
+pub use text_buffer::Lines;
