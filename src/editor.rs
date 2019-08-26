@@ -82,7 +82,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
                 self.buf.set_file(input);
                 self.hl.lang_changed(self.buf.lang());
                 if prev_lang != self.buf.lang() {
-                    // Render entire screen since highglight udpated
+                    // Render entire screen since highglight updated
                     self.screen.set_dirty_start(self.screen.rowoff);
                 }
                 create = true;

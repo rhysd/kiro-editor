@@ -68,7 +68,7 @@ where
 
     // By moving cursor at the bottom-right corner by 'B' and 'C' commands, get the size of
     // current screen. \x1b[9999;9999H is not available since it does not guarantee cursor
-    // stops on the corner. Finaly command 'n' queries cursor position.
+    // stops on the corner. Finally command 'n' queries cursor position.
     let mut stdout = io::stdout();
     stdout.write(b"\x1b[9999C\x1b[9999B\x1b[6n")?;
     stdout.flush()?;
@@ -166,7 +166,7 @@ impl Screen {
         }
         buf.write(right.as_bytes())?;
 
-        // Defualt argument of 'm' command is 0 so it resets attributes
+        // Default argument of 'm' command is 0 so it resets attributes
         buf.write(AnsiColor::Reset.sequence(self.color_support))?;
         Ok(())
     }
