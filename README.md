@@ -34,7 +34,7 @@ and 'Implementation' section below for more details):
 [Kiro][] aims to support kinds of xterm terminals on Unix-like systems. For example Terminal.app,
 iTerm2.app, Gnome-Terminal, (hopefully) Windows Terminal on WSL.
 
-I leaned various things by making this project. Please read 'Implementation' section below to find
+I learned various things by making this project. Please read 'Implementation' section below to find
 some interesting topics.
 
 
@@ -285,6 +285,23 @@ the clean up. And `StdinRawMode` also implements `Deref` and `DerefMut` so that 
 as if it were `Stdin`. By wrapping `io::Stdin` like this, I could add the ability to enter/leave
 terminal raw mode to `io::Stdin`.
 
+#### Dependant Crates
+
+This project depends on some small crates. I selected them carefully not to prevent learning how a
+text editor on terminal works.
+
+- [termios](https://crates.io/crates/termios): Safe binding to `termios` interface provided by OS.
+- [term_size](https://crates.io/crates/term_size): Safe binding to getting terminal window size with
+  ioctl(2).
+- [unicode-width](https://crates.io/crates/unicode-width): Small library to calculate Unicode character's
+  display width.
+- [term](https://crates.io/crates/unicode-width): Library for terminfo and terminal colors. This project
+  uses this library only to parse terminfo for 256 colors support.
+- [signal-hook](https://crates.io/crates/signal-hook): Small wrapper for signal handler to catch SIGWINCH
+  for resize support.
+- [getopts](https://crates.io/crates/getopts): Fairly small library to parse command line arguments.
+  Kiro only has quite simple CLI options so [crap](https://crates.io/crates/clap) is too heavy.
+
 
 ### UTF-8 Support
 
@@ -321,16 +338,15 @@ characters in the text. In the case, `indices` field is an empty (and capacity i
 instance with zero capacity is guaranteed not to allocate heap memory. So the memory overhead here is
 24 bytes of `Vec<usize>` instance itself (pointer, capacity as `usize` and length as `usize`) only.
 
-In the second case `"Rust良い🐶"`, there are some non-ASCII characters so `self.indices` caches byte
-indices of each bytes. Thanks to this cache, each character can be accessed in O(1) and its text length
-can be obtained in O(1) as `self.indices.len()`. `Row` also contains a rendered text and updates it
-when internal text buffer is updated by `Editor`. So `self.indices` cache is also updated at the same
-timing.
+In the second case `"Rust🦀良い"`, there are some non-ASCII characters so `self.indices` caches byte
+indices of each characters. Thanks to this cache, each character can be accessed in O(1) and its text
+length can be obtained in O(1) as `self.indices.len()`. `Row` also contains a rendered text and updates
+it when internal text buffer is updated by `TextBuffer`. So `self.indices` cache is also updated at
+the same timing efficiently.
 
 Though keeping byte indices in `Vec<usize>` is quite memory inefficient, the indices are only required
-when text contains non-ASCII characters. In terms of programming code editor, it is relatively rare
-case, I believe.
-
+when the line text contains non-ASCII characters. In terms of programming code editor, it is relatively
+rare case, I believe.
 
 
 ### TODO
