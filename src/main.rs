@@ -14,12 +14,12 @@ fn print_help(program: &str, opts: Options) {
         "{prog}: A tiny UTF-8 terminal text editor
 
 Kiro is a tiny UTF-8 text editor on terminals for Unix-like systems.
-Specify a file path to edit as a command argument or run without argument to
+Specify file paths to edit as a command argument or run without argument to
 start to write a new text.
 Help can show up with key mapping Ctrl-?.
 
 Usage:
-    {prog} [options] [FILE]
+    {prog} [options] [FILES...]
 
 Mappings:
     {maps}",
@@ -29,16 +29,10 @@ Mappings:
     println!("{}", opts.usage(&description));
 }
 
-fn edit(file: Option<String>) -> io::Result<()> {
+fn edit(files: Vec<String>) -> io::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
-    let mut editor = Editor::new(input)?;
-
-    if let Some(f) = file {
-        editor.open_file(f)?;
-    }
-
-    editor.edit()
+    Editor::open(input, &files)?.edit()
 }
 
 fn main() {
@@ -57,11 +51,6 @@ fn main() {
         }
     };
 
-    if matches.free.len() > 2 {
-        eprintln!("Error: Cannot open multiple files. Please see --help for more details");
-        exit(1);
-    }
-
     if matches.opt_present("v") {
         println!("{}", VERSION);
         return;
@@ -72,7 +61,7 @@ fn main() {
         return;
     }
 
-    if let Err(err) = edit(matches.free.first().cloned()) {
+    if let Err(err) = edit(matches.free) {
         eprintln!("Error: {}", err);
         exit(1);
     }

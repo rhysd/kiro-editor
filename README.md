@@ -25,6 +25,7 @@ and 'Implementation' section below for more details):
 - 24bit colors (true colors) and 256 colors support using [gruvbox][] retro color palette with 16
   colors fallback
 - More efficient screen rendering and highlighting (kilo renders entire screen each time)
+- Open multiple files (switch buffers by Ctrl-X/Ctrl-Z)
 - Resizing terminal window supported. Screen size is responsible
 - Highlight more languages (Rust, Go, JavaScript, C++)
 - Modular implementation for each logics such as parsing key inputs, rendering screen, calculating
@@ -57,7 +58,7 @@ Installing [`kiro-editor`][crates-io] package introduces `kiro` command in your 
 
 ```sh
 $ kiro                 # Start with an empty text buffer
-$ kiro path/to/file    # Open a file to edit
+$ kiro file1 file2...  # Open files to edit
 ```
 
 Please see `kiro --help` for command usage.
@@ -78,6 +79,9 @@ remember all mappings. Please type `Ctrl-?` to know all mappings in editor.
 | `Ctrl-?` | Show all key mappings in editor screen.                                        |
 | `Ctrl-Q` | Quit Kiro. If current text is not saved yet, you need to input `Ctrl-Q` twice. |
 | `Ctrl-G` | Incremental text search.                                                       |
+| `Ctrl-O` | Open file or empty buffer.                                                     |
+| `Ctrl-X` | Switch to next buffer.                                                         |
+| `Ctrl-Z` | Switch to previous buffer.                                                     |
 | `Ctrl-L` | Refresh screen.                                                                |
 
 - **Moving cursor**
@@ -201,7 +205,7 @@ stops calculating highlights at the line of bottom of screen.
 
 ### Porting C editor to Rust
 
-#### Separate one C source into several Rust modules
+#### Separate one big C source into several Rust modules
 
 To simplify and minimize implementation, [kilo][] uses some global variables and local `static`
 variables. Editor's state is stored in a global variable `E` and it is referred everywhere.
@@ -356,7 +360,6 @@ rare case, I believe.
 - Text selection and copy from or paste to system clipboard
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
   screen (`rowoff..rowoff+num_rows`)
-- Support editing multiple files
 - Use parser library [combine](https://github.com/Marwes/combine) or [nom](https://github.com/Geal/nom)
   to calculate highlighting. Need some investigation since highlight parser must stop calculating when
   current line exceeds the bottom line of screen

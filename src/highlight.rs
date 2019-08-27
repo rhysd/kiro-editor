@@ -375,10 +375,11 @@ impl Default for Highlighting {
 }
 
 impl Highlighting {
-    pub fn new<'a, R: Iterator<Item = &'a Row>>(lang: Language, iter: R) -> Highlighting {
+    pub fn new(lang: Language, rows: &[Row]) -> Highlighting {
         Highlighting {
             needs_update: true,
-            lines: iter
+            lines: rows
+                .iter()
                 .map(|r| {
                     iter::repeat(Highlight::Normal)
                         .take(r.render_text().chars().count()) // TODO: One item per one character

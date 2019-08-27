@@ -3,6 +3,7 @@ use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::signal::SigwinchWatcher;
+use crate::text_buffer::TextBuffer;
 use std::cmp;
 use std::io::{self, Write};
 use std::time::SystemTime;
@@ -12,6 +13,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const HELP: &str = "\
     Ctrl-Q                        : Quit
     Ctrl-S                        : Save to file
+    Ctrl-O                        : Open text buffer
+    Ctrl-X                        : Next text buffer
+    Ctrl-Z                        : Previous text buffer
     Ctrl-P or UP                  : Move cursor up
     Ctrl-N or DOWN                : Move cursor down
     Ctrl-F or RIGHT               : Move cursor right
@@ -31,8 +35,8 @@ pub const HELP: &str = "\
     Ctrl-W                        : Delete a word
     Ctrl-U                        : Delete until head of line
     Ctrl-K                        : Delete until end of line
-    Ctrl-M                        : New line
     Ctrl-G                        : Search text
+    Ctrl-M                        : New line
     Ctrl-L                        : Refresh screen
     Ctrl-?                        : Show this help";
 
@@ -129,21 +133,23 @@ impl Screen {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<W: Write>(
-        &self,
-        mut buf: W,
-        num_lines: usize,
-        file: &str,
-        modified: bool,
-        lang_name: &str,
-        cy: usize,
-    ) -> io::Result<()> {
+    fn draw_status_bar<W: Write>(&self, mut buf: W, text_buf: &TextBuffer) -> io::Result<()> {
+        let num_lines = text_buf.rows().len();
         write!(buf, "\x1b[{}H", self.num_rows + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
-        let modified = if modified { "(modified) " } else { "" };
-        let left = format!("{:<20?} - {} lines {}", file, num_lines, modified);
+        let modified = if text_buf.modified() {
+            "(modified) "
+        } else {
+            ""
+        };
+        let left = format!(
+            "{:<20?} - {} lines {}",
+            text_buf.filename(),
+            num_lines,
+            modified
+        );
         // TODO: Handle multi-byte chars correctly
         let left = &left[..cmp::min(left.len(), self.num_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
@@ -153,7 +159,7 @@ impl Screen {
             return Ok(());
         }
 
-        let right = format!("{} {}/{}", lang_name, cy, num_lines,);
+        let right = format!("{} {}/{}", text_buf.lang().name(), text_buf.cy(), num_lines);
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -272,15 +278,7 @@ impl Screen {
         Ok(())
     }
 
-    fn redraw_screen(
-        &self,
-        rows: &[Row],
-        file_name: &str,
-        modified: bool,
-        lang_name: &str,
-        cy: usize,
-        hl: &Highlighting,
-    ) -> io::Result<()> {
+    fn redraw_screen(&self, text_buf: &TextBuffer, hl: &Highlighting) -> io::Result<()> {
         let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
 
         // \x1b[: Escape sequence header
@@ -289,12 +287,12 @@ impl Screen {
         // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
         buf.write(b"\x1b[H")?;
 
-        self.draw_rows(&mut buf, rows, hl)?;
-        self.draw_status_bar(&mut buf, rows.len(), file_name, modified, lang_name, cy)?;
+        self.draw_rows(&mut buf, text_buf.rows(), hl)?;
+        self.draw_status_bar(&mut buf, text_buf)?;
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor
-        let cursor_row = cy - self.rowoff + 1;
+        let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
         write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
 
@@ -355,19 +353,10 @@ impl Screen {
         }
     }
 
-    pub fn refresh(
-        &mut self,
-        rows: &[Row],
-        file_name: &str,
-        modified: bool,
-        lang_name: &str,
-        cursor: (usize, usize),
-        hl: &mut Highlighting,
-    ) -> io::Result<()> {
-        let (cx, cy) = cursor;
-        self.do_scroll(rows, cx, cy);
-        hl.update(rows, self.rowoff + self.num_rows);
-        self.redraw_screen(rows, file_name, modified, lang_name, cy, hl)?;
+    pub fn refresh(&mut self, buf: &TextBuffer, hl: &mut Highlighting) -> io::Result<()> {
+        self.do_scroll(buf.rows(), buf.cx(), buf.cy());
+        hl.update(buf.rows(), self.rowoff + self.num_rows);
+        self.redraw_screen(buf, hl)?;
         self.dirty_start = None;
         Ok(())
     }

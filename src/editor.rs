@@ -39,7 +39,8 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
     finding: FindState, // Text search state
     hl: Highlighting,
     screen: Screen,
-    buf: TextBuffer,
+    bufs: Vec<TextBuffer>,
+    buf_idx: usize,
 }
 
 impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
@@ -51,37 +52,105 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             finding: FindState::new(),
             hl: Highlighting::default(),
             screen,
-            buf: TextBuffer::new(),
+            bufs: vec![TextBuffer::new()],
+            buf_idx: 0,
         })
     }
 
-    fn refresh_screen(&mut self) -> io::Result<()> {
-        self.screen.refresh(
-            self.buf.rows(),
-            self.buf.filename(),
-            self.buf.modified(),
-            self.buf.lang().name(),
-            (self.buf.cx(), self.buf.cy()),
-            &mut self.hl,
-        )
+    pub fn open<P: AsRef<Path>>(mut input: I, paths: &[P]) -> io::Result<Editor<I>> {
+        if paths.is_empty() {
+            return Self::new(input);
+        }
+        let screen = Screen::new(&mut input)?;
+        let bufs = paths
+            .iter()
+            .map(TextBuffer::open)
+            .collect::<io::Result<_>>()?;
+        Ok(Editor {
+            input,
+            quitting: false,
+            finding: FindState::new(),
+            hl: Highlighting::default(),
+            screen,
+            bufs,
+            buf_idx: 0,
+        })
     }
 
-    pub fn open_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        self.buf = TextBuffer::open(path)?;
-        self.hl = Highlighting::new(self.buf.lang(), self.buf.rows().iter()); // TODO: Use &[Row] instead of Iterator<Row>
-        Ok(())
+    fn buf(&self) -> &TextBuffer {
+        &self.bufs[self.buf_idx]
+    }
+
+    fn buf_mut(&mut self) -> &mut TextBuffer {
+        &mut self.bufs[self.buf_idx]
+    }
+
+    fn refresh_screen(&mut self) -> io::Result<()> {
+        self.screen.refresh(&self.bufs[self.buf_idx], &mut self.hl)
+    }
+
+    fn reset_screen(&mut self) -> io::Result<()> {
+        self.screen.set_dirty_start(0);
+        self.screen.rowoff = 0;
+        self.screen.coloff = 0;
+        self.refresh_screen()
+    }
+
+    fn open_buffer(&mut self) -> io::Result<()> {
+        if let Some(input) = self.prompt("Open: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))? {
+            let buf = TextBuffer::open(input)?;
+            self.hl = Highlighting::new(buf.lang(), buf.rows());
+            self.bufs.push(buf);
+            self.buf_idx = self.bufs.len() - 1;
+            self.reset_screen()
+        } else {
+            Ok(()) // Canceled
+        }
+    }
+
+    fn switch_buffer(&mut self, idx: usize) -> io::Result<()> {
+        let len = self.bufs.len();
+        if len == 1 {
+            self.screen.set_info_message("No other buffer is opened");
+            return Ok(());
+        }
+
+        debug_assert!(idx < len);
+        self.buf_idx = idx;
+        let buf = self.buf();
+
+        // XXX: Should we put Highlighting instance in TextBuffer rather than Editor?
+        // Then we don't need to recreate Highlighting instance for each buffer switch.
+        self.hl = Highlighting::new(buf.lang(), buf.rows());
+        self.reset_screen()
+    }
+
+    fn next_buffer(&mut self) -> io::Result<()> {
+        self.switch_buffer(if self.buf_idx == self.bufs.len() - 1 {
+            0
+        } else {
+            self.buf_idx + 1
+        })
+    }
+
+    fn previous_buffer(&mut self) -> io::Result<()> {
+        self.switch_buffer(if self.buf_idx == 0 {
+            self.bufs.len() - 1
+        } else {
+            self.buf_idx - 1
+        })
     }
 
     fn save(&mut self) -> io::Result<()> {
         let mut create = false;
-        if !self.buf.has_file() {
+        if !self.buf().has_file() {
             if let Some(input) =
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))?
             {
-                let prev_lang = self.buf.lang();
-                self.buf.set_file(input);
-                self.hl.lang_changed(self.buf.lang());
-                if prev_lang != self.buf.lang() {
+                let prev_lang = self.buf().lang();
+                self.buf_mut().set_file(input);
+                self.hl.lang_changed(self.buf().lang());
+                if prev_lang != self.buf().lang() {
                     // Render entire screen since highglight updated
                     self.screen.set_dirty_start(self.screen.rowoff);
                 }
@@ -89,12 +158,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
         }
 
-        match self.buf.save() {
+        match self.buf_mut().save() {
             Ok(msg) => self.screen.set_info_message(msg),
             Err(msg) => {
                 self.screen.set_error_message(msg);
                 if create {
-                    self.buf.set_unnamed();
+                    self.buf_mut().set_unnamed();
                 }
             }
         }
@@ -135,22 +204,22 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             }
         }
 
-        let row_len = self.buf.rows().len();
+        let row_len = self.buf().rows().len();
         let dir = self.finding.dir;
         let mut y = self
             .finding
             .last_match
             .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
-            .unwrap_or_else(|| self.buf.cy());
+            .unwrap_or_else(|| self.buf().cy());
 
         for _ in 0..row_len {
-            let row = &self.buf.rows()[y];
+            let row = &self.buf().rows()[y];
             if let Some(byte_idx) = row.buffer().find(query) {
                 let idx = row.char_idx_of(byte_idx);
-                self.buf.set_cursor(idx, y);
+                self.buf_mut().set_cursor(idx, y);
 
-                let row = &self.buf.rows()[y]; // Immutable borrow again since self.buf.set_cursor() yields mutable borrow
-                let rx = row.rx_from_cx(self.buf.cx());
+                let row = &self.buf().rows()[y]; // Immutable borrow again since self.buf().set_cursor() yields mutable borrow
+                let rx = row.rx_from_cx(self.buf().cx());
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);
@@ -170,15 +239,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
     fn find(&mut self) -> io::Result<()> {
         let (cx, cy, coloff, rowoff) = (
-            self.buf.cx(),
-            self.buf.cy(),
+            self.buf().cx(),
+            self.buf().cy(),
             self.screen.coloff,
             self.screen.rowoff,
         );
         let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
         if self.prompt(s, Self::on_incremental_find)?.is_none() {
             // Canceled. Restore cursor position
-            self.buf.set_cursor(cx, cy);
+            self.buf_mut().set_cursor(cx, cy);
             self.screen.coloff = coloff;
             self.screen.rowoff = rowoff;
             self.screen.set_dirty_start(self.screen.rowoff); // Redraw all lines
@@ -257,7 +326,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
 
         self.screen
-            .set_info_message(if canceled { "" } else { "Canceled" });
+            .set_info_message(if canceled { "Canceled" } else { "" });
         self.refresh_screen()?;
 
         Ok(if canceled || buf.is_empty() {
@@ -268,21 +337,21 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn handle_quit(&mut self) -> io::Result<AfterKeyPress> {
-        if !self.buf.modified() || self.quitting {
+        let modified = self.bufs.iter().any(|b| b.modified());
+        if !modified || self.quitting {
             Ok(AfterKeyPress::Quit)
         } else {
             self.quitting = true;
             self.screen.set_error_message(
-                "File has unsaved changes! Press ^Q again to quit or ^S to save",
+                "At least one file has unsaved changes! Press ^Q again to quit or ^S to save",
             );
             Ok(AfterKeyPress::Refresh)
         }
     }
 
-    fn handle_not_mapped(&mut self, seq: InputSeq) -> AfterKeyPress {
+    fn handle_not_mapped(&mut self, seq: InputSeq) {
         self.screen
             .set_error_message(format!("Key '{}' not mapped", seq));
-        AfterKeyPress::Refresh
     }
 
     fn process_keypress(&mut self, s: InputSeq) -> io::Result<AfterKeyPress> {
@@ -290,77 +359,86 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
         let rowoff = self.screen.rowoff;
         let rows = self.screen.rows();
-        self.buf.dirty = false;
+        self.buf_mut().dirty = false;
 
         match &s {
             InputSeq {
                 key: Unidentified, ..
             } => return Ok(AfterKeyPress::DoNothing),
             InputSeq { key, alt: true, .. } => match key {
-                Key(b'v') => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
-                Key(b'f') => self.buf.move_cursor_by_word(CursorDir::Right),
-                Key(b'b') => self.buf.move_cursor_by_word(CursorDir::Left),
-                Key(b'n') => self.buf.move_cursor_paragraph(CursorDir::Down),
-                Key(b'p') => self.buf.move_cursor_paragraph(CursorDir::Up),
-                Key(b'<') => self.buf.move_cursor_to_buffer_edge(CursorDir::Up),
-                Key(b'>') => self.buf.move_cursor_to_buffer_edge(CursorDir::Down),
-                LeftKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-                RightKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-                _ => return Ok(self.handle_not_mapped(s)),
+                Key(b'v') => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
+                Key(b'f') => self.buf_mut().move_cursor_by_word(CursorDir::Right),
+                Key(b'b') => self.buf_mut().move_cursor_by_word(CursorDir::Left),
+                Key(b'n') => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
+                Key(b'p') => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
+                Key(b'<') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Up),
+                Key(b'>') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Down),
+                LeftKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
+                RightKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
+                _ => self.handle_not_mapped(s),
             },
             InputSeq {
                 key, ctrl: true, ..
             } => match key {
-                Key(b'p') => self.buf.move_cursor_one(CursorDir::Up),
-                Key(b'b') => self.buf.move_cursor_one(CursorDir::Left),
-                Key(b'n') => self.buf.move_cursor_one(CursorDir::Down),
-                Key(b'f') => self.buf.move_cursor_one(CursorDir::Right),
-                Key(b'v') => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-                Key(b'a') => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-                Key(b'e') => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-                Key(b'd') => self.buf.delete_right_char(),
+                Key(b'p') => self.buf_mut().move_cursor_one(CursorDir::Up),
+                Key(b'b') => self.buf_mut().move_cursor_one(CursorDir::Left),
+                Key(b'n') => self.buf_mut().move_cursor_one(CursorDir::Down),
+                Key(b'f') => self.buf_mut().move_cursor_one(CursorDir::Right),
+                Key(b'v') => self
+                    .buf_mut()
+                    .move_cursor_page(CursorDir::Down, rowoff, rows),
+                Key(b'a') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
+                Key(b'e') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
+                Key(b'd') => self.buf_mut().delete_right_char(),
                 Key(b'g') => self.find()?,
-                Key(b'h') => self.buf.delete_char(),
-                Key(b'k') => self.buf.delete_until_end_of_line(),
-                Key(b'u') => self.buf.delete_until_head_of_line(),
-                Key(b'w') => self.buf.delete_word(),
+                Key(b'h') => self.buf_mut().delete_char(),
+                Key(b'k') => self.buf_mut().delete_until_end_of_line(),
+                Key(b'u') => self.buf_mut().delete_until_head_of_line(),
+                Key(b'w') => self.buf_mut().delete_word(),
                 Key(b'l') => self.screen.set_dirty_start(self.screen.rowoff), // Clear
                 Key(b's') => self.save()?,
-                Key(b'i') => self.buf.insert_tab(),
-                Key(b'm') => self.buf.insert_line(),
+                Key(b'i') => self.buf_mut().insert_tab(),
+                Key(b'm') => self.buf_mut().insert_line(),
+                Key(b'o') => self.open_buffer()?,
                 Key(b'?') => self.show_help()?,
-                Key(b']') => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-                LeftKey => self.buf.move_cursor_by_word(CursorDir::Left),
-                RightKey => self.buf.move_cursor_by_word(CursorDir::Right),
-                DownKey => self.buf.move_cursor_paragraph(CursorDir::Down),
-                UpKey => self.buf.move_cursor_paragraph(CursorDir::Up),
+                Key(b'x') => self.next_buffer()?,
+                Key(b'z') => self.previous_buffer()?,
+                Key(b']') => self
+                    .buf_mut()
+                    .move_cursor_page(CursorDir::Down, rowoff, rows),
+                LeftKey => self.buf_mut().move_cursor_by_word(CursorDir::Left),
+                RightKey => self.buf_mut().move_cursor_by_word(CursorDir::Right),
+                DownKey => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
+                UpKey => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
                 Key(b'q') => return self.handle_quit(),
-                _ => return Ok(self.handle_not_mapped(s)),
+                _ => self.handle_not_mapped(s),
             },
             InputSeq { key, .. } => match key {
-                Key(0x1b) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
-                Key(0x08) => self.buf.delete_char(),                                 // Backspace
-                Key(0x7f) => self.buf.delete_char(), // Delete key is mapped to \x1b[3~
-                Key(b'\r') => self.buf.insert_line(),
-                Key(b) if !b.is_ascii_control() => self.buf.insert_char(*b as char),
-                Utf8Key(c) => self.buf.insert_char(*c),
-                UpKey => self.buf.move_cursor_one(CursorDir::Up),
-                LeftKey => self.buf.move_cursor_one(CursorDir::Left),
-                DownKey => self.buf.move_cursor_one(CursorDir::Down),
-                RightKey => self.buf.move_cursor_one(CursorDir::Right),
-                PageUpKey => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
-                PageDownKey => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-                HomeKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-                EndKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-                DeleteKey => self.buf.delete_right_char(),
+                Key(0x1b) => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
+                Key(0x08) => self.buf_mut().delete_char(), // Backspace
+                Key(0x7f) => self.buf_mut().delete_char(), // Delete key is mapped to \x1b[3~
+                Key(b'\r') => self.buf_mut().insert_line(),
+                Key(b) if !b.is_ascii_control() => self.buf_mut().insert_char(*b as char),
+                Utf8Key(c) => self.buf_mut().insert_char(*c),
+                UpKey => self.buf_mut().move_cursor_one(CursorDir::Up),
+                LeftKey => self.buf_mut().move_cursor_one(CursorDir::Left),
+                DownKey => self.buf_mut().move_cursor_one(CursorDir::Down),
+                RightKey => self.buf_mut().move_cursor_one(CursorDir::Right),
+                PageUpKey => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
+                PageDownKey => self
+                    .buf_mut()
+                    .move_cursor_page(CursorDir::Down, rowoff, rows),
+                HomeKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
+                EndKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
+                DeleteKey => self.buf_mut().delete_right_char(),
                 Cursor(_, _) => unreachable!(),
-                _ => return Ok(self.handle_not_mapped(s)),
+                _ => self.handle_not_mapped(s),
             },
         }
 
-        if self.buf.dirty {
+        if self.buf().dirty {
             self.hl.needs_update = true;
-            self.screen.set_dirty_start(self.buf.cy());
+            self.screen.set_dirty_start(self.buf().cy());
         }
         self.quitting = false;
         Ok(AfterKeyPress::Refresh)
@@ -385,7 +463,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     pub fn lines(&self) -> Lines<'_> {
-        self.buf.lines()
+        self.buf().lines()
     }
 
     pub fn screen(&self) -> &'_ Screen {
@@ -393,6 +471,6 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     pub fn lang(&self) -> Language {
-        self.buf.lang()
+        self.buf().lang()
     }
 }
