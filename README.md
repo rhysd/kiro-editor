@@ -357,6 +357,9 @@ rare case, I believe.
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
   screen (`rowoff..rowoff+num_rows`)
 - Support editing multiple files
+- Use parser library [combine](https://github.com/Marwes/combine) or [nom](https://github.com/Geal/nom)
+  to calculate highlighting. Need some investigation since highlight parser must stop calculating when
+  current line exceeds the bottom line of screen
 
 
 ### Future Works

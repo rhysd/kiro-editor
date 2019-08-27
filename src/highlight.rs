@@ -40,6 +40,7 @@ struct SyntaxHighlight {
     lang: Language,
     string_quotes: &'static [char],
     number: bool,
+    hex_number: bool,
     character: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
@@ -51,6 +52,7 @@ struct SyntaxHighlight {
 const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Plain,
     number: false,
+    hex_number: false,
     string_quotes: &[],
     character: false,
     line_comment: None,
@@ -63,6 +65,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::C,
     number: true,
+    hex_number: true,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -83,6 +86,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Rust,
     number: true,
+    hex_number: true,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -104,6 +108,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::JavaScript,
     number: true,
+    hex_number: true,
     string_quotes: &['"', '\''],
     character: false,
     line_comment: Some("//"),
@@ -174,6 +179,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Go,
     number: true,
+    hex_number: true,
     string_quotes: &['"', '`'],
     character: true,
     line_comment: Some("//"),
@@ -234,6 +240,7 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
 const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::C,
     number: true,
+    hex_number: true,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -413,6 +420,12 @@ impl Highlighting {
             }
         }
 
+        #[derive(PartialEq)]
+        enum Num {
+            Digit,
+            Hex,
+        }
+
         let mut prev_quote = None;
         let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
@@ -425,6 +438,7 @@ impl Highlighting {
 
             let mut prev_hl = Highlight::Normal;
             let mut prev_char = '\0';
+            let mut num = Num::Digit;
             let mut iter = row.render_text().char_indices().enumerate();
 
             while let Some((x, (idx, c))) = iter.next() {
@@ -545,12 +559,39 @@ impl Highlighting {
                     }
                 }
 
+                if hl == Highlight::Normal && self.syntax.hex_number {
+                    let line = &row.render_text()[idx..];
+                    if is_bound {
+                        if line.starts_with("0x")
+                            && line[2..]
+                                .chars()
+                                .next()
+                                .map(|c| c.is_ascii_hexdigit())
+                                .unwrap_or(false)
+                        {
+                            self.lines[y][x] = Highlight::Number;
+                            self.lines[y][x + 1] = Highlight::Number;
+                            num = Num::Hex;
+                            prev_hl = Highlight::Number;
+                            prev_char = 'x';
+                            iter.next();
+                            continue;
+                        }
+                    } else if num == Num::Hex
+                        && prev_hl == Highlight::Number
+                        && c.is_ascii_hexdigit()
+                    {
+                        hl = Highlight::Number;
+                    }
+                }
+
                 if hl == Highlight::Normal
                     && self.syntax.number
                     && (c.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound)
                         || c == '.' && prev_hl == Highlight::Number)
                 {
                     hl = Highlight::Number;
+                    num = Num::Digit;
                 }
 
                 self.lines[y][x] = hl;
