@@ -293,17 +293,14 @@ terminal raw mode to `io::Stdin`.
 This project depends on some small crates. I selected them carefully not to prevent learning how a
 text editor on terminal works.
 
-- [termios](https://crates.io/crates/termios): Safe binding to `termios` interface provided by OS.
-- [term_size](https://crates.io/crates/term_size): Safe binding to getting terminal window size with
-  ioctl(2).
-- [unicode-width](https://crates.io/crates/unicode-width): Small library to calculate Unicode character's
-  display width.
-- [term](https://crates.io/crates/unicode-width): Library for terminfo and terminal colors. This project
-  uses this library only to parse terminfo for 256 colors support.
-- [signal-hook](https://crates.io/crates/signal-hook): Small wrapper for signal handler to catch SIGWINCH
-  for resize support.
-- [getopts](https://crates.io/crates/getopts): Fairly small library to parse command line arguments.
-  Kiro only has quite simple CLI options so [crap](https://crates.io/crates/clap) is too heavy.
+- [termios][]: Safe binding to `termios` interface provided by OS.
+- [term_size][]: Safe binding to getting terminal window size with ioctl(2).
+- [unicode-width][]: Small library to calculate Unicode character's display width.
+- [term][]: Library for terminfo and terminal colors. This project uses this library only to parse
+  terminfo for 256 colors support.
+- [signal-hook][]: Small wrapper for signal handler to catch SIGWINCH for resize support.
+- [getopts][]: Fairly small library to parse command line arguments. Kiro only has quite simple CLI
+  options so [clap][] is too heavy.
 
 
 ### UTF-8 Support
@@ -391,3 +388,10 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [travis-ci]: https://travis-ci.org/rhysd/kiro-editor
 [crates-io]: https://crates.io/crates/kiro-editor
 [crates-io-badge]: https://img.shields.io/crates/v/kiro-editor.svg
+[termios]: https://crates.io/crates/termios
+[term_size]: https://crates.io/crates/term_size
+[unicode-width]: https://crates.io/crates/unicode-width
+[term]: https://crates.io/crates/unicode-width
+[signal-hook]: https://crates.io/crates/signal-hook
+[getopts]: https://crates.io/crates/getopts
+[clap]: https://crates.io/crates/clap
