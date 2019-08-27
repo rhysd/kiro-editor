@@ -399,6 +399,10 @@ impl Highlighting {
         self.needs_update = true;
     }
 
+    fn replace(&mut self, y: usize, start: usize, end: usize, hl: Highlight) {
+        self.lines[y].splice(start..end, iter::repeat(hl).take(end - start));
+    }
+
     pub fn update(&mut self, rows: &[Row], bottom_of_screen: usize) {
         if !self.needs_update && bottom_of_screen <= self.previous_bottom_of_screen {
             return;
@@ -449,7 +453,7 @@ impl Highlighting {
             let mut num = Num::Digit;
             let mut iter = row.render_text().char_indices().enumerate();
 
-            while let Some((x, (idx, c))) = iter.next() {
+            'parse_line: while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
 
                 if self.lines[y][x] == Highlight::Match {
@@ -476,9 +480,7 @@ impl Highlighting {
                         if let Some(comment_delim) = comment_delim {
                             // Consume whole '/*' here. Otherwise such as '/*/' is wrongly accepted
                             let len = comment_delim.len();
-                            self.lines[y]
-                                .splice(x..x + len, iter::repeat(Highlight::Comment).take(len));
-
+                            self.replace(y, x, x + len, Highlight::Comment);
                             prev_hl = Highlight::Comment;
                             prev_char = comment_delim.chars().last().unwrap();
                             iter.nth(len - 2);
@@ -494,8 +496,7 @@ impl Highlighting {
                 if let Some(comment_leader) = self.syntax.line_comment {
                     if prev_quote.is_none() && row.render_text()[idx..].starts_with(comment_leader)
                     {
-                        let len = self.lines[y].len();
-                        self.lines[y].splice(x.., iter::repeat(Highlight::Comment).take(len - x));
+                        self.replace(y, x, self.lines[y].len(), Highlight::Comment);
                         break;
                     }
                 }
@@ -509,7 +510,7 @@ impl Highlighting {
                     };
 
                     if let Some(len) = len {
-                        self.lines[y].splice(x..x + len, iter::repeat(Highlight::Char).take(len));
+                        self.replace(y, x, x + len, Highlight::Char);
                         prev_hl = Highlight::Char;
                         prev_char = '\'';
                         iter.nth(len - 2);
@@ -555,7 +556,7 @@ impl Highlighting {
                         .find(|(k, _)| starts_with_word(line, k))
                     {
                         let len = keyword.len();
-                        self.lines[y].splice(x..x + len, iter::repeat(highlight).take(len));
+                        self.replace(y, x, x + len, highlight);
 
                         prev_hl = highlight;
                         prev_char = line.chars().nth(len - 1).unwrap();
@@ -568,14 +569,9 @@ impl Highlighting {
                 }
 
                 if hl == Highlight::Normal && self.syntax.hex_number {
-                    let line = &row.render_text()[idx..];
+                    let line = row.render_text()[idx..].as_bytes();
                     if is_bound {
-                        if line.starts_with("0x")
-                            && line[2..]
-                                .chars()
-                                .next()
-                                .map(|c| c.is_ascii_hexdigit())
-                                .unwrap_or(false)
+                        if line.starts_with(b"0x") && line.len() > 2 && line[2].is_ascii_hexdigit()
                         {
                             self.lines[y][x] = Highlight::Number;
                             self.lines[y][x + 1] = Highlight::Number;
@@ -594,15 +590,9 @@ impl Highlighting {
                 }
 
                 if hl == Highlight::Normal && self.syntax.bin_number {
-                    let line = &row.render_text()[idx..];
+                    let line = row.render_text()[idx..].as_bytes();
                     if is_bound {
-                        if line.starts_with("0b")
-                            && line[2..]
-                                .chars()
-                                .next()
-                                .map(|c| "01".contains(c))
-                                .unwrap_or(false)
-                        {
+                        if line.starts_with(b"0b") && line.len() > 2 && b"01".contains(&line[2]) {
                             self.lines[y][x] = Highlight::Number;
                             self.lines[y][x + 1] = Highlight::Number;
                             num = Num::Bin;
@@ -641,7 +631,7 @@ impl Highlighting {
         }
         self.clear_previous_match();
         self.matched = Some((start, y, self.lines[y][start..end].to_vec()));
-        self.lines[y].splice(start..end, iter::repeat(Highlight::Match).take(end - start));
+        self.replace(y, start, end, Highlight::Match);
     }
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
