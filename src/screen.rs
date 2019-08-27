@@ -133,8 +133,12 @@ impl Screen {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<W: Write>(&self, mut buf: W, text_buf: &TextBuffer) -> io::Result<()> {
-        let num_lines = text_buf.rows().len();
+    fn draw_status_bar<W: Write>(
+        &self,
+        mut buf: W,
+        text_buf: &TextBuffer,
+        buf_pos: (usize, usize),
+    ) -> io::Result<()> {
         write!(buf, "\x1b[{}H", self.num_rows + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
@@ -145,9 +149,10 @@ impl Screen {
             ""
         };
         let left = format!(
-            "{:<20?} - {} lines {}",
+            "{:<20?} - {}/{} {}",
             text_buf.filename(),
-            num_lines,
+            buf_pos.0,
+            buf_pos.1,
             modified
         );
         // TODO: Handle multi-byte chars correctly
@@ -159,7 +164,12 @@ impl Screen {
             return Ok(());
         }
 
-        let right = format!("{} {}/{}", text_buf.lang().name(), text_buf.cy(), num_lines);
+        let right = format!(
+            "{} {}/{}",
+            text_buf.lang().name(),
+            text_buf.cy(),
+            text_buf.rows().len()
+        );
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -278,7 +288,12 @@ impl Screen {
         Ok(())
     }
 
-    fn redraw_screen(&self, text_buf: &TextBuffer, hl: &Highlighting) -> io::Result<()> {
+    fn redraw(
+        &self,
+        text_buf: &TextBuffer,
+        hl: &Highlighting,
+        buf_pos: (usize, usize),
+    ) -> io::Result<()> {
         let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
 
         // \x1b[: Escape sequence header
@@ -288,7 +303,7 @@ impl Screen {
         buf.write(b"\x1b[H")?;
 
         self.draw_rows(&mut buf, text_buf.rows(), hl)?;
-        self.draw_status_bar(&mut buf, text_buf)?;
+        self.draw_status_bar(&mut buf, text_buf, buf_pos)?;
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor
@@ -353,10 +368,15 @@ impl Screen {
         }
     }
 
-    pub fn refresh(&mut self, buf: &TextBuffer, hl: &mut Highlighting) -> io::Result<()> {
+    pub fn refresh(
+        &mut self,
+        buf: &TextBuffer,
+        hl: &mut Highlighting,
+        buf_pos: (usize, usize),
+    ) -> io::Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
         hl.update(buf.rows(), self.rowoff + self.num_rows);
-        self.redraw_screen(buf, hl)?;
+        self.redraw(buf, hl, buf_pos)?;
         self.dirty_start = None;
         Ok(())
     }

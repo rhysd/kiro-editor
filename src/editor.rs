@@ -86,7 +86,11 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn refresh_screen(&mut self) -> io::Result<()> {
-        self.screen.refresh(&self.bufs[self.buf_idx], &mut self.hl)
+        self.screen.refresh(
+            &self.bufs[self.buf_idx],
+            &mut self.hl,
+            (self.buf_idx + 1, self.bufs.len()),
+        )
     }
 
     fn reset_screen(&mut self) -> io::Result<()> {
