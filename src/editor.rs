@@ -101,8 +101,15 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
     }
 
     fn open_buffer(&mut self) -> io::Result<()> {
-        if let Some(input) = self.prompt("Open: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))? {
-            let buf = TextBuffer::open(input)?;
+        if let Some(input) = self.prompt(
+            "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
+            |_, _, _, _| Ok(()),
+        )? {
+            let buf = if input.is_empty() {
+                TextBuffer::new()
+            } else {
+                TextBuffer::open(input)?
+            };
             self.hl = Highlighting::new(buf.lang(), buf.rows());
             self.bufs.push(buf);
             self.buf_idx = self.bufs.len() - 1;
@@ -151,6 +158,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             if let Some(input) =
                 self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))?
             {
+                if input.is_empty() {}
                 let prev_lang = self.buf().lang();
                 self.buf_mut().set_file(input);
                 self.hl.lang_changed(self.buf().lang());
@@ -249,7 +257,8 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             self.screen.rowoff,
         );
         let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
-        if self.prompt(s, Self::on_incremental_find)?.is_none() {
+        let input = self.prompt(s, Self::on_incremental_find)?;
+        if input.as_ref().map(String::is_empty).unwrap_or(true) {
             // Canceled. Restore cursor position
             self.buf_mut().set_cursor(cx, cy);
             self.screen.coloff = coloff;
@@ -333,11 +342,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
             .set_info_message(if canceled { "Canceled" } else { "" });
         self.refresh_screen()?;
 
-        Ok(if canceled || buf.is_empty() {
-            None
-        } else {
-            Some(buf)
-        })
+        Ok(if canceled { None } else { Some(buf) })
     }
 
     fn handle_quit(&mut self) -> io::Result<AfterKeyPress> {
