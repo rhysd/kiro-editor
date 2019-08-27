@@ -18,7 +18,7 @@ mod signal;
 mod text_buffer;
 
 #[cfg(test)]
-mod test;
+mod ui_test;
 
 pub use editor::Editor;
 pub use input::StdinRawMode;

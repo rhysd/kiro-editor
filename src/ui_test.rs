@@ -18,6 +18,21 @@ impl Iterator for DummyInputs {
     }
 }
 
+fn key(c: char) -> InputSeq {
+    InputSeq::new(KeySeq::Key(c as u8))
+}
+
+fn ctrl(c: char) -> InputSeq {
+    InputSeq::ctrl(KeySeq::Key(c as u8))
+}
+
+fn sp(k: KeySeq) -> InputSeq {
+    if let KeySeq::Key(_) = k {
+        assert!(false, "{:?}", k);
+    }
+    InputSeq::new(k)
+}
+
 #[test]
 fn test_empty_buffer() {
     let _stdin = StdinRawMode::new().unwrap();
@@ -38,13 +53,7 @@ fn test_empty_buffer() {
 fn test_write_to_empty_buffer() {
     let _stdin = StdinRawMode::new().unwrap();
 
-    let input = DummyInputs(vec![
-        InputSeq::new(KeySeq::Key(b'a')),
-        InputSeq::new(KeySeq::Key(b'b')),
-        InputSeq::new(KeySeq::Key(b'c')),
-        InputSeq::ctrl(KeySeq::Key(b'q')),
-        InputSeq::ctrl(KeySeq::Key(b'q')),
-    ]);
+    let input = DummyInputs(vec![key('a'), key('b'), key('c'), ctrl('q'), ctrl('q')]);
     let mut editor = Editor::new(input).unwrap();
     editor.edit().unwrap();
 
@@ -57,16 +66,18 @@ fn test_write_to_empty_buffer() {
 
 #[test]
 fn test_move_cursor_down() {
+    use KeySeq::*;
+
     let _stdin = StdinRawMode::new().unwrap();
 
     let input = DummyInputs(vec![
-        InputSeq::new(KeySeq::Key(b'a')),
-        InputSeq::new(KeySeq::DownKey),
-        InputSeq::new(KeySeq::Key(b'b')),
-        InputSeq::new(KeySeq::DownKey),
-        InputSeq::new(KeySeq::Key(b'c')),
-        InputSeq::ctrl(KeySeq::Key(b'q')),
-        InputSeq::ctrl(KeySeq::Key(b'q')),
+        key('a'),
+        sp(DownKey),
+        key('b'),
+        sp(DownKey),
+        key('c'),
+        ctrl('q'),
+        ctrl('q'),
     ]);
     let mut editor = Editor::new(input).unwrap();
     editor.edit().unwrap();
@@ -82,7 +93,7 @@ fn test_move_cursor_down() {
 fn test_open_file() {
     let _stdin = StdinRawMode::new().unwrap();
 
-    let input = DummyInputs(vec![InputSeq::ctrl(KeySeq::Key(b'q'))]);
+    let input = DummyInputs(vec![ctrl('q')]);
 
     let mut editor = Editor::new(input).unwrap();
     let this_file = file!();
