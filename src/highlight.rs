@@ -41,6 +41,7 @@ struct SyntaxHighlight {
     string_quotes: &'static [char],
     number: bool,
     hex_number: bool,
+    bin_number: bool,
     character: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
@@ -53,6 +54,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Plain,
     number: false,
     hex_number: false,
+    bin_number: false,
     string_quotes: &[],
     character: false,
     line_comment: None,
@@ -66,6 +68,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::C,
     number: true,
     hex_number: true,
+    bin_number: false,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -87,6 +90,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Rust,
     number: true,
     hex_number: true,
+    bin_number: true,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -109,6 +113,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::JavaScript,
     number: true,
     hex_number: true,
+    bin_number: false,
     string_quotes: &['"', '\''],
     character: false,
     line_comment: Some("//"),
@@ -180,6 +185,7 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Go,
     number: true,
     hex_number: true,
+    bin_number: false,
     string_quotes: &['"', '`'],
     character: true,
     line_comment: Some("//"),
@@ -241,6 +247,7 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::C,
     number: true,
     hex_number: true,
+    bin_number: true,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -424,6 +431,7 @@ impl Highlighting {
         enum Num {
             Digit,
             Hex,
+            Bin,
         }
 
         let mut prev_quote = None;
@@ -581,6 +589,29 @@ impl Highlighting {
                         && prev_hl == Highlight::Number
                         && c.is_ascii_hexdigit()
                     {
+                        hl = Highlight::Number;
+                    }
+                }
+
+                if hl == Highlight::Normal && self.syntax.bin_number {
+                    let line = &row.render_text()[idx..];
+                    if is_bound {
+                        if line.starts_with("0b")
+                            && line[2..]
+                                .chars()
+                                .next()
+                                .map(|c| "01".contains(c))
+                                .unwrap_or(false)
+                        {
+                            self.lines[y][x] = Highlight::Number;
+                            self.lines[y][x + 1] = Highlight::Number;
+                            num = Num::Bin;
+                            prev_hl = Highlight::Number;
+                            prev_char = 'b';
+                            iter.next();
+                            continue;
+                        }
+                    } else if num == Num::Bin && prev_hl == Highlight::Number && "01".contains(c) {
                         hl = Highlight::Number;
                     }
                 }
