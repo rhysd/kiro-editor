@@ -75,15 +75,16 @@ where
             return Self::new(input, output, window_size);
         }
         let screen = Screen::new(window_size, &mut input, output)?;
-        let bufs = paths
+        let bufs: Vec<_> = paths
             .iter()
             .map(TextBuffer::open)
             .collect::<io::Result<_>>()?;
+        let hl = Highlighting::new(bufs[0].lang(), bufs[0].rows());
         Ok(Editor {
             input,
             quitting: false,
             finding: FindState::new(),
-            hl: Highlighting::default(),
+            hl,
             screen,
             bufs,
             buf_idx: 0,
