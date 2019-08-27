@@ -313,20 +313,21 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
 
             let seq = seq?;
             let mut finished = false;
-            match (&seq.key, seq.ctrl, seq.alt) {
-                (&Unidentified, ..) => continue,
-                (&Key(b'h'), true, ..) | (&Key(0x7f), ..) | (&DeleteKey, ..) if !buf.is_empty() => {
+
+            match (&seq.key, seq.ctrl) {
+                (Unidentified, ..) => continue,
+                (Key(b'h'), true) | (Key(0x7f), ..) | (DeleteKey, ..) if !buf.is_empty() => {
                     buf.pop();
                 }
-                (&Key(b'g'), true, ..) | (&Key(b'q'), true, ..) | (&Key(0x1b), ..) => {
+                (Key(b'g'), true) | (Key(b'q'), true) | (Key(0x1b), ..) => {
                     finished = true;
                     canceled = true;
                 }
-                (&Key(b'\r'), ..) | (&Key(b'm'), true, ..) => {
+                (Key(b'\r'), ..) | (Key(b'm'), true) => {
                     finished = true;
                 }
-                (&Key(b), false, ..) => buf.push(b as char),
-                (&Utf8Key(c), false, ..) => buf.push(c),
+                (Key(b), false) => buf.push(*b as char),
+                (Utf8Key(c), false) => buf.push(*c),
                 _ => {}
             }
 
