@@ -131,6 +131,18 @@ impl InputSeq {
     }
 }
 
+impl fmt::Display for InputSeq {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.ctrl {
+            write!(f, "C-")?;
+        }
+        if self.alt {
+            write!(f, "M-")?;
+        }
+        write!(f, "{}", self.key)
+    }
+}
+
 pub struct InputSequences {
     stdin: StdinRawMode,
 }

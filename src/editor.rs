@@ -279,6 +279,12 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         }
     }
 
+    fn handle_not_mapped(&mut self, seq: InputSeq) -> AfterKeyPress {
+        self.screen
+            .set_error_message(format!("Key '{}' not mapped", seq));
+        AfterKeyPress::Refresh
+    }
+
     fn process_keypress(&mut self, s: InputSeq) -> io::Result<AfterKeyPress> {
         use KeySeq::*;
 
@@ -286,67 +292,70 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         let rows = self.screen.rows();
         self.buf.dirty = false;
 
-        match (s.key, s.ctrl, s.alt) {
-            (Unidentified, ..) => return Ok(AfterKeyPress::DoNothing),
-            (Key(b'p'), true, false) => self.buf.move_cursor_one(CursorDir::Up),
-            (Key(b'b'), true, false) => self.buf.move_cursor_one(CursorDir::Left),
-            (Key(b'n'), true, false) => self.buf.move_cursor_one(CursorDir::Down),
-            (Key(b'f'), true, false) => self.buf.move_cursor_one(CursorDir::Right),
-            (Key(b'v'), true, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-            (Key(b'a'), true, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-            (Key(b'e'), true, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-            (Key(b'd'), true, false) => self.buf.delete_right_char(),
-            (Key(b'g'), true, false) => self.find()?,
-            (Key(b'h'), true, false) => self.buf.delete_char(),
-            (Key(b'k'), true, false) => self.buf.delete_until_end_of_line(),
-            (Key(b'u'), true, false) => self.buf.delete_until_head_of_line(),
-            (Key(b'w'), true, false) => self.buf.delete_word(),
-            (Key(b'l'), true, false) => self.screen.set_dirty_start(self.screen.rowoff), // Clear
-            (Key(b's'), true, false) => self.save()?,
-            (Key(b'i'), true, false) => self.buf.insert_tab(),
-            (Key(b'm'), true, false) => self.buf.insert_line(),
-            (Key(b'?'), true, false) => self.show_help()?,
-            (Key(0x1b), false, false) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
-            (Key(b']'), true, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-            (Key(b'v'), false, true) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
-            (Key(b'f'), false, true) => self.buf.move_cursor_by_word(CursorDir::Right),
-            (Key(b'b'), false, true) => self.buf.move_cursor_by_word(CursorDir::Left),
-            (Key(b'n'), false, true) => self.buf.move_cursor_paragraph(CursorDir::Down),
-            (Key(b'p'), false, true) => self.buf.move_cursor_paragraph(CursorDir::Up),
-            (Key(b'<'), false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Up),
-            (Key(b'>'), false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Down),
-            (Key(0x08), false, false) => self.buf.delete_char(), // Backspace
-            (Key(0x7f), false, false) => self.buf.delete_char(), // Delete key is mapped to \x1b[3~
-            (Key(b'\r'), false, false) => self.buf.insert_line(),
-            (Key(b), false, false) if !b.is_ascii_control() => self.buf.insert_char(b as char),
-            (Key(b'q'), true, ..) => return self.handle_quit(),
-            (UpKey, false, false) => self.buf.move_cursor_one(CursorDir::Up),
-            (LeftKey, false, false) => self.buf.move_cursor_one(CursorDir::Left),
-            (DownKey, false, false) => self.buf.move_cursor_one(CursorDir::Down),
-            (RightKey, false, false) => self.buf.move_cursor_one(CursorDir::Right),
-            (PageUpKey, false, false) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
-            (PageDownKey, false, false) => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
-            (HomeKey, false, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-            (EndKey, false, false) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-            (DeleteKey, false, false) => self.buf.delete_right_char(),
-            (LeftKey, true, false) => self.buf.move_cursor_by_word(CursorDir::Left),
-            (RightKey, true, false) => self.buf.move_cursor_by_word(CursorDir::Right),
-            (DownKey, true, false) => self.buf.move_cursor_paragraph(CursorDir::Down),
-            (UpKey, true, false) => self.buf.move_cursor_paragraph(CursorDir::Up),
-            (LeftKey, false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
-            (RightKey, false, true) => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
-            (Utf8Key(c), ..) => self.buf.insert_char(c),
-            (Cursor(_, _), ..) => unreachable!(),
-            (key, ctrl, alt) => {
-                let modifier = match (ctrl, alt) {
-                    (true, true) => "C-M-",
-                    (true, false) => "C-",
-                    (false, true) => "M-",
-                    (false, false) => "",
-                };
-                let msg = format!("Key '{}{}' not mapped", modifier, key);
-                self.screen.set_error_message(msg);
-            }
+        match &s {
+            InputSeq {
+                key: Unidentified, ..
+            } => return Ok(AfterKeyPress::DoNothing),
+            InputSeq { key, alt: true, .. } => match key {
+                Key(b'v') => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
+                Key(b'f') => self.buf.move_cursor_by_word(CursorDir::Right),
+                Key(b'b') => self.buf.move_cursor_by_word(CursorDir::Left),
+                Key(b'n') => self.buf.move_cursor_paragraph(CursorDir::Down),
+                Key(b'p') => self.buf.move_cursor_paragraph(CursorDir::Up),
+                Key(b'<') => self.buf.move_cursor_to_buffer_edge(CursorDir::Up),
+                Key(b'>') => self.buf.move_cursor_to_buffer_edge(CursorDir::Down),
+                LeftKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+                RightKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+                _ => return Ok(self.handle_not_mapped(s)),
+            },
+            InputSeq {
+                key, ctrl: true, ..
+            } => match key {
+                Key(b'p') => self.buf.move_cursor_one(CursorDir::Up),
+                Key(b'b') => self.buf.move_cursor_one(CursorDir::Left),
+                Key(b'n') => self.buf.move_cursor_one(CursorDir::Down),
+                Key(b'f') => self.buf.move_cursor_one(CursorDir::Right),
+                Key(b'v') => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+                Key(b'a') => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+                Key(b'e') => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+                Key(b'd') => self.buf.delete_right_char(),
+                Key(b'g') => self.find()?,
+                Key(b'h') => self.buf.delete_char(),
+                Key(b'k') => self.buf.delete_until_end_of_line(),
+                Key(b'u') => self.buf.delete_until_head_of_line(),
+                Key(b'w') => self.buf.delete_word(),
+                Key(b'l') => self.screen.set_dirty_start(self.screen.rowoff), // Clear
+                Key(b's') => self.save()?,
+                Key(b'i') => self.buf.insert_tab(),
+                Key(b'm') => self.buf.insert_line(),
+                Key(b'?') => self.show_help()?,
+                Key(b']') => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+                LeftKey => self.buf.move_cursor_by_word(CursorDir::Left),
+                RightKey => self.buf.move_cursor_by_word(CursorDir::Right),
+                DownKey => self.buf.move_cursor_paragraph(CursorDir::Down),
+                UpKey => self.buf.move_cursor_paragraph(CursorDir::Up),
+                Key(b'q') => return self.handle_quit(),
+                _ => return Ok(self.handle_not_mapped(s)),
+            },
+            InputSeq { key, .. } => match key {
+                Key(0x1b) => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
+                Key(0x08) => self.buf.delete_char(),                                 // Backspace
+                Key(0x7f) => self.buf.delete_char(), // Delete key is mapped to \x1b[3~
+                Key(b'\r') => self.buf.insert_line(),
+                Key(b) if !b.is_ascii_control() => self.buf.insert_char(*b as char),
+                Utf8Key(c) => self.buf.insert_char(*c),
+                UpKey => self.buf.move_cursor_one(CursorDir::Up),
+                LeftKey => self.buf.move_cursor_one(CursorDir::Left),
+                DownKey => self.buf.move_cursor_one(CursorDir::Down),
+                RightKey => self.buf.move_cursor_one(CursorDir::Right),
+                PageUpKey => self.buf.move_cursor_page(CursorDir::Up, rowoff, rows),
+                PageDownKey => self.buf.move_cursor_page(CursorDir::Down, rowoff, rows),
+                HomeKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Left),
+                EndKey => self.buf.move_cursor_to_buffer_edge(CursorDir::Right),
+                DeleteKey => self.buf.delete_right_char(),
+                Cursor(_, _) => unreachable!(),
+                _ => return Ok(self.handle_not_mapped(s)),
+            },
         }
 
         if self.buf.dirty {
