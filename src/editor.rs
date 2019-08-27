@@ -3,7 +3,7 @@ use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
 use crate::screen::Screen;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::str;
 
@@ -33,19 +33,27 @@ enum AfterKeyPress {
     DoNothing,
 }
 
-pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>> {
+pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>, W: Write> {
     input: I,           // Escape sequences stream represented as Iterator
     quitting: bool,     // After first Ctrl-Q
     finding: FindState, // Text search state
     hl: Highlighting,
-    screen: Screen,
+    screen: Screen<W>,
     bufs: Vec<TextBuffer>,
     buf_idx: usize,
 }
 
-impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
-    pub fn new(mut input: I) -> io::Result<Editor<I>> {
-        let screen = Screen::new(&mut input)?;
+impl<I, W> Editor<I, W>
+where
+    I: Iterator<Item = io::Result<InputSeq>>,
+    W: Write,
+{
+    pub fn new(
+        mut input: I,
+        output: W,
+        window_size: Option<(usize, usize)>,
+    ) -> io::Result<Editor<I, W>> {
+        let screen = Screen::new(window_size, &mut input, output)?;
         Ok(Editor {
             input,
             quitting: false,
@@ -57,11 +65,16 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         })
     }
 
-    pub fn open<P: AsRef<Path>>(mut input: I, paths: &[P]) -> io::Result<Editor<I>> {
+    pub fn open<P: AsRef<Path>>(
+        mut input: I,
+        output: W,
+        window_size: Option<(usize, usize)>,
+        paths: &[P],
+    ) -> io::Result<Editor<I, W>> {
         if paths.is_empty() {
-            return Self::new(input);
+            return Self::new(input, output, window_size);
         }
-        let screen = Screen::new(&mut input)?;
+        let screen = Screen::new(window_size, &mut input, output)?;
         let bufs = paths
             .iter()
             .map(TextBuffer::open)
@@ -476,7 +489,7 @@ impl<I: Iterator<Item = io::Result<InputSeq>>> Editor<I> {
         self.buf().lines()
     }
 
-    pub fn screen(&self) -> &'_ Screen {
+    pub fn screen(&self) -> &'_ Screen<W> {
         &self.screen
     }
 

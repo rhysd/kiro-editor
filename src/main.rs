@@ -32,7 +32,7 @@ Mappings:
 fn edit(files: Vec<String>) -> io::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
-    Editor::open(input, &files)?.edit()
+    Editor::open(input, io::stdout(), None, &files)?.edit()
 }
 
 fn main() {

@@ -38,7 +38,7 @@ fn test_empty_buffer() {
     let _stdin = StdinRawMode::new().unwrap();
 
     let input = DummyInputs(vec![InputSeq::ctrl(KeySeq::Key(b'q'))]);
-    let mut editor = Editor::new(input).unwrap();
+    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -54,14 +54,18 @@ fn test_write_to_empty_buffer() {
     let _stdin = StdinRawMode::new().unwrap();
 
     let input = DummyInputs(vec![key('a'), key('b'), key('c'), ctrl('q'), ctrl('q')]);
-    let mut editor = Editor::new(input).unwrap();
+    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
     editor.edit().unwrap();
 
     let lines = editor.lines().collect::<Vec<_>>();
     assert_eq!(lines, vec!["abc"]);
 
     let msg = editor.screen().message_text();
-    assert!(msg.contains("File has unsaved changes!"), "{}", msg);
+    assert!(
+        msg.contains("At least one file has unsaved changes!"),
+        "{}",
+        msg
+    );
 }
 
 #[test]
@@ -79,7 +83,7 @@ fn test_move_cursor_down() {
         ctrl('q'),
         ctrl('q'),
     ]);
-    let mut editor = Editor::new(input).unwrap();
+    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -96,7 +100,7 @@ fn test_open_file() {
     let input = DummyInputs(vec![ctrl('q')]);
 
     let this_file = file!();
-    let mut editor = Editor::open(input, &[this_file]).unwrap();
+    let mut editor = Editor::open(input, io::stdout(), None, &[this_file]).unwrap();
     editor.edit().unwrap();
 
     let f = BufReader::new(File::open(this_file).unwrap());

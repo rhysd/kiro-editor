@@ -62,9 +62,10 @@ impl StatusMessage {
     }
 }
 
-fn get_window_size<I>(input: I) -> io::Result<(usize, usize)>
+fn get_window_size<I, W>(input: I, mut output: W) -> io::Result<(usize, usize)>
 where
     I: Iterator<Item = io::Result<InputSeq>>,
+    W: Write,
 {
     if let Some(s) = term_size::dimensions_stdout() {
         return Ok(s);
@@ -73,9 +74,8 @@ where
     // By moving cursor at the bottom-right corner by 'B' and 'C' commands, get the size of
     // current screen. \x1b[9999;9999H is not available since it does not guarantee cursor
     // stops on the corner. Finally command 'n' queries cursor position.
-    let mut stdout = io::stdout();
-    stdout.write(b"\x1b[9999C\x1b[9999B\x1b[6n")?;
-    stdout.flush()?;
+    output.write(b"\x1b[9999C\x1b[9999B\x1b[6n")?;
+    output.flush()?;
 
     // Wait for response from terminal discarding other sequences
     for seq in input {
@@ -87,7 +87,8 @@ where
     Ok((0, 0)) // Give up
 }
 
-pub struct Screen {
+pub struct Screen<W: Write> {
+    output: W,
     // X coordinate in `render` text of rows
     rx: usize,
     // Screen size
@@ -105,13 +106,18 @@ pub struct Screen {
     pub color_support: ColorSupport,
 }
 
-impl Screen {
-    pub fn new<I>(input: I) -> io::Result<Self>
+impl<W: Write> Screen<W> {
+    pub fn new<I>(size: Option<(usize, usize)>, input: I, mut output: W) -> io::Result<Self>
     where
         I: Iterator<Item = io::Result<InputSeq>>,
     {
-        let (w, h) = get_window_size(input)?;
+        let (w, h) = if let Some(s) = size {
+            s
+        } else {
+            get_window_size(input, &mut output)?
+        };
         Ok(Self {
+            output,
             rx: 0,
             num_cols: w,
             // Screen height is 1 line less than window height due to status bar
@@ -133,9 +139,9 @@ impl Screen {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<W: Write>(
+    fn draw_status_bar<B: Write>(
         &self,
-        mut buf: W,
+        mut buf: B,
         text_buf: &TextBuffer,
         buf_pos: (usize, usize),
     ) -> io::Result<()> {
@@ -187,7 +193,7 @@ impl Screen {
         Ok(())
     }
 
-    fn draw_message_bar<W: Write>(&self, mut buf: W) -> io::Result<()> {
+    fn draw_message_bar<B: Write>(&self, mut buf: B) -> io::Result<()> {
         write!(buf, "\x1b[{}H", self.num_rows + 2)?;
         if let Ok(d) = SystemTime::now().duration_since(self.message.timestamp) {
             if d.as_secs() < 5 {
@@ -206,7 +212,7 @@ impl Screen {
         Ok(())
     }
 
-    fn draw_welcome_message<W: Write>(&self, mut buf: W) -> io::Result<()> {
+    fn draw_welcome_message<B: Write>(&self, mut buf: B) -> io::Result<()> {
         let msg_buf = format!("Kiro editor -- version {}", VERSION);
         let welcome = self.trim_line(&msg_buf);
         let padding = (self.num_cols - welcome.len()) / 2;
@@ -220,7 +226,7 @@ impl Screen {
         Ok(())
     }
 
-    fn draw_rows<W: Write>(&self, mut buf: W, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
+    fn draw_rows<B: Write>(&self, mut buf: B, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
         let dirty_start = if let Some(s) = self.dirty_start {
             s
         } else {
@@ -289,7 +295,7 @@ impl Screen {
     }
 
     fn redraw(
-        &self,
+        &mut self,
         text_buf: &TextBuffer,
         hl: &Highlighting,
         buf_pos: (usize, usize),
@@ -314,9 +320,8 @@ impl Screen {
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
 
-        let mut stdout = io::stdout();
-        stdout.write(&buf)?;
-        stdout.flush()
+        self.output.write(&buf)?;
+        self.output.flush()
     }
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
@@ -381,17 +386,16 @@ impl Screen {
         Ok(())
     }
 
-    pub fn clear(&self) -> io::Result<()> {
-        let mut stdout = io::stdout();
+    pub fn clear(&mut self) -> io::Result<()> {
         // 2: Argument of 'J' command to reset entire screen
         // J: Command to erase screen http://vt100.net/docs/vt100-ug/chapter3.html#ED
-        stdout.write(b"\x1b[2J")?;
+        self.output.write(b"\x1b[2J")?;
         // Set cursor position to left-top corner
-        stdout.write(b"\x1b[H")?;
-        stdout.flush()
+        self.output.write(b"\x1b[H")?;
+        self.output.flush()
     }
 
-    pub fn draw_help(&self) -> io::Result<()> {
+    pub fn draw_help(&mut self) -> io::Result<()> {
         let help: Vec<_> = HELP
             .split('\n')
             .skip_while(|s| !s.contains(':'))
@@ -443,9 +447,8 @@ impl Screen {
             buf.write(b"\x1b[K")?;
         }
 
-        let mut stdout = io::stdout();
-        stdout.write(&buf)?;
-        stdout.flush()
+        self.output.write(&buf)?;
+        self.output.flush()
     }
 
     pub fn set_dirty_start(&mut self, start: usize) {
@@ -465,7 +468,7 @@ impl Screen {
             return Ok(false); // Did not receive signal
         }
 
-        let (w, h) = get_window_size(input)?;
+        let (w, h) = get_window_size(input, &mut self.output)?;
         self.num_rows = h.saturating_sub(2);
         self.num_cols = w;
         self.dirty_start = Some(0);
