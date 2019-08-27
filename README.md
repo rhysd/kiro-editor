@@ -3,22 +3,21 @@ Kiro
 [![crates.io][crates-io-badge]][crates-io]
 [![Build Status][build-badge]][travis-ci]
 
-[Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. [Kiro][] was implemented
-based on awesome minimal text editor [kilo][] and ['Build Your Own Text Editor' guide][byote]
-with various improvements.
+[Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. Kiro is a Rust port of awesome
+minimal text editor [kilo][] with various improvements.
 
 <img width=589 height=412 src="https://github.com/rhysd/ss/blob/master/kiro-editor/main.gif?raw=true" alt="main screenshot"/>
 
 It provides basic features as a minimal text editor:
 
-- Open/Save a text file
-- Create a new text file
+- Open/Save text files
+- Create new text files and empty text buffer on memory
 - Edit a text (put/delete characters, insert/delete lines, ...)
 - Simple syntax highlighting
 - Simple incremental text search
 
-And [Kiro][] extends [kilo][] with various improvements (please see 'Extended Features' section
-and 'Implementation' section below for more details):
+And Kiro extends [kilo][] to improve editing (please see 'Extended Features' section and 'Implementation'
+section below for more details):
 
 - Support editing UTF-8 characters like '🐶' (kilo only supports ASCII characters)
 - More Emacs-like shortcuts
@@ -35,8 +34,8 @@ and 'Implementation' section below for more details):
 [Kiro][] aims to support kinds of xterm terminals on Unix-like systems. For example Terminal.app,
 iTerm2.app, Gnome-Terminal, (hopefully) Windows Terminal on WSL.
 
-I learned various things by making this project. Please read 'Implementation' section below to find
-some interesting topics.
+I learned various things by making this project following ['Build Your Own Text Editor' guide][byote].
+Please read 'Implementation' section below to find some interesting topics.
 
 
 
@@ -374,6 +373,7 @@ rare case, I believe.
   or [`.vscode` VS Code workspace settings](https://code.visualstudio.com/docs/getstarted/settings)
 - Support emojis using `U+200D`
 - WebAssembly support
+- Mouse support
 
 
 
