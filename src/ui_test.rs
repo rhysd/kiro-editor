@@ -95,9 +95,8 @@ fn test_open_file() {
 
     let input = DummyInputs(vec![ctrl('q')]);
 
-    let mut editor = Editor::new(input).unwrap();
     let this_file = file!();
-    editor.open_file(this_file).unwrap();
+    let mut editor = Editor::open(input, &[this_file]).unwrap();
     editor.edit().unwrap();
 
     let f = BufReader::new(File::open(this_file).unwrap());
