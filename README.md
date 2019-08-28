@@ -28,7 +28,7 @@ section below for more details):
 - Resizing terminal window supported. Screen size is responsible
 - Highlight more languages (Rust, Go, JavaScript, C++)
 - Modular implementation for each logics such as parsing key inputs, rendering screen, calculating
-  highlight, modifying text buffer (kilo implements everything in one `main.c` with several global
+  highlight, modifying text buffer (kilo implements everything in one `kilo.c` with several global
   variables)
 
 [Kiro][] aims to support kinds of xterm terminals on Unix-like systems. For example Terminal.app,
@@ -73,15 +73,16 @@ remember all mappings. Please type `Ctrl-?` to know all mappings in editor.
 
 - **Operations**
 
-| Mapping  | Description                                                                    |
-|----------|--------------------------------------------------------------------------------|
-| `Ctrl-?` | Show all key mappings in editor screen.                                        |
-| `Ctrl-Q` | Quit Kiro. If current text is not saved yet, you need to input `Ctrl-Q` twice. |
-| `Ctrl-G` | Incremental text search.                                                       |
-| `Ctrl-O` | Open file or empty buffer.                                                     |
-| `Ctrl-X` | Switch to next buffer.                                                         |
-| `Ctrl-Z` | Switch to previous buffer.                                                     |
-| `Ctrl-L` | Refresh screen.                                                                |
+| Mapping  | Description                                                                         |
+|----------|-------------------------------------------------------------------------------------|
+| `Ctrl-?` | Show all key mappings in editor screen.                                             |
+| `Ctrl-Q` | Quit Kiro. If current text is not saved yet, you need to input `Ctrl-Q` twice.      |
+| `Ctrl-S` | Save current buffer to file. Prompt shows up to enter file name for unnamed buffer. |
+| `Ctrl-G` | Incremental text search.                                                            |
+| `Ctrl-O` | Open file or empty buffer.                                                          |
+| `Ctrl-X` | Switch to next buffer.                                                              |
+| `Ctrl-Z` | Switch to previous buffer.                                                          |
+| `Ctrl-L` | Refresh screen.                                                                     |
 
 - **Moving cursor**
 
