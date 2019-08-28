@@ -22,7 +22,7 @@ script:
   - cargo clippy
   - cargo fmt -- --check
   - cargo build
-  - cargo test -- --test-threads 1
+  - cargo test
 
 notifications:
   email:

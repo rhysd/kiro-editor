@@ -1,8 +1,8 @@
 use crate::editor::Editor;
-use crate::input::{InputSeq, KeySeq, StdinRawMode};
+use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 
 struct DummyInputs(Vec<InputSeq>);
 
@@ -15,6 +15,18 @@ impl Iterator for DummyInputs {
         } else {
             Some(Ok(self.0.remove(0)))
         }
+    }
+}
+
+struct Discard;
+
+impl Write for Discard {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -35,10 +47,8 @@ fn sp(k: KeySeq) -> InputSeq {
 
 #[test]
 fn test_empty_buffer() {
-    let _stdin = StdinRawMode::new().unwrap();
-
     let input = DummyInputs(vec![InputSeq::ctrl(KeySeq::Key(b'q'))]);
-    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
+    let mut editor = Editor::new(input, Discard, None).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -51,10 +61,8 @@ fn test_empty_buffer() {
 
 #[test]
 fn test_write_to_empty_buffer() {
-    let _stdin = StdinRawMode::new().unwrap();
-
     let input = DummyInputs(vec![key('a'), key('b'), key('c'), ctrl('q'), ctrl('q')]);
-    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
+    let mut editor = Editor::new(input, Discard, None).unwrap();
     editor.edit().unwrap();
 
     let lines = editor.lines().collect::<Vec<_>>();
@@ -72,8 +80,6 @@ fn test_write_to_empty_buffer() {
 fn test_move_cursor_down() {
     use KeySeq::*;
 
-    let _stdin = StdinRawMode::new().unwrap();
-
     let input = DummyInputs(vec![
         key('a'),
         sp(DownKey),
@@ -83,7 +89,7 @@ fn test_move_cursor_down() {
         ctrl('q'),
         ctrl('q'),
     ]);
-    let mut editor = Editor::new(input, io::stdout(), None).unwrap();
+    let mut editor = Editor::new(input, Discard, None).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -95,12 +101,10 @@ fn test_move_cursor_down() {
 
 #[test]
 fn test_open_file() {
-    let _stdin = StdinRawMode::new().unwrap();
-
     let input = DummyInputs(vec![ctrl('q')]);
 
     let this_file = file!();
-    let mut editor = Editor::open(input, io::stdout(), None, &[this_file]).unwrap();
+    let mut editor = Editor::open(input, Discard, None, &[this_file]).unwrap();
     editor.edit().unwrap();
 
     let f = BufReader::new(File::open(this_file).unwrap());

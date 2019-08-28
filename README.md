@@ -202,9 +202,55 @@ For current syntax highlighting, changes to former lines may affect later lines 
 stops calculating highlights at the line of bottom of screen.
 
 
+### UTF-8 Support
+
+[kilo][] only supports ASCII text. Width of ASCII character is fixed to 1 byte. This assumption reduces
+complexity of implementation of kilo greatly because:
+
+- every character can be represented as `char` (almost the same as `u8` in Rust)
+- any character in ASCII text can be accessed via byte index in O(1)
+- length of text is the same as number of bytes of the text
+
+So kilo can contain text buffer as simple `char *` and accesses characters in it via byte index.
+In addition, display width of all printable ASCII characters is fixed except for `0x09` tab character.
+
+But actually there are more characters in the world defined as Unicode characters. Since I'm Japanese,
+the characters such as Kanji or Hiragana I'm daily using are not ASCII. And the most major text encoding
+is UTF-8. So I determined to extend Kiro editor to support UTF-8.
+
+In UTF-8, byte length of character is variable. Any character takes 1~4 bytes (or more in special case).
+The important point here is that accessing to character in UTF-8 text is not O(1). To access to N-th
+character or to know length of text, it requires to check characters from head of the text.
+
+Accessing to character in text and getting text length happen frequently while updating text buffer
+and highlights. So checking them in O(N) for each time is not efficient. To solve this problem, Kiro
+contains byte indices of each characters in line text as `Vec<usize>`. These indices are only existing
+when at least one character in line text is non-ASCII character.
+
+![UTF-8 support diagram](./images/utf-8-support-diagram.png)
+
+In `Row` struct which represents one text line, `indices` field (`Vec<usize>`) is dedicated to store
+byte indices of each character.
+
+In the first case `"Rust is nice"`, all characters are ASCII so byte index can be used to access to
+characters in the text. In the case, `indices` field is an empty (and capacity is set to zero). A `Vec`
+instance with zero capacity is guaranteed not to allocate heap memory. So the memory overhead here is
+24 bytes of `Vec<usize>` instance itself (pointer, capacity as `usize` and length as `usize`) only.
+
+In the second case `"Rust🦀良い"`, there are some non-ASCII characters so `self.indices` caches byte
+indices of each characters. Thanks to this cache, each character can be accessed in O(1) and its text
+length can be obtained in O(1) as `self.indices.len()`. `Row` also contains a rendered text and updates
+it when internal text buffer is updated by `TextBuffer`. So `self.indices` cache is also updated at
+the same timing efficiently.
+
+Though keeping byte indices in `Vec<usize>` is quite memory inefficient, the indices are only required
+when the line text contains non-ASCII characters. In terms of programming code editor, it is relatively
+rare case, I believe.
+
+
 ### Porting C editor to Rust
 
-#### Separate one big C source into several Rust modules
+#### Separate one C source into several Rust modules
 
 To simplify and minimize implementation, [kilo][] uses some global variables and local `static`
 variables. Editor's state is stored in a global variable `E` and it is referred everywhere.
@@ -288,6 +334,91 @@ the clean up. And `StdinRawMode` also implements `Deref` and `DerefMut` so that 
 as if it were `Stdin`. By wrapping `io::Stdin` like this, I could add the ability to enter/leave
 terminal raw mode to `io::Stdin`.
 
+#### Abstract input and output of editor
+
+```rust
+pub struct Editor<I, W>
+where
+    I: Iterator<Item = io::Result<InputSeq>>,
+    W: Write,
+{
+    // ...
+}
+
+impl<I, W> Editor<I, W>
+where
+    I: Iterator<Item = io::Result<InputSeq>>,
+    W: Write,
+{
+    // Initialize Editor struct with given input and output
+    pub fn new(input: I, output: W) -> io::Result<Editor<I, W>> {
+        // ...
+    }
+}
+```
+
+The input of terminal text editor is a stream of input sequences from terminal which include
+user's key input and control sequences. The input is represented with `Iterator` trait of input sequence.
+Here `InputSeq` represents one key input or one control sequence.
+
+The output of terminal text editor is also stream of sequences to terminal which include output
+strings and control sequences. It's done by simply writing to stdout. So it is represented with
+`Write` trait.
+
+The benefit of these abstractions are testability of each modules. By creating a dummy struct which
+implements `Iterator<Item = io::Result<InputSeq>>`, the input can be easily replaced with dummy input.
+Since [kilo][] does not have tests, these abstractions are not necessary for it.
+
+```rust
+struct DummyInput(Vec<InputSeq>);
+
+impl Iterator for DummyInput {
+    type Item = io::Result<InputSeq>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.is_empty() {
+            None
+        } else {
+            Some(Ok(self.0.remove(0)))
+        }
+    }
+}
+
+// Dummy Ctrl-Q input to editor
+let dummy_input = DummyInput(vec![ InputSeq::ctrl(b'q') ]);
+```
+
+And by implementing a small struct which simply discards output, we can ignore the output. It does
+not need to draw screen in terminal window. And it does not rely on global state (terminal raw mode)
+so that tests can run paralelly. As the result tests can run faster and terminal window doesn't mess up.
+
+```rust
+struct Discard;
+
+impl Write for Discard {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+```
+
+By using these mocks the input and output of editor can be tested easily as follows:
+
+```rust
+#[test]
+fn test_editor() {
+    let mut editor = Editor::new(dummy_input, Discard).unwrap();
+    editor.edit();
+    for line in editor.lines() {
+        // Check lines of the current text buffer
+    }
+}
+```
+
 #### Dependant Crates
 
 This project depends on some small crates. I selected them carefully not to prevent learning how a
@@ -301,52 +432,6 @@ text editor on terminal works.
 - [signal-hook][]: Small wrapper for signal handler to catch SIGWINCH for resize support.
 - [getopts][]: Fairly small library to parse command line arguments. Kiro only has quite simple CLI
   options so [clap][] is too heavy.
-
-
-### UTF-8 Support
-
-[kilo][] only supports ASCII text. Width of ASCII character is fixed to 1 byte. This assumption reduces
-complexity of implementation of kilo greatly because:
-
-- every character can be represented as `char` (almost the same as `u8` in Rust)
-- any character in ASCII text can be accessed via byte index in O(1)
-- length of text is the same as number of bytes of the text
-
-So kilo can contain text buffer as simple `char *` and accesses characters in it via byte index.
-In addition, display width of all printable ASCII characters is fixed except for `0x09` tab character.
-
-But actually there are more characters in the world defined as Unicode characters. Since I'm Japanese,
-the characters such as Kanji or Hiragana I'm daily using are not ASCII. And the most major text encoding
-is UTF-8. So I determined to extend Kiro editor to support UTF-8.
-
-In UTF-8, byte length of character is variable. Any character takes 1~4 bytes (or more in special case).
-The important point here is that accessing to character in UTF-8 text is not O(1). To access to N-th
-character or to know length of text, it requires to check characters from head of the text.
-
-Accessing to character in text and getting text length happen frequently while updating text buffer
-and highlights. So checking them in O(N) for each time is not efficient. To solve this problem, Kiro
-contains byte indices of each characters in line text as `Vec<usize>`. These indices are only existing
-when at least one character in line text is non-ASCII character.
-
-![UTF-8 support diagram](./images/utf-8-support-diagram.png)
-
-In `Row` struct which represents one text line, `indices` field (`Vec<usize>`) is dedicated to store
-byte indices of each character.
-
-In the first case `"Rust is nice"`, all characters are ASCII so byte index can be used to access to
-characters in the text. In the case, `indices` field is an empty (and capacity is set to zero). A `Vec`
-instance with zero capacity is guaranteed not to allocate heap memory. So the memory overhead here is
-24 bytes of `Vec<usize>` instance itself (pointer, capacity as `usize` and length as `usize`) only.
-
-In the second case `"Rust🦀良い"`, there are some non-ASCII characters so `self.indices` caches byte
-indices of each characters. Thanks to this cache, each character can be accessed in O(1) and its text
-length can be obtained in O(1) as `self.indices.len()`. `Row` also contains a rendered text and updates
-it when internal text buffer is updated by `TextBuffer`. So `self.indices` cache is also updated at
-the same timing efficiently.
-
-Though keeping byte indices in `Vec<usize>` is quite memory inefficient, the indices are only required
-when the line text contains non-ASCII characters. In terms of programming code editor, it is relatively
-rare case, I believe.
 
 
 ### TODO
