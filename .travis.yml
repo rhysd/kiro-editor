@@ -19,7 +19,7 @@ before_script:
   - cargo clippy --version
 
 script:
-  - cargo clippy
+  - cargo clippy -- -D warnings
   - cargo fmt -- --check
   - cargo build
   - cargo test

@@ -60,7 +60,7 @@ where
             finding: FindState::new(),
             hl: Highlighting::default(),
             screen,
-            bufs: vec![TextBuffer::new()],
+            bufs: vec![TextBuffer::default()],
             buf_idx: 0,
         })
     }
@@ -120,7 +120,7 @@ where
             |_, _, _, _| Ok(()),
         )? {
             let buf = if input.is_empty() {
-                TextBuffer::new()
+                TextBuffer::default()
             } else {
                 TextBuffer::open(input)?
             };

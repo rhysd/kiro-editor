@@ -16,6 +16,12 @@ pub enum Language {
     Cpp,
 }
 
+impl Default for Language {
+    fn default() -> Language {
+        Language::Plain
+    }
+}
+
 impl Language {
     pub fn name(self) -> &'static str {
         use Language::*;

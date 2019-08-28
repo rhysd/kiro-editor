@@ -53,6 +53,7 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
@@ -70,21 +71,9 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
-    pub fn new() -> Self {
-        Self {
-            file: None,
-            cx: 0,
-            cy: 0,
-            row: vec![],
-            modified: false,
-            dirty: false,
-            lang: Language::Plain,
-        }
-    }
-
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let path = path.as_ref();
-        let mut buf = Self::new();
+        let mut buf = Self::default();
 
         if path.exists() {
             let file = File::open(path)?;

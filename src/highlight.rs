@@ -454,7 +454,7 @@ impl Highlighting {
             let mut num = Num::Digit;
             let mut iter = row.render_text().char_indices().enumerate();
 
-            'parse_line: while let Some((x, (idx, c))) = iter.next() {
+            while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
 
                 if self.lines[y][x] == Highlight::Match {

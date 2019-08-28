@@ -6,6 +6,7 @@
 #![allow(clippy::unused_io_amount)]
 #![allow(clippy::match_overlapping_arm)]
 #![allow(clippy::useless_let_if_seq)]
+#![allow(clippy::cognitive_complexity)]
 
 mod ansi_color;
 mod editor;
