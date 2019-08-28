@@ -395,6 +395,7 @@ where
                 Key(b'b') => self.buf_mut().move_cursor_by_word(CursorDir::Left),
                 Key(b'n') => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
                 Key(b'p') => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
+                Key(b'x') => self.previous_buffer()?,
                 Key(b'<') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Up),
                 Key(b'>') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Down),
                 LeftKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
@@ -417,7 +418,7 @@ where
                 Key(b'g') => self.find()?,
                 Key(b'h') => self.buf_mut().delete_char(),
                 Key(b'k') => self.buf_mut().delete_until_end_of_line(),
-                Key(b'u') => self.buf_mut().delete_until_head_of_line(),
+                Key(b'j') => self.buf_mut().delete_until_head_of_line(),
                 Key(b'w') => self.buf_mut().delete_word(),
                 Key(b'l') => self.screen.set_dirty_start(self.screen.rowoff), // Clear
                 Key(b's') => self.save()?,
@@ -426,7 +427,6 @@ where
                 Key(b'o') => self.open_buffer()?,
                 Key(b'?') => self.show_help()?,
                 Key(b'x') => self.next_buffer()?,
-                Key(b'z') => self.previous_buffer()?,
                 Key(b']') => self
                     .buf_mut()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),

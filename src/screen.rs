@@ -15,7 +15,7 @@ pub const HELP: &str = "\
     Ctrl-S                        : Save to file
     Ctrl-O                        : Open text buffer
     Ctrl-X                        : Next text buffer
-    Ctrl-Z                        : Previous text buffer
+    Alt-X                         : Previous text buffer
     Ctrl-P or UP                  : Move cursor up
     Ctrl-N or DOWN                : Move cursor down
     Ctrl-F or RIGHT               : Move cursor right
@@ -33,7 +33,7 @@ pub const HELP: &str = "\
     Ctrl-H or BACKSPACE           : Delete character
     Ctrl-D or DELETE              : Delete next character
     Ctrl-W                        : Delete a word
-    Ctrl-U                        : Delete until head of line
+    Ctrl-J                        : Delete until head of line
     Ctrl-K                        : Delete until end of line
     Ctrl-G                        : Search text
     Ctrl-M                        : New line

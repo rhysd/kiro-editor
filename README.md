@@ -20,11 +20,11 @@ And Kiro extends [kilo][] to improve editing (please see 'Extended Features' sec
 section below for more details):
 
 - Support editing UTF-8 characters like '🐶' (kilo only supports ASCII characters)
-- More Emacs-like shortcuts
+- More userful shortcuts (Alt modifier is supported)
 - 24bit colors (true colors) and 256 colors support using [gruvbox][] retro color palette with 16
   colors fallback
 - More efficient screen rendering and highlighting (kilo renders entire screen each time)
-- Open multiple files (switch buffers by Ctrl-X/Ctrl-Z)
+- Open multiple files (switch buffers by Ctrl-X/Alt-X)
 - Resizing terminal window supported. Screen size is responsible
 - Highlight more languages (Rust, Go, JavaScript, C++)
 - Modular implementation for each logics such as parsing key inputs, rendering screen, calculating
@@ -81,7 +81,7 @@ remember all mappings. Please type `Ctrl-?` to know all mappings in editor.
 | `Ctrl-G` | Incremental text search.                                                            |
 | `Ctrl-O` | Open file or empty buffer.                                                          |
 | `Ctrl-X` | Switch to next buffer.                                                              |
-| `Ctrl-Z` | Switch to previous buffer.                                                          |
+| `Alt-X`  | Switch to previous buffer.                                                          |
 | `Ctrl-L` | Refresh screen.                                                                     |
 
 - **Moving cursor**
@@ -110,7 +110,7 @@ remember all mappings. Please type `Ctrl-?` to know all mappings in editor.
 | `Ctrl-H` or `BACKSPACE` | Delete character          |
 | `Ctrl-D` or `DELETE`    | Delete next character     |
 | `Ctrl-W`                | Delete a word             |
-| `Ctrl-U`                | Delete until head of line |
+| `Ctrl-J`                | Delete until head of line |
 | `Ctrl-K`                | Delete until end of line  |
 | `Ctrl-M`                | Insert new line           |
 
