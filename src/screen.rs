@@ -131,6 +131,11 @@ impl<W: Write> Screen<W> {
         })
     }
 
+    fn write_flush(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.output.write(bytes)?;
+        self.output.flush()
+    }
+
     fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> String {
         let line = line.as_ref();
         if line.len() <= self.coloff {
@@ -300,11 +305,13 @@ impl<W: Write> Screen<W> {
         hl: &Highlighting,
         buf_pos: (usize, usize),
     ) -> io::Result<()> {
-        let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
-
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
-        buf.write(b"\x1b[?25l")?;
+        // This command must be flushed at first otherwise cursor may move before being hidden
+        self.write_flush(b"\x1b[?25l")?;
+
+        let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
+
         // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
         buf.write(b"\x1b[H")?;
 
@@ -320,8 +327,7 @@ impl<W: Write> Screen<W> {
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
 
-        self.output.write(&buf)?;
-        self.output.flush()
+        self.write_flush(&buf)
     }
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
@@ -447,8 +453,7 @@ impl<W: Write> Screen<W> {
             buf.write(b"\x1b[K")?;
         }
 
-        self.output.write(&buf)?;
-        self.output.flush()
+        self.write_flush(&buf)
     }
 
     pub fn set_dirty_start(&mut self, start: usize) {
