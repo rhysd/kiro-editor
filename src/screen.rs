@@ -116,6 +116,11 @@ impl<W: Write> Screen<W> {
         } else {
             get_window_size(input, &mut output)?
         };
+
+        // Enter alternate screen buffer to restore previous screen on quit
+        // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
+        output.write(b"\x1b[?47h")?;
+
         Ok(Self {
             output,
             rx: 0,
@@ -393,12 +398,10 @@ impl<W: Write> Screen<W> {
     }
 
     pub fn clear(&mut self) -> io::Result<()> {
-        // 2: Argument of 'J' command to reset entire screen
-        // J: Command to erase screen http://vt100.net/docs/vt100-ug/chapter3.html#ED
-        self.output.write(b"\x1b[2J")?;
-        // Set cursor position to left-top corner
-        self.output.write(b"\x1b[H")?;
-        self.output.flush()
+        // Back to normal screen buffer from alternate screen buffer
+        // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
+        // Note that we used \x1b[2J\x1b[H previously but it did not erase screen.
+        self.write_flush(b"\x1b[?47l")
     }
 
     pub fn draw_help(&mut self) -> io::Result<()> {
