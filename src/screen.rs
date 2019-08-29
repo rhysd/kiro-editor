@@ -401,7 +401,7 @@ impl<W: Write> Screen<W> {
         // Back to normal screen buffer from alternate screen buffer
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
         // Note that we used \x1b[2J\x1b[H previously but it did not erase screen.
-        self.write_flush(b"\x1b[?47l")
+        self.write_flush(b"\x1b[?47l\x1b[H")
     }
 
     pub fn draw_help(&mut self) -> io::Result<()> {
