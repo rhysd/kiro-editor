@@ -383,7 +383,7 @@ where
 
         let rowoff = self.screen.rowoff;
         let rows = self.screen.rows();
-        self.buf_mut().dirty = false;
+        self.buf_mut().dirty_start = None;
 
         match &s {
             InputSeq {
@@ -460,9 +460,9 @@ where
             },
         }
 
-        if self.buf().dirty {
+        if let Some(line) = self.buf().dirty_start {
             self.hl.needs_update = true;
-            self.screen.set_dirty_start(self.buf().cy());
+            self.screen.set_dirty_start(line);
         }
         self.quitting = false;
         Ok(AfterKeyPress::Refresh)

@@ -67,7 +67,7 @@ pub struct TextBuffer {
     // Language which current buffer belongs to
     lang: Language,
     // Flag to require screen update
-    pub dirty: bool,
+    pub dirty_start: Option<usize>,
 }
 
 impl TextBuffer {
@@ -91,6 +91,15 @@ impl TextBuffer {
         Ok(buf)
     }
 
+    fn set_dirty_start(&mut self) {
+        if let Some(l) = self.dirty_start {
+            if l <= self.cy {
+                return;
+            }
+        }
+        self.dirty_start = Some(self.cy);
+    }
+
     pub fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
             self.row.push(Row::default());
@@ -98,7 +107,7 @@ impl TextBuffer {
         self.row[self.cy].insert_char(self.cx, ch);
         self.cx += 1;
         self.modified = true;
-        self.dirty = true;
+        self.set_dirty_start();
     }
 
     pub fn insert_tab(&mut self) {
@@ -116,7 +125,7 @@ impl TextBuffer {
         self.row[self.cy].insert_str(self.cx, s);
         self.cx += s.as_bytes().len();
         self.modified = true;
-        self.dirty = true;
+        self.set_dirty_start();
     }
 
     pub fn squash_to_previous_line(&mut self) {
@@ -126,7 +135,7 @@ impl TextBuffer {
         self.cy -= 1; // Move cursor to previous line
         self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
         self.modified = true;
-        self.dirty = true;
+        self.set_dirty_start();
     }
 
     pub fn delete_char(&mut self) {
@@ -137,7 +146,7 @@ impl TextBuffer {
             self.row[self.cy].delete_char(self.cx - 1);
             self.cx -= 1;
             self.modified = true;
-            self.dirty = true;
+            self.set_dirty_start();
         } else {
             self.squash_to_previous_line();
         }
@@ -159,7 +168,7 @@ impl TextBuffer {
             self.row[self.cy].truncate(self.cx);
         }
         self.modified = true;
-        self.dirty = true;
+        self.set_dirty_start();
     }
 
     pub fn delete_until_head_of_line(&mut self) {
@@ -172,7 +181,7 @@ impl TextBuffer {
             self.row[self.cy].remove(0, self.cx);
             self.cx = 0;
             self.modified = true;
-            self.dirty = true;
+            self.set_dirty_start();
         }
     }
 
@@ -195,7 +204,7 @@ impl TextBuffer {
             self.row[self.cy].remove(x, self.cx);
             self.cx = x;
             self.modified = true;
-            self.dirty = true;
+            self.set_dirty_start();
         }
     }
 
@@ -215,9 +224,10 @@ impl TextBuffer {
             self.row.insert(self.cy + 1, Row::new(split));
         }
 
+        self.set_dirty_start();
+
         self.cy += 1;
         self.cx = 0;
-        self.dirty = true;
     }
 
     pub fn move_cursor_one(&mut self, dir: CursorDir) {
