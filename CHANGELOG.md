@@ -1,3 +1,12 @@
+<a name="0.2.1"></a>
+# [0.2.1](https://github.com/rhysd/kiro-editor/releases/tag/0.2.1) - 29 Aug 2019
+
+- **Fix:** Rendering sometimes did not happen on inserting text or new line
+- **Fix:** Cursor position was not reset after quit
+
+[Changes][0.2.1]
+
+
 <a name="0.2.0"></a>
 # [0.2.0](https://github.com/rhysd/kiro-editor/releases/tag/0.2.0) - 29 Aug 2019
 
@@ -7,6 +16,7 @@
 - **Fix:** Cursor sometimes flickered on screen redraw
 - **Improve:** Text buffer representation was separated from `editor` module as `text_buffer` module
 - **Improve:** More description was added to README
+- **Fix:** Editor screen was remaining in terminal buffer after quit
 
 [Changes][0.2.0]
 
@@ -29,6 +39,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.2.1]: https://github.com/rhysd/kiro-editor/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/rhysd/kiro-editor/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/rhysd/kiro-editor/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/rhysd/kiro-editor/tree/0.1.0
