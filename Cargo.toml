@@ -36,3 +36,8 @@ signal-hook = "0.1"
 [badges]
 maintenance = { status = "actively-developed" }
 travis-ci = { repository = "rhysd/kiro-editor" }
+
+[dev-dependencies.cargo-husky]
+version = "1"
+default-features = false
+features = ["prepush-hook", "run-cargo-test", "run-cargo-clippy"]
