@@ -202,6 +202,7 @@ where
 
         if self.finding.last_match.is_some() {
             if let Some(matched_line) = self.hl.clear_previous_match() {
+                self.hl.needs_update = true;
                 self.screen.set_dirty_start(matched_line);
             }
         }
@@ -238,6 +239,7 @@ where
             .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
             .unwrap_or_else(|| self.buf().cy());
 
+        // TODO: Use more efficient string search algorithm such as Aho-Corasick
         for _ in 0..row_len {
             let row = &self.buf().rows()[y];
             if let Some(byte_idx) = row.buffer().find(query) {
@@ -249,11 +251,10 @@ where
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 self.screen.rowoff = row_len;
                 self.finding.last_match = Some(y);
-                // This refresh is necessary because highlight must be updated before saving highlights
-                // of matched region
-                self.refresh_screen()?;
                 // Set match highlight on the found line
                 self.hl.set_match(y, rx, rx + query.chars().count());
+                // XXX: It updates entire highlights
+                self.hl.needs_update = true;
                 self.screen.set_dirty_start(y);
                 break;
             }

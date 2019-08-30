@@ -1,5 +1,4 @@
 use std::iter;
-use std::mem;
 
 use crate::ansi_color::AnsiColor;
 use crate::language::Language;
@@ -353,12 +352,30 @@ impl SyntaxHighlight {
     }
 }
 
+struct Region {
+    start: (usize, usize),
+    end: (usize, usize),
+}
+
+impl Region {
+    fn contains(&self, (x, y): (usize, usize)) -> bool {
+        let ((sx, sy), (ex, ey)) = (self.start, self.end);
+        if y < sy || ey < y {
+            false
+        } else if sy < y && y < ey {
+            true
+        } else {
+            sx <= x && x < ex // Exclusive
+        }
+    }
+}
+
 pub struct Highlighting {
     pub needs_update: bool,
     // One item per render text byte
     pub lines: Vec<Vec<Highlight>>, // TODO: One item per one character
     previous_bottom_of_screen: usize,
-    matched: Option<(usize, usize, Vec<Highlight>)>, // (x, y, saved)
+    matched: Option<Region>,
     syntax: &'static SyntaxHighlight,
 }
 
@@ -402,6 +419,18 @@ impl Highlighting {
 
     fn replace(&mut self, y: usize, start: usize, end: usize, hl: Highlight) {
         self.lines[y].splice(start..end, iter::repeat(hl).take(end - start));
+    }
+
+    fn apply_match(&mut self) {
+        if let Some(m) = &self.matched {
+            for y in m.start.1..m.end.1 + 1 {
+                for (x, hl) in self.lines[y].iter_mut().enumerate() {
+                    if m.contains((x, y)) {
+                        *hl = Highlight::Match;
+                    }
+                }
+            }
+        }
     }
 
     pub fn update(&mut self, rows: &[Row], bottom_of_screen: usize) {
@@ -456,10 +485,6 @@ impl Highlighting {
 
             while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
-
-                if self.lines[y][x] == Highlight::Match {
-                    hl = Highlight::Match;
-                }
 
                 if let Some((comment_start, comment_end)) = self.syntax.block_comment {
                     if hl == Highlight::Normal && prev_quote.is_none() {
@@ -622,6 +647,8 @@ impl Highlighting {
             }
         }
 
+        self.apply_match();
+
         self.needs_update = false;
         self.previous_bottom_of_screen = bottom_of_screen;
     }
@@ -631,14 +658,14 @@ impl Highlighting {
             return;
         }
         self.clear_previous_match();
-        self.matched = Some((start, y, self.lines[y][start..end].to_vec()));
-        self.replace(y, start, end, Highlight::Match);
+        let start = (start, y);
+        let end = (end, y);
+        self.matched = Some(Region { start, end }); // XXX: Currently only one-line match is supported
     }
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
-        if let Some((x, y, saved)) = mem::replace(&mut self.matched, None) {
-            // Restore previously replaced highlights
-            self.lines[y].splice(x..(x + saved.len()), saved.into_iter());
+        if let Some(y) = self.matched.as_ref().map(|r| r.start.1) {
+            self.matched = None;
             Some(y)
         } else {
             None
