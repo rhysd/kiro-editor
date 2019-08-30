@@ -423,7 +423,7 @@ impl Highlighting {
 
     fn apply_match(&mut self) {
         if let Some(m) = &self.matched {
-            for y in m.start.1..m.end.1 + 1 {
+            for y in m.start.1..=m.end.1 {
                 for (x, hl) in self.lines[y].iter_mut().enumerate() {
                     if m.contains((x, y)) {
                         *hl = Highlight::Match;
