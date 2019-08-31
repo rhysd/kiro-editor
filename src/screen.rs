@@ -49,7 +49,7 @@ enum StatusMessageKind {
 
 struct StatusMessage {
     text: String,
-    timestamp: SystemTime,
+    timestamp: Option<SystemTime>,
     kind: StatusMessageKind,
 }
 
@@ -57,7 +57,7 @@ impl StatusMessage {
     fn new<S: Into<String>>(message: S, kind: StatusMessageKind) -> StatusMessage {
         StatusMessage {
             text: message.into(),
-            timestamp: SystemTime::now(),
+            timestamp: None,
             kind,
         }
     }
@@ -95,7 +95,7 @@ pub struct Screen<W: Write> {
     // Screen size
     num_cols: usize,
     num_rows: usize,
-    message: StatusMessage,
+    message: Option<StatusMessage>,
     // Dirty line which requires rendering update. After this line must be updated since
     // updating line may affect highlights of succeeding lines
     dirty_start: Option<usize>,
@@ -128,7 +128,10 @@ impl<W: Write> Screen<W> {
             num_cols: w,
             // Screen height is 1 line less than window height due to status bar
             num_rows: h.saturating_sub(2),
-            message: StatusMessage::new("Ctrl-? for help", StatusMessageKind::Info),
+            message: Some(StatusMessage::new(
+                "Ctrl-? for help",
+                StatusMessageKind::Info,
+            )),
             dirty_start: Some(0), // Render entire screen at first paint
             sigwinch: SigwinchWatcher::new()?,
             cursor_moved: true,
@@ -152,6 +155,10 @@ impl<W: Write> Screen<W> {
     }
 
     fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
+        if !status_bar.redraw {
+            return Ok(());
+        }
+
         write!(buf, "\x1b[{}H", self.num_rows + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
@@ -184,21 +191,35 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_message_bar<B: Write>(&self, mut buf: B) -> io::Result<()> {
-        write!(buf, "\x1b[{}H", self.num_rows + 2)?;
-        if let Ok(d) = SystemTime::now().duration_since(self.message.timestamp) {
-            if d.as_secs() < 5 {
-                // TODO: Handle multi-byte chars correctly
-                let msg = &self.message.text[..cmp::min(self.message.text.len(), self.num_cols)];
-                if self.message.kind == StatusMessageKind::Error {
-                    buf.write(AnsiColor::RedBG.sequence(self.color_support))?;
-                    buf.write(msg.as_bytes())?;
-                    buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-                } else {
-                    buf.write(msg.as_bytes())?;
+    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> io::Result<()> {
+        let message = if let Some(m) = &mut self.message {
+            m
+        } else {
+            return Ok(());
+        };
+
+        if let Some(timestamp) = message.timestamp {
+            if let Ok(d) = SystemTime::now().duration_since(timestamp) {
+                if d.as_secs() < 5 {
+                    return Ok(());
                 }
             }
+            write!(buf, "\x1b[{}H", self.num_rows + 2)?;
+            self.message = None;
+        } else {
+            write!(buf, "\x1b[{}H", self.num_rows + 2)?;
+            // TODO: Handle multi-byte chars correctly
+            let msg = &message.text[..cmp::min(message.text.len(), self.num_cols)];
+            if message.kind == StatusMessageKind::Error {
+                buf.write(AnsiColor::RedBG.sequence(self.color_support))?;
+                buf.write(msg.as_bytes())?;
+                buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+            } else {
+                buf.write(msg.as_bytes())?;
+            }
+            message.timestamp = Some(SystemTime::now());
         }
+
         buf.write(b"\x1b[K")?;
         Ok(())
     }
@@ -217,13 +238,12 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_rows<B: Write>(
-        &self,
-        mut buf: B,
-        dirty_start: usize,
-        rows: &[Row],
-        hl: &Highlighting,
-    ) -> io::Result<()> {
+    fn draw_rows<B: Write>(&self, mut buf: B, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
+        let dirty_start = if let Some(s) = self.dirty_start {
+            s
+        } else {
+            return Ok(());
+        };
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
 
@@ -291,7 +311,14 @@ impl<W: Write> Screen<W> {
         hl: &Highlighting,
         status_bar: &StatusBar,
     ) -> io::Result<()> {
-        if self.dirty_start.is_none() && !status_bar.redraw && !self.cursor_moved {
+        let cursor_row = text_buf.cy() - self.rowoff + 1;
+        let cursor_col = self.rx - self.coloff + 1;
+
+        if self.dirty_start.is_none() && !status_bar.redraw && self.message.is_none() {
+            if self.cursor_moved {
+                write!(self.output, "\x1b[{};{}H", cursor_row, cursor_col)?;
+                self.output.flush()?;
+            }
             return Ok(());
         }
 
@@ -302,20 +329,12 @@ impl<W: Write> Screen<W> {
 
         let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
 
-        if let Some(l) = self.dirty_start {
-            self.draw_rows(&mut buf, l, text_buf.rows(), hl)?;
-        }
-        if status_bar.redraw {
-            self.draw_status_bar(&mut buf, status_bar)?;
-        }
+        self.draw_rows(&mut buf, text_buf.rows(), hl)?;
+        self.draw_status_bar(&mut buf, status_bar)?;
         self.draw_message_bar(&mut buf)?;
 
-        // Move cursor
-        if self.cursor_moved {
-            let cursor_row = text_buf.cy() - self.rowoff + 1;
-            let cursor_col = self.rx - self.coloff + 1;
-            write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
-        }
+        // Move cursor even if cursor_moved is false since cursor is moved by draw_* methods
+        write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
 
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
@@ -473,11 +492,11 @@ impl<W: Write> Screen<W> {
     }
 
     pub fn set_info_message<S: Into<String>>(&mut self, message: S) {
-        self.message = StatusMessage::new(message, StatusMessageKind::Info);
+        self.message = Some(StatusMessage::new(message, StatusMessageKind::Info));
     }
 
     pub fn set_error_message<S: Into<String>>(&mut self, message: S) {
-        self.message = StatusMessage::new(message, StatusMessageKind::Error);
+        self.message = Some(StatusMessage::new(message, StatusMessageKind::Error));
     }
 
     pub fn rows(&self) -> usize {
@@ -489,6 +508,6 @@ impl<W: Write> Screen<W> {
     }
 
     pub fn message_text(&self) -> &'_ str {
-        self.message.text.as_str()
+        self.message.as_ref().map(|m| m.text.as_str()).unwrap_or("")
     }
 }
