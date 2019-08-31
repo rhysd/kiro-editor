@@ -101,9 +101,9 @@ pub struct Screen<W: Write> {
     dirty_start: Option<usize>,
     // Watch resize signal
     sigwinch: SigwinchWatcher,
-    // Scroll position (row/col offset)
-    pub rowoff: usize,
-    pub coloff: usize,
+    pub cursor_moved: bool,
+    pub rowoff: usize, // Row scroll offset
+    pub coloff: usize, // Column scroll offset
     pub color_support: ColorSupport,
 }
 
@@ -131,6 +131,7 @@ impl<W: Write> Screen<W> {
             message: StatusMessage::new("Ctrl-? for help", StatusMessageKind::Info),
             dirty_start: Some(0), // Render entire screen at first paint
             sigwinch: SigwinchWatcher::new()?,
+            cursor_moved: true,
             rowoff: 0,
             coloff: 0,
             color_support: ColorSupport::from_env(),
@@ -290,7 +291,7 @@ impl<W: Write> Screen<W> {
         hl: &Highlighting,
         status_bar: &StatusBar,
     ) -> io::Result<()> {
-        if text_buf.dirty_start.is_none() && !status_bar.redraw {
+        if self.dirty_start.is_none() && !status_bar.redraw && !self.cursor_moved {
             return Ok(());
         }
 
@@ -301,7 +302,7 @@ impl<W: Write> Screen<W> {
 
         let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
 
-        if let Some(l) = text_buf.dirty_start {
+        if let Some(l) = self.dirty_start {
             self.draw_rows(&mut buf, l, text_buf.rows(), hl)?;
         }
         if status_bar.redraw {
@@ -310,9 +311,11 @@ impl<W: Write> Screen<W> {
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor
-        let cursor_row = text_buf.cy() - self.rowoff + 1;
-        let cursor_col = self.rx - self.coloff + 1;
-        write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
+        if self.cursor_moved {
+            let cursor_row = text_buf.cy() - self.rowoff + 1;
+            let cursor_col = self.rx - self.coloff + 1;
+            write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
+        }
 
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
@@ -379,6 +382,7 @@ impl<W: Write> Screen<W> {
         hl.update(buf.rows(), self.rowoff + self.num_rows);
         self.redraw(buf, hl, status_bar)?;
         self.dirty_start = None;
+        self.cursor_moved = false;
         Ok(())
     }
 
