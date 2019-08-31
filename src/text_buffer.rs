@@ -67,13 +67,20 @@ pub struct TextBuffer {
     // Language which current buffer belongs to
     lang: Language,
     // Flag to require screen update
+    // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
 }
 
 impl TextBuffer {
+    pub fn new() -> Self {
+        let mut buf = Self::default();
+        buf.dirty_start = Some(0); // Ensure to render first screen
+        buf
+    }
+
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let path = path.as_ref();
-        let mut buf = Self::default();
+        let mut buf = Self::new();
 
         if path.exists() {
             let file = File::open(path)?;

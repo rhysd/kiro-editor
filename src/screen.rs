@@ -151,10 +151,6 @@ impl<W: Write> Screen<W> {
     }
 
     fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
-        if !status_bar.redraw {
-            return Ok(());
-        }
-
         write!(buf, "\x1b[{}H", self.num_rows + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
@@ -220,13 +216,13 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_rows<B: Write>(&self, mut buf: B, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
-        let dirty_start = if let Some(s) = self.dirty_start {
-            s
-        } else {
-            return Ok(());
-        };
-
+    fn draw_rows<B: Write>(
+        &self,
+        mut buf: B,
+        dirty_start: usize,
+        rows: &[Row],
+        hl: &Highlighting,
+    ) -> io::Result<()> {
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
 
@@ -239,7 +235,7 @@ impl<W: Write> Screen<W> {
                 continue;
             }
 
-            // Move cursor to target line
+            // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
             write!(buf, "\x1b[{}H", y + 1)?;
 
             if file_row >= row_len {
@@ -294,6 +290,10 @@ impl<W: Write> Screen<W> {
         hl: &Highlighting,
         status_bar: &StatusBar,
     ) -> io::Result<()> {
+        if text_buf.dirty_start.is_none() && !status_bar.redraw {
+            return Ok(());
+        }
+
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
         // This command must be flushed at first otherwise cursor may move before being hidden
@@ -301,11 +301,12 @@ impl<W: Write> Screen<W> {
 
         let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
 
-        // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
-        buf.write(b"\x1b[H")?;
-
-        self.draw_rows(&mut buf, text_buf.rows(), hl)?;
-        self.draw_status_bar(&mut buf, status_bar)?;
+        if let Some(l) = text_buf.dirty_start {
+            self.draw_rows(&mut buf, l, text_buf.rows(), hl)?;
+        }
+        if status_bar.redraw {
+            self.draw_status_bar(&mut buf, status_bar)?;
+        }
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor

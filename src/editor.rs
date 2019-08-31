@@ -27,13 +27,6 @@ impl FindState {
     }
 }
 
-#[derive(PartialEq)]
-enum AfterKeyPress {
-    Quit,
-    Refresh,
-    DoNothing,
-}
-
 pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>, W: Write> {
     input: I,           // Escape sequences stream represented as Iterator
     quitting: bool,     // After first Ctrl-Q
@@ -62,7 +55,7 @@ where
             finding: FindState::new(),
             hl: Highlighting::default(),
             screen,
-            bufs: vec![TextBuffer::default()],
+            bufs: vec![TextBuffer::new()],
             buf_idx: 0,
             status_bar: StatusBar::default(),
         })
@@ -138,7 +131,7 @@ where
             |_, _, _, _| Ok(()),
         )? {
             let buf = if input.is_empty() {
-                TextBuffer::default()
+                TextBuffer::new()
             } else {
                 TextBuffer::open(input)?
             };
@@ -379,16 +372,16 @@ where
         Ok(if canceled { None } else { Some(buf) })
     }
 
-    fn handle_quit(&mut self) -> io::Result<AfterKeyPress> {
+    fn handle_quit(&mut self) -> io::Result<bool> {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
-            Ok(AfterKeyPress::Quit)
+            Ok(true)
         } else {
             self.quitting = true;
             self.screen.set_error_message(
                 "At least one file has unsaved changes! Press ^Q again to quit or ^S to save",
             );
-            Ok(AfterKeyPress::Refresh)
+            Ok(false)
         }
     }
 
@@ -397,7 +390,7 @@ where
             .set_error_message(format!("Key '{}' not mapped", seq));
     }
 
-    fn process_keypress(&mut self, s: InputSeq) -> io::Result<AfterKeyPress> {
+    fn process_keypress(&mut self, s: InputSeq) -> io::Result<bool> {
         use KeySeq::*;
 
         let rowoff = self.screen.rowoff;
@@ -407,7 +400,7 @@ where
         match &s {
             InputSeq {
                 key: Unidentified, ..
-            } => return Ok(AfterKeyPress::DoNothing),
+            } => return Ok(false),
             InputSeq { key, alt: true, .. } => match key {
                 Key(b'v') => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
                 Key(b'f') => self.buf_mut().move_cursor_by_word(CursorDir::Right),
@@ -484,7 +477,7 @@ where
             self.screen.set_dirty_start(line);
         }
         self.quitting = false;
-        Ok(AfterKeyPress::Refresh)
+        Ok(false)
     }
 
     pub fn edit(&mut self) -> io::Result<()> {
@@ -495,11 +488,11 @@ where
                 self.refresh_screen()?;
             }
 
-            match self.process_keypress(seq?)? {
-                AfterKeyPress::DoNothing => continue,
-                AfterKeyPress::Refresh => self.refresh_screen()?,
-                AfterKeyPress::Quit => break,
+            if self.process_keypress(seq?)? {
+                break;
             }
+
+            self.refresh_screen()?;
         }
 
         self.screen.clear() // Finally clear screen on exit
