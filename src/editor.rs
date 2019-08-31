@@ -499,7 +499,7 @@ where
             self.refresh_screen()?;
         }
 
-        self.screen.clear() // Finally clear screen on exit
+        Ok(())
     }
 
     pub fn lines(&self) -> Lines<'_> {

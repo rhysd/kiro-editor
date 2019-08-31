@@ -405,13 +405,6 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    pub fn clear(&mut self) -> io::Result<()> {
-        // Back to normal screen buffer from alternate screen buffer
-        // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
-        // Note that we used \x1b[2J\x1b[H previously but it did not erase screen.
-        self.write_flush(b"\x1b[?47l\x1b[H")
-    }
-
     pub fn draw_help(&mut self) -> io::Result<()> {
         let help: Vec<_> = HELP
             .split('\n')
@@ -509,5 +502,15 @@ impl<W: Write> Screen<W> {
 
     pub fn message_text(&self) -> &'_ str {
         self.message.as_ref().map(|m| m.text.as_str()).unwrap_or("")
+    }
+}
+
+impl<W: Write> Drop for Screen<W> {
+    fn drop(&mut self) {
+        // Back to normal screen buffer from alternate screen buffer
+        // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
+        // Note that we used \x1b[2J\x1b[H previously but it did not erase screen.
+        self.write_flush(b"\x1b[?47l\x1b[H")
+            .expect("Back to normal screen buffer");
     }
 }
