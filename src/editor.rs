@@ -2,6 +2,7 @@ use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
 use crate::screen::Screen;
+use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::io::{self, Write};
 use std::path::Path;
@@ -41,6 +42,7 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>, W: Write> {
     screen: Screen<W>,
     bufs: Vec<TextBuffer>,
     buf_idx: usize,
+    status_bar: StatusBar,
 }
 
 impl<I, W> Editor<I, W>
@@ -62,6 +64,7 @@ where
             screen,
             bufs: vec![TextBuffer::default()],
             buf_idx: 0,
+            status_bar: StatusBar::default(),
         })
     }
 
@@ -88,6 +91,7 @@ where
             screen,
             bufs,
             buf_idx: 0,
+            status_bar: StatusBar::default(),
         })
     }
 
@@ -99,12 +103,26 @@ where
         &mut self.bufs[self.buf_idx]
     }
 
+    fn refresh_status_bar(&mut self) {
+        let modified = self.buf().modified();
+        let buf_pos = (self.buf_idx + 1, self.bufs.len());
+        let lang = self.bufs[self.buf_idx].lang();
+        let line_pos = (self.buf().cy(), self.buf().rows().len());
+
+        self.status_bar.redraw = false;
+        self.status_bar.set_modified(modified);
+        self.status_bar
+            .set_filename(self.bufs[self.buf_idx].filename());
+        self.status_bar.set_buf_pos(buf_pos);
+        self.status_bar.set_lang(lang);
+        self.status_bar.set_line_pos(line_pos);
+    }
+
     fn refresh_screen(&mut self) -> io::Result<()> {
-        self.screen.refresh(
-            &self.bufs[self.buf_idx],
-            &mut self.hl,
-            (self.buf_idx + 1, self.bufs.len()),
-        )
+        self.refresh_status_bar();
+        self.screen
+            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
+        Ok(())
     }
 
     fn reset_screen(&mut self) -> io::Result<()> {

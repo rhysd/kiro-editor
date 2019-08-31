@@ -16,6 +16,7 @@ mod language;
 mod row;
 mod screen;
 mod signal;
+mod status_bar;
 mod text_buffer;
 
 #[cfg(test)]

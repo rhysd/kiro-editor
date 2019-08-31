@@ -3,6 +3,7 @@ use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::signal::SigwinchWatcher;
+use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
 use std::cmp;
 use std::io::{self, Write};
@@ -149,28 +150,16 @@ impl<W: Write> Screen<W> {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<B: Write>(
-        &self,
-        mut buf: B,
-        text_buf: &TextBuffer,
-        buf_pos: (usize, usize),
-    ) -> io::Result<()> {
+    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
+        if !status_bar.redraw {
+            return Ok(());
+        }
+
         write!(buf, "\x1b[{}H", self.num_rows + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
-        let modified = if text_buf.modified() {
-            "(modified) "
-        } else {
-            ""
-        };
-        let left = format!(
-            "{:<20?} - {}/{} {}",
-            text_buf.filename(),
-            buf_pos.0,
-            buf_pos.1,
-            modified
-        );
+        let left = status_bar.left();
         // TODO: Handle multi-byte chars correctly
         let left = &left[..cmp::min(left.len(), self.num_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
@@ -180,12 +169,7 @@ impl<W: Write> Screen<W> {
             return Ok(());
         }
 
-        let right = format!(
-            "{} {}/{}",
-            text_buf.lang().name(),
-            text_buf.cy(),
-            text_buf.rows().len()
-        );
+        let right = status_bar.right();
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -308,7 +292,7 @@ impl<W: Write> Screen<W> {
         &mut self,
         text_buf: &TextBuffer,
         hl: &Highlighting,
-        buf_pos: (usize, usize),
+        status_bar: &StatusBar,
     ) -> io::Result<()> {
         // \x1b[: Escape sequence header
         // Hide cursor while updating screen. 'l' is command to set mode http://vt100.net/docs/vt100-ug/chapter3.html#SM
@@ -321,7 +305,7 @@ impl<W: Write> Screen<W> {
         buf.write(b"\x1b[H")?;
 
         self.draw_rows(&mut buf, text_buf.rows(), hl)?;
-        self.draw_status_bar(&mut buf, text_buf, buf_pos)?;
+        self.draw_status_bar(&mut buf, status_bar)?;
         self.draw_message_bar(&mut buf)?;
 
         // Move cursor
@@ -388,11 +372,11 @@ impl<W: Write> Screen<W> {
         &mut self,
         buf: &TextBuffer,
         hl: &mut Highlighting,
-        buf_pos: (usize, usize),
+        status_bar: &StatusBar,
     ) -> io::Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
         hl.update(buf.rows(), self.rowoff + self.num_rows);
-        self.redraw(buf, hl, buf_pos)?;
+        self.redraw(buf, hl, status_bar)?;
         self.dirty_start = None;
         Ok(())
     }
