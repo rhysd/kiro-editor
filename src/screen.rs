@@ -117,6 +117,7 @@ impl<W: Write> Screen<W> {
         } else {
             get_window_size(input, &mut output)?
         };
+        let num_rows = h.saturating_sub(2);
 
         // Enter alternate screen buffer to restore previous screen on quit
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
@@ -127,7 +128,7 @@ impl<W: Write> Screen<W> {
             rx: 0,
             num_cols: w,
             // Screen height is 1 line less than window height due to status bar
-            num_rows: h.saturating_sub(2),
+            num_rows,
             message: Some(StatusMessage::new(
                 "Ctrl-? for help",
                 StatusMessageKind::Info,
@@ -154,12 +155,12 @@ impl<W: Write> Screen<W> {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
-        if !status_bar.redraw {
-            return Ok(());
-        }
+    pub fn status_bar_row(&self) -> usize {
+        self.rows() + 1
+    }
 
-        write!(buf, "\x1b[{}H", self.num_rows + 1)?;
+    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
+        write!(buf, "\x1b[{}H", self.status_bar_row())?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
@@ -191,20 +192,20 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> io::Result<()> {
+    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> io::Result<bool> {
         let message = if let Some(m) = &mut self.message {
             m
         } else {
-            return Ok(());
+            return Ok(false);
         };
 
         if let Some(timestamp) = message.timestamp {
             if let Ok(d) = SystemTime::now().duration_since(timestamp) {
                 if d.as_secs() < 5 {
-                    return Ok(());
+                    return Ok(false);
                 }
             }
-            write!(buf, "\x1b[{}H", self.num_rows + 2)?;
+            write!(buf, "\x1b[{}H\x1b[K", self.num_rows + 2)?;
             self.message = None;
         } else {
             write!(buf, "\x1b[{}H", self.num_rows + 2)?;
@@ -218,10 +219,9 @@ impl<W: Write> Screen<W> {
                 buf.write(msg.as_bytes())?;
             }
             message.timestamp = Some(SystemTime::now());
+            buf.write(b"\x1b[K")?;
         }
-
-        buf.write(b"\x1b[K")?;
-        Ok(())
+        Ok(true)
     }
 
     fn draw_welcome_message<B: Write>(&self, mut buf: B) -> io::Result<()> {
@@ -246,10 +246,11 @@ impl<W: Write> Screen<W> {
         };
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
+        let num_rows = self.rows();
 
         buf.write(AnsiColor::Reset.sequence(self.color_support))?;
 
-        for y in 0..self.num_rows {
+        for y in 0..num_rows {
             let file_row = y + self.rowoff;
 
             if file_row < dirty_start {
@@ -260,7 +261,7 @@ impl<W: Write> Screen<W> {
             write!(buf, "\x1b[{}H", y + 1)?;
 
             if file_row >= row_len {
-                if rows.is_empty() && y == self.num_rows / 3 {
+                if rows.is_empty() && y == num_rows / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
                     if prev_color != AnsiColor::Reset {
@@ -310,7 +311,7 @@ impl<W: Write> Screen<W> {
         text_buf: &TextBuffer,
         hl: &Highlighting,
         status_bar: &StatusBar,
-    ) -> io::Result<()> {
+    ) -> io::Result<Option<usize>> {
         let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
 
@@ -319,7 +320,7 @@ impl<W: Write> Screen<W> {
                 write!(self.output, "\x1b[{};{}H", cursor_row, cursor_col)?;
                 self.output.flush()?;
             }
-            return Ok(());
+            return Ok(None);
         }
 
         // \x1b[: Escape sequence header
@@ -327,11 +328,17 @@ impl<W: Write> Screen<W> {
         // This command must be flushed at first otherwise cursor may move before being hidden
         self.write_flush(b"\x1b[?25l")?;
 
-        let mut buf = Vec::with_capacity((self.num_rows + 2) * self.num_cols);
+        let mut buf = Vec::with_capacity((self.rows() + 2) * self.num_cols);
+        let mut next_dirty_start = None;
+        let prev_status_row = self.status_bar_row();
 
         self.draw_rows(&mut buf, text_buf.rows(), hl)?;
-        self.draw_status_bar(&mut buf, status_bar)?;
-        self.draw_message_bar(&mut buf)?;
+        if self.draw_message_bar(&mut buf)? {
+            next_dirty_start = Some(self.rowoff + self.rows() - 1);
+        }
+        if status_bar.redraw || prev_status_row != self.status_bar_row() {
+            self.draw_status_bar(&mut buf, status_bar)?;
+        }
 
         // Move cursor even if cursor_moved is false since cursor is moved by draw_* methods
         write!(buf, "\x1b[{};{}H", cursor_row, cursor_col)?;
@@ -339,7 +346,9 @@ impl<W: Write> Screen<W> {
         // Reveal cursor again. 'h' is command to reset mode https://vt100.net/docs/vt100-ug/chapter3.html#RM
         buf.write(b"\x1b[?25h")?;
 
-        self.write_flush(&buf)
+        self.write_flush(&buf)?;
+
+        Ok(next_dirty_start)
     }
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
@@ -370,9 +379,9 @@ impl<W: Write> Screen<W> {
             // Scroll up when cursor is above the top of window
             self.rowoff = cy;
         }
-        if cy >= self.rowoff + self.num_rows {
+        if cy >= self.rowoff + self.rows() {
             // Scroll down when cursor is below the bottom of screen
-            self.rowoff = cy - self.num_rows + 1;
+            self.rowoff = cy - self.rows() + 1;
         }
         if self.rx < self.coloff {
             self.coloff = self.rx;
@@ -398,9 +407,8 @@ impl<W: Write> Screen<W> {
         status_bar: &StatusBar,
     ) -> io::Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
-        hl.update(buf.rows(), self.rowoff + self.num_rows);
-        self.redraw(buf, hl, status_bar)?;
-        self.dirty_start = None;
+        hl.update(buf.rows(), self.rowoff + self.rows());
+        self.dirty_start = self.redraw(buf, hl, status_bar)?;
         self.cursor_moved = false;
         Ok(())
     }
@@ -493,7 +501,11 @@ impl<W: Write> Screen<W> {
     }
 
     pub fn rows(&self) -> usize {
-        self.num_rows
+        if self.message.is_none() {
+            self.num_rows + 1
+        } else {
+            self.num_rows
+        }
     }
 
     pub fn cols(&self) -> usize {

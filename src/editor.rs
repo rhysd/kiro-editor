@@ -114,8 +114,7 @@ where
     fn refresh_screen(&mut self) -> io::Result<()> {
         self.refresh_status_bar();
         self.screen
-            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
-        Ok(())
+            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)
     }
 
     fn reset_screen(&mut self) -> io::Result<()> {
