@@ -4,6 +4,7 @@ use crate::language::Language;
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
+use std::cmp;
 use std::io::{self, Write};
 use std::path::Path;
 use std::str;
@@ -100,7 +101,9 @@ where
         let modified = self.buf().modified();
         let buf_pos = (self.buf_idx + 1, self.bufs.len());
         let lang = self.bufs[self.buf_idx].lang();
-        let line_pos = (self.buf().cy(), self.buf().rows().len());
+        let total_lines = self.buf().rows().len();
+        let line_num = cmp::min(self.buf().cy() + 1, total_lines);
+        let line_pos = (line_num, total_lines);
 
         self.status_bar.set_modified(modified);
         self.status_bar
