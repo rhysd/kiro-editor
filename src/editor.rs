@@ -365,8 +365,12 @@ where
             self.refresh_screen()?;
         }
 
-        self.screen
-            .set_info_message(if canceled { "Canceled" } else { "" });
+        if canceled {
+            self.screen.set_info_message("Canceled");
+        } else {
+            self.screen.unset_message();
+            self.status_bar.redraw = true;
+        }
         self.refresh_screen()?;
 
         Ok(if canceled { None } else { Some(buf) })
