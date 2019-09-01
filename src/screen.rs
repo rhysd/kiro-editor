@@ -505,10 +505,13 @@ impl<W: Write> Screen<W> {
     }
 
     pub fn rows(&self) -> usize {
-        if self.message.is_none() {
-            self.num_rows + 1
-        } else {
-            self.num_rows
+        // Note: Timestamp being not set yet means message line is not rendered yet
+        match &self.message {
+            Some(StatusMessage {
+                timestamp: None, ..
+            })
+            | None => self.num_rows + 1, // Message bar squashed
+            _ => self.num_rows, // Message bar shown
         }
     }
 
