@@ -6,7 +6,7 @@ Kiro
 [Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. Kiro is a Rust port of awesome
 minimal text editor [kilo][] with various improvements.
 
-<img width=589 height=412 src="https://github.com/rhysd/ss/blob/master/kiro-editor/main.gif?raw=true" alt="main screenshot"/>
+<img width=539 height=396 src="https://github.com/rhysd/ss/blob/master/kiro-editor/main.gif?raw=true" alt="main screenshot"/>
 
 It provides basic features as a minimal text editor:
 
