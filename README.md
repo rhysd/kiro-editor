@@ -26,7 +26,8 @@ section below for more details):
 - More efficient screen rendering and highlighting (kilo renders entire screen each time)
 - Open multiple files (switch buffers by Ctrl-X/Alt-X)
 - Resizing terminal window supported. Screen size is responsible
-- Highlight more languages (Rust, Go, JavaScript, C++)
+- Highlight more languages (Rust, Go, JavaScript, C++) and items (statements, types, number literals, ...)
+- Automatically closes the message bar at bottom of line
 - Modular implementation for each logics such as parsing key inputs, rendering screen, calculating
   highlight, modifying text buffer (kilo implements everything in one `kilo.c` with several global
   variables)
@@ -118,11 +119,11 @@ Here is some screenshots for basic features.
 
 - **Create a new file**
 
-<img width=409 height=220 src="https://github.com/rhysd/ss/blob/master/kiro-editor/new_file.gif?raw=true" alt="screenshot for creating a new file" />
+<img width=365 height=220 src="https://github.com/rhysd/ss/blob/master/kiro-editor/new_file.gif?raw=true" alt="screenshot for creating a new file" />
 
 - **Incremental text search**
 
-<img width=409 height=220 src="https://github.com/rhysd/ss/blob/master/kiro-editor/search.gif?raw=true" alt="screenshot for incremental text search" />
+<img width=380 height=220 src="https://github.com/rhysd/ss/blob/master/kiro-editor/search.gif?raw=true" alt="screenshot for incremental text search" />
 
 
 
