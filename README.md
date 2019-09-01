@@ -414,7 +414,7 @@ By using these mocks the input and output of editor can be tested easily as foll
 #[test]
 fn test_editor() {
     let mut editor = Editor::new(dummy_input, Discard).unwrap();
-    editor.edit();
+    editor.edit().unwrap();
     for line in editor.lines() {
         // Check lines of the current text buffer
     }

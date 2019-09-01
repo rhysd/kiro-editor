@@ -4,6 +4,8 @@ use crate::language::Language;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Write};
 
+use KeySeq::*;
+
 struct DummyInputs(Vec<InputSeq>);
 
 impl Iterator for DummyInputs {
@@ -31,15 +33,15 @@ impl Write for Discard {
 }
 
 fn key(c: char) -> InputSeq {
-    InputSeq::new(KeySeq::Key(c as u8))
+    InputSeq::new(Key(c as u8))
 }
 
 fn ctrl(c: char) -> InputSeq {
-    InputSeq::ctrl(KeySeq::Key(c as u8))
+    InputSeq::ctrl(Key(c as u8))
 }
 
 fn sp(k: KeySeq) -> InputSeq {
-    if let KeySeq::Key(_) = k {
+    if let Key(_) = k {
         assert!(false, "{:?}", k);
     }
     InputSeq::new(k)
@@ -47,7 +49,7 @@ fn sp(k: KeySeq) -> InputSeq {
 
 #[test]
 fn test_empty_buffer() {
-    let input = DummyInputs(vec![InputSeq::ctrl(KeySeq::Key(b'q'))]);
+    let input = DummyInputs(vec![InputSeq::ctrl(Key(b'q'))]);
     let mut editor = Editor::new(input, Discard, None).unwrap();
     editor.edit().unwrap();
 
@@ -78,8 +80,6 @@ fn test_write_to_empty_buffer() {
 
 #[test]
 fn test_move_cursor_down() {
-    use KeySeq::*;
-
     let input = DummyInputs(vec![
         key('a'),
         sp(DownKey),
@@ -113,4 +113,15 @@ fn test_open_file() {
     }
 
     assert_eq!(editor.lang(), Language::Rust);
+}
+
+#[test]
+fn test_message_bar_squashed() {
+    let input = DummyInputs(vec![ctrl('l'), sp(Unidentified), ctrl('q')]);
+    let mut buf = Vec::new();
+    let mut editor = Editor::new(input, &mut buf, None).unwrap();
+    editor.edit().unwrap();
+
+    let msg = editor.screen().message_text();
+    assert_eq!(msg, "");
 }
