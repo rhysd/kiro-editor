@@ -122,7 +122,6 @@ where
         self.screen.set_dirty_start(0);
         self.screen.rowoff = 0;
         self.screen.coloff = 0;
-        self.status_bar.redraw = true;
         self.refresh_screen()
     }
 
@@ -434,10 +433,7 @@ where
                 Key(b'k') => self.buf_mut().delete_until_end_of_line(),
                 Key(b'j') => self.buf_mut().delete_until_head_of_line(),
                 Key(b'w') => self.buf_mut().delete_word(),
-                Key(b'l') => {
-                    self.screen.set_dirty_start(self.screen.rowoff); // Clear
-                    self.status_bar.redraw = true;
-                }
+                Key(b'l') => self.screen.set_dirty_start(self.screen.rowoff), // Clear
                 Key(b's') => self.save()?,
                 Key(b'i') => self.buf_mut().insert_tab(),
                 Key(b'm') => self.buf_mut().insert_line(),
