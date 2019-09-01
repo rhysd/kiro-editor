@@ -500,6 +500,10 @@ impl<W: Write> Screen<W> {
         self.message = Some(StatusMessage::new(message, StatusMessageKind::Error));
     }
 
+    pub fn unset_message(&mut self) {
+        self.message = None;
+    }
+
     pub fn rows(&self) -> usize {
         if self.message.is_none() {
             self.num_rows + 1

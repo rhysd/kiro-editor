@@ -102,7 +102,6 @@ where
         let lang = self.bufs[self.buf_idx].lang();
         let line_pos = (self.buf().cy(), self.buf().rows().len());
 
-        self.status_bar.redraw = false;
         self.status_bar.set_modified(modified);
         self.status_bar
             .set_filename(self.bufs[self.buf_idx].filename());
@@ -114,7 +113,9 @@ where
     fn refresh_screen(&mut self) -> io::Result<()> {
         self.refresh_status_bar();
         self.screen
-            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)
+            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
+        self.status_bar.redraw = false;
+        Ok(())
     }
 
     fn reset_screen(&mut self) -> io::Result<()> {
@@ -432,7 +433,11 @@ where
                 Key(b'k') => self.buf_mut().delete_until_end_of_line(),
                 Key(b'j') => self.buf_mut().delete_until_head_of_line(),
                 Key(b'w') => self.buf_mut().delete_word(),
-                Key(b'l') => self.screen.set_dirty_start(self.screen.rowoff), // Clear
+                Key(b'l') => {
+                    self.screen.set_dirty_start(self.screen.rowoff); // Clear
+                    self.screen.unset_message();
+                    self.status_bar.redraw = true;
+                }
                 Key(b's') => self.save()?,
                 Key(b'i') => self.buf_mut().insert_tab(),
                 Key(b'm') => self.buf_mut().insert_line(),
