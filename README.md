@@ -229,7 +229,7 @@ and highlights. So checking them in O(N) for each time is not efficient. To solv
 contains byte indices of each characters in line text as `Vec<usize>`. These indices are only existing
 when at least one character in line text is non-ASCII character.
 
-![UTF-8 support diagram](./images/utf-8-support-diagram.png)
+![UTF-8 support diagram](./assets/utf-8-support-diagram.png)
 
 In `Row` struct which represents one text line, `indices` field (`Vec<usize>`) is dedicated to store
 byte indices of each character.
@@ -439,6 +439,7 @@ text editor on terminal works.
 ### TODO
 
 - Unit tests are not sufficient. More tests should be added
+- Improve scrolling performance
 - Undo/Redo is not implemented yet
 - Text selection and copy from or paste to system clipboard
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
@@ -458,6 +459,7 @@ text editor on terminal works.
 - Support emojis using `U+200D`
 - WebAssembly support
 - Mouse support
+- Completion, go to definition and look up using language servers
 
 
 
