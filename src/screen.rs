@@ -117,7 +117,6 @@ impl<W: Write> Screen<W> {
         } else {
             get_window_size(input, &mut output)?
         };
-        let num_rows = h.saturating_sub(2);
 
         // Enter alternate screen buffer to restore previous screen on quit
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
@@ -128,7 +127,7 @@ impl<W: Write> Screen<W> {
             rx: 0,
             num_cols: w,
             // Screen height is 1 line less than window height due to status bar
-            num_rows,
+            num_rows: h.saturating_sub(2),
             message: Some(StatusMessage::new(
                 "Ctrl-? for help",
                 StatusMessageKind::Info,
@@ -155,12 +154,8 @@ impl<W: Write> Screen<W> {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    pub fn status_bar_row(&self) -> usize {
-        self.rows() + 1
-    }
-
     fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
-        write!(buf, "\x1b[{}H", self.status_bar_row())?;
+        write!(buf, "\x1b[{}H", self.rows() + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
 
@@ -207,6 +202,7 @@ impl<W: Write> Screen<W> {
             }
             write!(buf, "\x1b[{}H\x1b[K", self.num_rows + 2)?;
             self.message = None;
+            Ok(true)
         } else {
             write!(buf, "\x1b[{}H", self.num_rows + 2)?;
             // TODO: Handle multi-byte chars correctly
@@ -220,8 +216,9 @@ impl<W: Write> Screen<W> {
             }
             message.timestamp = Some(SystemTime::now());
             buf.write(b"\x1b[K")?;
+            // Don't need to update last line since showing message reduces number of rows.
+            Ok(false)
         }
-        Ok(true)
     }
 
     fn draw_welcome_message<B: Write>(&self, mut buf: B) -> io::Result<()> {
@@ -238,12 +235,13 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_rows<B: Write>(&self, mut buf: B, rows: &[Row], hl: &Highlighting) -> io::Result<()> {
-        let dirty_start = if let Some(s) = self.dirty_start {
-            s
-        } else {
-            return Ok(());
-        };
+    fn draw_rows<B: Write>(
+        &self,
+        mut buf: B,
+        dirty_start: usize,
+        rows: &[Row],
+        hl: &Highlighting,
+    ) -> io::Result<()> {
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
         let num_rows = self.rows();
@@ -330,13 +328,19 @@ impl<W: Write> Screen<W> {
 
         let mut buf = Vec::with_capacity((self.rows() + 2) * self.num_cols);
         let mut next_dirty_start = None;
-        let prev_status_row = self.status_bar_row();
+        let message_was_squashed = self.message_bar_squashed();
 
-        self.draw_rows(&mut buf, text_buf.rows(), hl)?;
+        if let Some(s) = self.dirty_start {
+            self.draw_rows(&mut buf, s, text_buf.rows(), hl)?;
+        }
+
+        // Message bar must be drawn at first since draw_message_bar() updates self.message.
+        // It affects draw_status_bar() behavior
         if self.draw_message_bar(&mut buf)? {
             next_dirty_start = Some(self.rowoff + self.rows() - 1);
         }
-        if status_bar.redraw || prev_status_row != self.status_bar_row() {
+
+        if status_bar.redraw || message_was_squashed != self.message_bar_squashed() {
             self.draw_status_bar(&mut buf, status_bar)?;
         }
 
@@ -419,9 +423,10 @@ impl<W: Write> Screen<W> {
             .skip_while(|s| !s.contains(':'))
             .map(str::trim_start)
             .collect();
+        let rows = self.rows();
 
-        let vertical_margin = if help.len() < self.num_rows {
-            (self.num_rows - help.len()) / 2
+        let vertical_margin = if help.len() < rows {
+            (rows - help.len()) / 2
         } else {
             0
         };
@@ -432,7 +437,7 @@ impl<W: Write> Screen<W> {
             0
         };
 
-        let mut buf = Vec::with_capacity(self.num_rows * self.num_cols);
+        let mut buf = Vec::with_capacity(rows * self.num_cols);
 
         for y in 0..vertical_margin {
             write!(buf, "\x1b[{}H", y + 1)?;
@@ -440,7 +445,7 @@ impl<W: Write> Screen<W> {
         }
 
         let left_pad = " ".repeat(left_margin);
-        let help_height = cmp::min(vertical_margin + help.len(), self.num_rows);
+        let help_height = cmp::min(vertical_margin + help.len(), rows);
         for y in vertical_margin..help_height {
             let idx = y - vertical_margin;
             write!(buf, "\x1b[{}H", y + 1)?;
@@ -460,7 +465,7 @@ impl<W: Write> Screen<W> {
             buf.write(b"\x1b[K")?;
         }
 
-        for y in help_height..self.num_rows {
+        for y in help_height..rows {
             write!(buf, "\x1b[{}H", y + 1)?;
             buf.write(b"\x1b[K")?;
         }
@@ -504,14 +509,22 @@ impl<W: Write> Screen<W> {
         self.message = None;
     }
 
-    pub fn rows(&self) -> usize {
+    fn message_bar_squashed(&self) -> bool {
         // Note: Timestamp being not set yet means message line is not rendered yet
         match &self.message {
             Some(StatusMessage {
                 timestamp: None, ..
             })
-            | None => self.num_rows + 1, // Message bar squashed
-            _ => self.num_rows, // Message bar shown
+            | None => true,
+            _ => false,
+        }
+    }
+
+    pub fn rows(&self) -> usize {
+        if self.message_bar_squashed() {
+            self.num_rows + 1
+        } else {
+            self.num_rows
         }
     }
 
