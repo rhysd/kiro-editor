@@ -1,3 +1,17 @@
+<a name="0.3.0"></a>
+# [0.3.0](https://github.com/rhysd/kiro-editor/releases/tag/0.3.0) - 02 Sep 2019
+
+- **Improve:** **Breaking Change:** Now message bar line is automatically squashed when no message is shown (after 5seconds, message is cleared)
+- **Improve:** **Breaking Change:** `Ctrl-L` clears message
+- **Improve:** Rendering message bar made more efficient. It is re-rendered only when it's changed
+- **Improve:** Rendering status bar made more efficient. It is re-rendered only when it's contents are updated
+- **Fix:** Ensure to back to normal screen buffer even if an editor crashes
+- **Fix:** Line number in status bar was sometimes not correct
+- **Improve:** Many internal implementation refactoring
+
+[Changes][0.3.0]
+
+
 <a name="0.2.1"></a>
 # [0.2.1](https://github.com/rhysd/kiro-editor/releases/tag/0.2.1) - 29 Aug 2019
 
@@ -39,6 +53,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.0]: https://github.com/rhysd/kiro-editor/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/rhysd/kiro-editor/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/rhysd/kiro-editor/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/rhysd/kiro-editor/compare/0.1.0...0.1.1
