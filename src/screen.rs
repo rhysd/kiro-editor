@@ -206,8 +206,8 @@ impl<W: Write> Screen<W> {
                     return Ok(false);
                 }
             }
-            write!(buf, "\x1b[{}H\x1b[K", self.num_rows + 2)?;
             self.message = None;
+            // Don't erase message bar since message bar will be squashed soon
             Ok(true)
         } else {
             write!(buf, "\x1b[{}H", self.num_rows + 2)?;
