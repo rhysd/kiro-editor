@@ -203,19 +203,17 @@ impl<W: Write> Screen<W> {
         }
     }
 
-    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<Option<usize>> {
+    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<()> {
         let message = if let Some(m) = &mut self.message {
             m
         } else {
-            return Ok(None);
+            return Ok(());
         };
 
         if message.timestamp.is_some() {
             // Don't erase message bar in this clause since message bar will be squashed soon
             // Timestamp should be checked in should_redraw_message_bar().
             self.message = None;
-            // Squashing message bar reveals one more last line so the line should be rendered in next tick
-            Ok(Some(self.rowoff + self.rows() - 1))
         } else {
             write!(buf, "\x1b[{}H", self.num_rows + 2)?;
             // TODO: Handle multi-byte chars correctly
@@ -230,8 +228,9 @@ impl<W: Write> Screen<W> {
             message.timestamp = Some(SystemTime::now());
             buf.write(b"\x1b[K")?;
             // Don't need to update last line since showing message reduces number of rows.
-            Ok(None)
         }
+
+        Ok(())
     }
 
     fn draw_welcome_message<B: Write>(&self, mut buf: B) -> Result<()> {
@@ -349,13 +348,13 @@ impl<W: Write> Screen<W> {
 
         // Message bar must be drawn at first since draw_message_bar() updates self.message.
         // It affects draw_status_bar() behavior
-        let next_dirty_start = if redraw_message_bar {
-            self.draw_message_bar(&mut buf)?
-        } else {
-            None
-        };
+        if redraw_message_bar {
+            self.draw_message_bar(&mut buf)?;
+        }
 
-        if status_bar.redraw || message_was_squashed != self.message_bar_squashed() {
+        // Previously message bar was not squashed but now it is squashed so it is being squashed now
+        let squashing_message_bar = message_was_squashed != self.message_bar_squashed();
+        if status_bar.redraw || squashing_message_bar {
             self.draw_status_bar(&mut buf, status_bar)?;
         }
 
@@ -366,6 +365,13 @@ impl<W: Write> Screen<W> {
         buf.write(b"\x1b[?25h")?;
 
         self.write_flush(&buf)?;
+
+        // Squashing message bar reveals one more last line so the line should be rendered in next tick
+        let next_dirty_start = if squashing_message_bar {
+            Some(self.rowoff + self.rows() - 1)
+        } else {
+            None
+        };
 
         Ok(next_dirty_start)
     }
