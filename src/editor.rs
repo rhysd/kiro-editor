@@ -2,6 +2,7 @@ use crate::error::Result;
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
+use crate::prompt::{self, Prompt, PromptResult};
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
@@ -10,29 +11,9 @@ use std::io::Write;
 use std::path::Path;
 use std::str;
 
-#[derive(Clone, Copy)]
-enum FindDir {
-    Back,
-    Forward,
-}
-struct FindState {
-    last_match: Option<usize>,
-    dir: FindDir,
-}
-
-impl FindState {
-    fn new() -> FindState {
-        FindState {
-            last_match: None,
-            dir: FindDir::Forward,
-        }
-    }
-}
-
 pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
-    input: I,           // Escape sequences stream represented as Iterator
-    quitting: bool,     // After first Ctrl-Q
-    finding: FindState, // Text search state
+    input: I,       // Escape sequences stream represented as Iterator
+    quitting: bool, // After first Ctrl-Q
     hl: Highlighting,
     screen: Screen<W>,
     bufs: Vec<TextBuffer>,
@@ -54,7 +35,6 @@ where
         Ok(Editor {
             input,
             quitting: false,
-            finding: FindState::new(),
             hl: Highlighting::default(),
             screen,
             bufs: vec![TextBuffer::new()],
@@ -78,7 +58,6 @@ where
         Ok(Editor {
             input,
             quitting: false,
-            finding: FindState::new(),
             hl,
             screen,
             bufs,
@@ -127,9 +106,9 @@ where
     }
 
     fn open_buffer(&mut self) -> Result<()> {
-        if let Some(input) = self.prompt(
+        if let PromptResult::Input(input) = self.prompt_new(
             "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
-            |_, _, _, _| Ok(()),
+            false,
         )? {
             let buf = if input.is_empty() {
                 TextBuffer::new()
@@ -178,13 +157,28 @@ where
         })
     }
 
+    fn prompt_new<S: AsRef<str>>(
+        &mut self,
+        prompt: S,
+        empty_is_cancel: bool,
+    ) -> Result<PromptResult> {
+        Prompt::new(
+            &mut self.screen,
+            &mut self.bufs[self.buf_idx],
+            &mut self.hl,
+            &mut self.status_bar,
+            empty_is_cancel,
+        )
+        .run::<prompt::NoAction, _, _>(prompt, &mut self.input)
+    }
+
     fn save(&mut self) -> Result<()> {
         let mut create = false;
         if !self.buf().has_file() {
-            if let Some(input) =
-                self.prompt("Save as: {} (^G or ESC to cancel)", |_, _, _, _| Ok(()))?
-            {
-                if input.is_empty() {}
+            if let PromptResult::Input(input) = self.prompt_new(
+                "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
+                true,
+            )? {
                 let prev_lang = self.buf().lang();
                 self.buf_mut().set_file(input);
                 self.hl.lang_changed(self.buf().lang());
@@ -209,95 +203,16 @@ where
         Ok(())
     }
 
-    fn on_incremental_find(&mut self, query: &str, seq: InputSeq, end: bool) -> Result<()> {
-        use KeySeq::*;
-
-        if self.finding.last_match.is_some() {
-            if let Some(matched_line) = self.hl.clear_previous_match() {
-                self.hl.needs_update = true;
-                self.screen.set_dirty_start(matched_line);
-            }
-        }
-
-        if end {
-            return Ok(());
-        }
-
-        match (seq.key, seq.ctrl) {
-            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true) | (Key(b'n'), true) => {
-                self.finding.dir = FindDir::Forward
-            }
-            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true) | (Key(b'p'), true) => {
-                self.finding.dir = FindDir::Back
-            }
-            _ => self.finding = FindState::new(),
-        }
-
-        fn next_line(y: usize, dir: FindDir, len: usize) -> usize {
-            // Wrapping text search at top/bottom of text buffer
-            match dir {
-                FindDir::Forward if y == len - 1 => 0,
-                FindDir::Forward => y + 1,
-                FindDir::Back if y == 0 => len - 1,
-                FindDir::Back => y - 1,
-            }
-        }
-
-        let row_len = self.buf().rows().len();
-        let dir = self.finding.dir;
-        let mut y = self
-            .finding
-            .last_match
-            .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
-            .unwrap_or_else(|| self.buf().cy());
-
-        // TODO: Use more efficient string search algorithm such as Aho-Corasick
-        for _ in 0..row_len {
-            let row = &self.buf().rows()[y];
-            if let Some(byte_idx) = row.buffer().find(query) {
-                let idx = row.char_idx_of(byte_idx);
-                self.buf_mut().set_cursor(idx, y);
-
-                let row = &self.buf().rows()[y]; // Immutable borrow again since self.buf().set_cursor() yields mutable borrow
-                let rx = row.rx_from_cx(self.buf().cx());
-                // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
-                self.screen.rowoff = row_len;
-                self.finding.last_match = Some(y);
-                // Set match highlight on the found line
-                self.hl.set_match(y, rx, rx + query.chars().count());
-                // XXX: It updates entire highlights
-                self.hl.needs_update = true;
-                self.screen.set_dirty_start(y);
-                break;
-            }
-            y = next_line(y, dir, row_len);
-        }
-
-        Ok(())
-    }
-
     fn find(&mut self) -> Result<()> {
-        let (cx, cy, coloff, rowoff) = (
-            self.buf().cx(),
-            self.buf().cy(),
-            self.screen.coloff,
-            self.screen.rowoff,
-        );
-        let s = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
-        let input = self.prompt(s, Self::on_incremental_find)?;
-        if input.as_ref().map(String::is_empty).unwrap_or(true) {
-            // Canceled. Restore cursor position
-            self.buf_mut().set_cursor(cx, cy);
-            self.screen.coloff = coloff;
-            self.screen.rowoff = rowoff;
-            self.screen.set_dirty_start(self.screen.rowoff); // Redraw all lines
-        } else if self.finding.last_match.is_some() {
-            self.screen.set_info_message("Found");
-        } else {
-            self.screen.set_error_message("Not Found");
-        }
-
-        self.finding = FindState::new(); // Clear text search state for next time
+        let prompt = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
+        Prompt::new(
+            &mut self.screen,
+            &mut self.bufs[self.buf_idx],
+            &mut self.hl,
+            &mut self.status_bar,
+            true,
+        )
+        .run::<prompt::TextSearch, _, _>(prompt, &mut self.input)?;
         Ok(())
     }
 
@@ -318,63 +233,6 @@ where
         // Redraw screen
         self.screen.set_dirty_start(self.screen.rowoff);
         Ok(())
-    }
-
-    fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> Result<Option<String>>
-    where
-        S: AsRef<str>,
-        F: FnMut(&mut Self, &str, InputSeq, bool) -> Result<()>,
-    {
-        let mut buf = String::new();
-        let mut canceled = false;
-        let prompt = prompt.as_ref();
-        self.screen.set_info_message(prompt.replacen("{}", "", 1));
-        self.refresh_screen()?;
-
-        while let Some(seq) = self.input.next() {
-            use KeySeq::*;
-
-            if self.screen.maybe_resize(&mut self.input)? {
-                self.refresh_screen()?;
-            }
-
-            let seq = seq?;
-            let mut finished = false;
-
-            match (&seq.key, seq.ctrl) {
-                (Unidentified, ..) => continue,
-                (Key(b'h'), true) | (Key(0x7f), ..) | (DeleteKey, ..) if !buf.is_empty() => {
-                    buf.pop();
-                }
-                (Key(b'g'), true) | (Key(b'q'), true) | (Key(0x1b), ..) => {
-                    finished = true;
-                    canceled = true;
-                }
-                (Key(b'\r'), ..) | (Key(b'm'), true) => {
-                    finished = true;
-                }
-                (Key(b), false) => buf.push(*b as char),
-                (Utf8Key(c), false) => buf.push(*c),
-                _ => {}
-            }
-
-            incremental_callback(self, buf.as_str(), seq, finished)?;
-            if finished {
-                break;
-            }
-            self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-            self.refresh_screen()?;
-        }
-
-        if canceled {
-            self.screen.set_info_message("Canceled");
-        } else {
-            self.screen.unset_message();
-            self.status_bar.redraw = true;
-        }
-        self.refresh_screen()?;
-
-        Ok(if canceled { None } else { Some(buf) })
     }
 
     fn handle_quit(&mut self) -> Result<bool> {

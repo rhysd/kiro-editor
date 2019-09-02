@@ -13,6 +13,7 @@ mod error;
 mod highlight;
 mod input;
 mod language;
+mod prompt;
 mod row;
 mod screen;
 mod signal;
