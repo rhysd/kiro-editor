@@ -193,22 +193,29 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<bool> {
+    fn should_redraw_message_bar(&self) -> Result<bool> {
+        match &self.message {
+            Some(StatusMessage {
+                timestamp: Some(t), ..
+            }) => Ok(SystemTime::now().duration_since(*t)?.as_secs() > 5), // Message bar is shown
+            None => Ok(false), // No message
+            _ => Ok(true), // timestamp is None which means that message was set but not rendered yet
+        }
+    }
+
+    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<Option<usize>> {
         let message = if let Some(m) = &mut self.message {
             m
         } else {
-            return Ok(false);
+            return Ok(None);
         };
 
-        if let Some(timestamp) = message.timestamp {
-            if let Ok(d) = SystemTime::now().duration_since(timestamp) {
-                if d.as_secs() < 5 {
-                    return Ok(false);
-                }
-            }
+        if message.timestamp.is_some() {
+            // Don't erase message bar in this clause since message bar will be squashed soon
+            // Timestamp should be checked in should_redraw_message_bar().
             self.message = None;
-            // Don't erase message bar since message bar will be squashed soon
-            Ok(true)
+            // Squashing message bar reveals one more last line so the line should be rendered in next tick
+            Ok(Some(self.rowoff + self.rows() - 1))
         } else {
             write!(buf, "\x1b[{}H", self.num_rows + 2)?;
             // TODO: Handle multi-byte chars correctly
@@ -223,7 +230,7 @@ impl<W: Write> Screen<W> {
             message.timestamp = Some(SystemTime::now());
             buf.write(b"\x1b[K")?;
             // Don't need to update last line since showing message reduces number of rows.
-            Ok(false)
+            Ok(None)
         }
     }
 
@@ -318,8 +325,9 @@ impl<W: Write> Screen<W> {
     ) -> Result<Option<usize>> {
         let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
+        let redraw_message_bar = self.should_redraw_message_bar()?;
 
-        if self.dirty_start.is_none() && !status_bar.redraw && self.message.is_none() {
+        if self.dirty_start.is_none() && !status_bar.redraw && !redraw_message_bar {
             if self.cursor_moved {
                 write!(self.output, "\x1b[{};{}H", cursor_row, cursor_col)?;
                 self.output.flush()?;
@@ -333,7 +341,6 @@ impl<W: Write> Screen<W> {
         self.write_flush(b"\x1b[?25l")?;
 
         let mut buf = Vec::with_capacity((self.rows() + 2) * self.num_cols);
-        let mut next_dirty_start = None;
         let message_was_squashed = self.message_bar_squashed();
 
         if let Some(s) = self.dirty_start {
@@ -342,9 +349,11 @@ impl<W: Write> Screen<W> {
 
         // Message bar must be drawn at first since draw_message_bar() updates self.message.
         // It affects draw_status_bar() behavior
-        if self.draw_message_bar(&mut buf)? {
-            next_dirty_start = Some(self.rowoff + self.rows() - 1);
-        }
+        let next_dirty_start = if redraw_message_bar {
+            self.draw_message_bar(&mut buf)?
+        } else {
+            None
+        };
 
         if status_bar.redraw || message_was_squashed != self.message_bar_squashed() {
             self.draw_status_bar(&mut buf, status_bar)?;
@@ -516,13 +525,12 @@ impl<W: Write> Screen<W> {
     }
 
     fn message_bar_squashed(&self) -> bool {
-        // Note: Timestamp being not set yet means message line is not rendered yet
-        match &self.message {
+        // Note: Timestamp being set means message line is shown until the time
+        match self.message {
             Some(StatusMessage {
-                timestamp: None, ..
-            })
-            | None => true,
-            _ => false,
+                timestamp: Some(_), ..
+            }) => false,
+            _ => true,
         }
     }
 

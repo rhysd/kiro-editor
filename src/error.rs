@@ -1,10 +1,12 @@
 use std::fmt;
 use std::io;
+use std::time::SystemTimeError;
 
 // Deriving Debug is necessary to use .expect() method
 #[derive(Debug)]
 pub enum Error {
     IoError(io::Error),
+    SystemTimeError(SystemTimeError),
     TooSmallWindow(usize, usize),
     UnknownWindowSize,
 }
@@ -14,6 +16,7 @@ impl fmt::Display for Error {
         use Error::*;
         match self {
             IoError(err) => write!(f, "{}", err),
+            SystemTimeError(err) => write!(f, "{}", err),
             TooSmallWindow(w, h) => write!(
                 f,
                 "Screen {}x{} is too small. At least 1x3 is necessary in width x height",
@@ -27,6 +30,12 @@ impl fmt::Display for Error {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
         Error::IoError(err)
+    }
+}
+
+impl From<SystemTimeError> for Error {
+    fn from(err: SystemTimeError) -> Error {
+        Error::SystemTimeError(err)
     }
 }
 
