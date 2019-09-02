@@ -3,8 +3,8 @@ Kiro
 [![crates.io][crates-io-badge]][crates-io]
 [![Build Status][build-badge]][travis-ci]
 
-[Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. Kiro is a Rust port of awesome
-minimal text editor [kilo][] with various improvements.
+[Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. Kiro was started as a Rust port of
+awesome minimal text editor [kilo][] and has grown with various extensions & improvements.
 
 <img width=539 height=396 src="https://github.com/rhysd/ss/blob/master/kiro-editor/main.gif?raw=true" alt="main screenshot"/>
 
@@ -282,6 +282,9 @@ the global variables and local static variables by moving them to each logic's s
   bar located at bottom of screen.
 - [`status_bar.rs`](src/status_bar.rs): Exports `StatusBar` struct which manages fields displayed in the
   status bar. It has flag `redraw` to determine if it should be re-rendered.
+- [`prompt.rs`](src/prompt.rs): Exports structs related to user prompt using message bar. This module
+  has logic to run user prompt and text search. Callbacks while prompt is represented as a `PromptAction`
+  trait.
 - [`term_color.rs`](src/term_color.rs): Exports small `TermColor` enum and `Color` enum, which represents
   terminal colors. This module also has logic to detect 24-bit colors and 256 colors support of terminal.
 - [`language.rs`](src/language.rs): Exports small `Language` enum, which represents file types like

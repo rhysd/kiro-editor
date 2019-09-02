@@ -15,77 +15,13 @@
 
 ## プロンプトの実装のアイデア
 
-プロンプトはスクリーン描画とハイライト更新とカーソル位置（`TextBuffer` の状態）が絡むのでうまく切り出すのが難しい．
-現状では `Editor` から切り離せていない．また，キー入力時のコールバックを `Fn` で表現しているのも切り離すのを難しくしている．
+プロンプトの入力はテキスト検索の画面更新もあり，エディタの状態とはうまく切り離せない．
+なので，エディタのメインループの中で行う．プロンプト入力中のキー入力も全てメインループで取る．
 
-そこで `Prompt` struct をつくり，その中に一時的にエディタの状態を借用する．コールバックは trait にする．
-
-```rust
-pub struct Prompt<'a> {
-    screen: &'a mut Screen,
-    buf: &'a mut TextBuffer,
-    hl: &'a mut Highlighting,
-}
-
-pub trait PromptAction {
-    fn on_seq(prompt: &mut Prompt, query: &str, seq: InputSeq) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_end(prompt: &mut Prompt, ret: PromptAction) -> Result<PromptAction> {
-        Ok(ret)
-    }
-}
-
-// 通常のキー入力に使える，何もせず入力を返すだけ
-pub struct NoAction;
-impl PromptAction for NoAction {}
-
-// インクリメンタル検索
-pub struct TextSearch {
-    last_match: Option<...>,
-    // ...
-}
-
-impl PromptAction for TextSearch {
-    fn on_seq(prompt: &mut Prompt, query: &str, seq: InputSeq) -> Result<()> {
-        // ...
-    }
-
-    fn on_end(prompt: &mut Prompt, ret: PromptAction) -> Result<PromptAction> {
-        // ...
-    }
-}
-
-pub enum PromptResult {
-    Canceled,
-    Input(String),
-}
-
-impl<'a> Prompt<'a> {
-    pub fn new<'s: 'a, 'b: 'a, 'h: 'a>(
-        s: &'s mut Screen,
-        b: &'b mut TextBuffer,
-        h: &'h mut Highlighting,
-    ) -> Self {
-        // ...
-    }
-
-    pub fn run<A: PromptAction>(&mut self, action: A) -> Result<PromptResult> {
-        // ...
-    }
-}
-```
-
-次のように使う．
-
-```rust
-let search = TextSearch::new();
-match Prompt::new(s, b, h).run(search)? {
-    PromptResult::Canceled => { /* ... */ }
-    PromptResult::Input(input) => { /* ... */ }
-}
-```
+Vim のモードのようなモード実装を汎用的につくっておき，プロンプトモードをつくってプロンプト入力時はそのモードに切り替える．
+これによって，プロンプト入力もモードとして汎用的に扱え，画面更新（メッセージバー更新含む）もメインループの汎用的な描画処理で行える．
+また，プロンプト入力中だけ使えるキーショートカット（キャンセルなど）もプロンプトモード時のキーマップとして実装しておけば，
+プロンプト入力中だけ特別にキーショートカットを切り替えるような処理を入れなくても，プロンプト専用のショートカットを処理できる．
 
 ## 描画情報のハンドリングについて
 
@@ -149,3 +85,6 @@ impl<'a> TextBufferUpdate<'a> {
 
 の各ステージに分けられるので，各段階の入出力を `Iterator` として表現してつなぐ．間を `RenderContext` が流れる．
 例えばハイライトを優先して上書きしたい場合（検索のマッチなど）は 3. と 4. の間に新しいステージを挿入すれば良いということになる．
+
+また，画面の表示文字列（`Row` の `render` フィールドだけを `Vec` で持ったもの）をコンテキストとして入れておけば，後段のパイプラインでそれを
+上書きすることでポップアップウィンドウのようなオーバーレイ UI を描画することもできる．

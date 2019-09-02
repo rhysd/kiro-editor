@@ -47,13 +47,6 @@ enum FindDir {
     Forward,
 }
 
-impl Default for FindDir {
-    fn default() -> Self {
-        FindDir::Forward
-    }
-}
-
-#[derive(Default)]
 pub struct TextSearch {
     saved_cx: usize,
     saved_cy: usize,
@@ -168,7 +161,7 @@ impl PromptAction for TextSearch {
             }
         };
 
-        if result == PromptResult::Canceled {
+        if result == Canceled {
             prompt.buf.set_cursor(self.saved_cx, self.saved_cy);
             prompt.screen.coloff = self.saved_coloff;
             prompt.screen.rowoff = self.saved_rowoff;
