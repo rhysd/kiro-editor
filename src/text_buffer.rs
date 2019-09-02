@@ -1,3 +1,4 @@
+use crate::error::Result;
 use crate::language::{Indent, Language};
 use crate::row::Row;
 use std::cmp;
@@ -78,7 +79,7 @@ impl TextBuffer {
         buf
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let mut buf = Self::new();
 
@@ -87,7 +88,7 @@ impl TextBuffer {
             buf.row = io::BufReader::new(file)
                 .lines()
                 .map(|r| Ok(Row::new(r?)))
-                .collect::<io::Result<_>>()?;
+                .collect::<Result<_>>()?;
             buf.modified = false;
         } else {
             // When the path does not exist, consider it as a new file
@@ -424,7 +425,7 @@ impl TextBuffer {
         self.file = None;
     }
 
-    pub fn save(&mut self) -> Result<String, String> {
+    pub fn save(&mut self) -> std::result::Result<String, String> {
         let file = if let Some(file) = &self.file {
             file
         } else {

@@ -1,4 +1,5 @@
 use crate::ansi_color::{AnsiColor, ColorSupport};
+use crate::error::{Error, Result};
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
@@ -6,7 +7,7 @@ use crate::signal::SigwinchWatcher;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
 use std::cmp;
-use std::io::{self, Write};
+use std::io::Write;
 use std::time::SystemTime;
 use unicode_width::UnicodeWidthChar;
 
@@ -63,9 +64,9 @@ impl StatusMessage {
     }
 }
 
-fn get_window_size<I, W>(input: I, mut output: W) -> io::Result<(usize, usize)>
+fn get_window_size<I, W>(input: I, mut output: W) -> Result<(usize, usize)>
 where
-    I: Iterator<Item = io::Result<InputSeq>>,
+    I: Iterator<Item = Result<InputSeq>>,
     W: Write,
 {
     if let Some(s) = term_size::dimensions_stdout() {
@@ -85,7 +86,7 @@ where
         }
     }
 
-    Ok((0, 0)) // Give up
+    Err(Error::UnknownWindowSize) // Give up
 }
 
 pub struct Screen<W: Write> {
@@ -108,15 +109,19 @@ pub struct Screen<W: Write> {
 }
 
 impl<W: Write> Screen<W> {
-    pub fn new<I>(size: Option<(usize, usize)>, input: I, mut output: W) -> io::Result<Self>
+    pub fn new<I>(size: Option<(usize, usize)>, input: I, mut output: W) -> Result<Self>
     where
-        I: Iterator<Item = io::Result<InputSeq>>,
+        I: Iterator<Item = Result<InputSeq>>,
     {
         let (w, h) = if let Some(s) = size {
             s
         } else {
             get_window_size(input, &mut output)?
         };
+
+        if w == 0 || h < 3 {
+            return Err(Error::TooSmallWindow(w, h));
+        }
 
         // Enter alternate screen buffer to restore previous screen on quit
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
@@ -141,9 +146,10 @@ impl<W: Write> Screen<W> {
         })
     }
 
-    fn write_flush(&mut self, bytes: &[u8]) -> io::Result<()> {
+    fn write_flush(&mut self, bytes: &[u8]) -> Result<()> {
         self.output.write(bytes)?;
-        self.output.flush()
+        self.output.flush()?;
+        Ok(())
     }
 
     fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> String {
@@ -154,7 +160,7 @@ impl<W: Write> Screen<W> {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> io::Result<()> {
+    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> Result<()> {
         write!(buf, "\x1b[{}H", self.rows() + 1)?;
 
         buf.write(AnsiColor::Invert.sequence(self.color_support))?;
@@ -187,7 +193,7 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> io::Result<bool> {
+    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<bool> {
         let message = if let Some(m) = &mut self.message {
             m
         } else {
@@ -221,7 +227,7 @@ impl<W: Write> Screen<W> {
         }
     }
 
-    fn draw_welcome_message<B: Write>(&self, mut buf: B) -> io::Result<()> {
+    fn draw_welcome_message<B: Write>(&self, mut buf: B) -> Result<()> {
         let msg_buf = format!("Kiro editor -- version {}", VERSION);
         let welcome = self.trim_line(&msg_buf);
         let padding = (self.num_cols - welcome.len()) / 2;
@@ -241,7 +247,7 @@ impl<W: Write> Screen<W> {
         dirty_start: usize,
         rows: &[Row],
         hl: &Highlighting,
-    ) -> io::Result<()> {
+    ) -> Result<()> {
         let mut prev_color = AnsiColor::Reset;
         let row_len = rows.len();
         let num_rows = self.rows();
@@ -309,7 +315,7 @@ impl<W: Write> Screen<W> {
         text_buf: &TextBuffer,
         hl: &Highlighting,
         status_bar: &StatusBar,
-    ) -> io::Result<Option<usize>> {
+    ) -> Result<Option<usize>> {
         let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
 
@@ -409,7 +415,7 @@ impl<W: Write> Screen<W> {
         buf: &TextBuffer,
         hl: &mut Highlighting,
         status_bar: &StatusBar,
-    ) -> io::Result<()> {
+    ) -> Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
         hl.update(buf.rows(), self.rowoff + self.rows());
         self.dirty_start = self.redraw(buf, hl, status_bar)?;
@@ -417,7 +423,7 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    pub fn draw_help(&mut self) -> io::Result<()> {
+    pub fn draw_help(&mut self) -> Result<()> {
         let help: Vec<_> = HELP
             .split('\n')
             .skip_while(|s| !s.contains(':'))
@@ -482,9 +488,9 @@ impl<W: Write> Screen<W> {
         self.dirty_start = Some(start);
     }
 
-    pub fn maybe_resize<I>(&mut self, input: I) -> io::Result<bool>
+    pub fn maybe_resize<I>(&mut self, input: I) -> Result<bool>
     where
-        I: Iterator<Item = io::Result<InputSeq>>,
+        I: Iterator<Item = Result<InputSeq>>,
     {
         if !self.sigwinch.notified() {
             return Ok(false); // Did not receive signal

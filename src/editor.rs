@@ -1,3 +1,4 @@
+use crate::error::Result;
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
@@ -5,7 +6,7 @@ use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::cmp;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
 use std::str;
 
@@ -28,7 +29,7 @@ impl FindState {
     }
 }
 
-pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>, W: Write> {
+pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
     input: I,           // Escape sequences stream represented as Iterator
     quitting: bool,     // After first Ctrl-Q
     finding: FindState, // Text search state
@@ -41,14 +42,14 @@ pub struct Editor<I: Iterator<Item = io::Result<InputSeq>>, W: Write> {
 
 impl<I, W> Editor<I, W>
 where
-    I: Iterator<Item = io::Result<InputSeq>>,
+    I: Iterator<Item = Result<InputSeq>>,
     W: Write,
 {
     pub fn new(
         mut input: I,
         output: W,
         window_size: Option<(usize, usize)>,
-    ) -> io::Result<Editor<I, W>> {
+    ) -> Result<Editor<I, W>> {
         let screen = Screen::new(window_size, &mut input, output)?;
         Ok(Editor {
             input,
@@ -67,15 +68,12 @@ where
         output: W,
         window_size: Option<(usize, usize)>,
         paths: &[P],
-    ) -> io::Result<Editor<I, W>> {
+    ) -> Result<Editor<I, W>> {
         if paths.is_empty() {
             return Self::new(input, output, window_size);
         }
         let screen = Screen::new(window_size, &mut input, output)?;
-        let bufs: Vec<_> = paths
-            .iter()
-            .map(TextBuffer::open)
-            .collect::<io::Result<_>>()?;
+        let bufs: Vec<_> = paths.iter().map(TextBuffer::open).collect::<Result<_>>()?;
         let hl = Highlighting::new(bufs[0].lang(), bufs[0].rows());
         Ok(Editor {
             input,
@@ -113,7 +111,7 @@ where
         self.status_bar.set_line_pos(line_pos);
     }
 
-    fn refresh_screen(&mut self) -> io::Result<()> {
+    fn refresh_screen(&mut self) -> Result<()> {
         self.refresh_status_bar();
         self.screen
             .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
@@ -121,14 +119,14 @@ where
         Ok(())
     }
 
-    fn reset_screen(&mut self) -> io::Result<()> {
+    fn reset_screen(&mut self) -> Result<()> {
         self.screen.set_dirty_start(0);
         self.screen.rowoff = 0;
         self.screen.coloff = 0;
         self.refresh_screen()
     }
 
-    fn open_buffer(&mut self) -> io::Result<()> {
+    fn open_buffer(&mut self) -> Result<()> {
         if let Some(input) = self.prompt(
             "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
             |_, _, _, _| Ok(()),
@@ -147,7 +145,7 @@ where
         }
     }
 
-    fn switch_buffer(&mut self, idx: usize) -> io::Result<()> {
+    fn switch_buffer(&mut self, idx: usize) -> Result<()> {
         let len = self.bufs.len();
         if len == 1 {
             self.screen.set_info_message("No other buffer is opened");
@@ -164,7 +162,7 @@ where
         self.reset_screen()
     }
 
-    fn next_buffer(&mut self) -> io::Result<()> {
+    fn next_buffer(&mut self) -> Result<()> {
         self.switch_buffer(if self.buf_idx == self.bufs.len() - 1 {
             0
         } else {
@@ -172,7 +170,7 @@ where
         })
     }
 
-    fn previous_buffer(&mut self) -> io::Result<()> {
+    fn previous_buffer(&mut self) -> Result<()> {
         self.switch_buffer(if self.buf_idx == 0 {
             self.bufs.len() - 1
         } else {
@@ -180,7 +178,7 @@ where
         })
     }
 
-    fn save(&mut self) -> io::Result<()> {
+    fn save(&mut self) -> Result<()> {
         let mut create = false;
         if !self.buf().has_file() {
             if let Some(input) =
@@ -211,7 +209,7 @@ where
         Ok(())
     }
 
-    fn on_incremental_find(&mut self, query: &str, seq: InputSeq, end: bool) -> io::Result<()> {
+    fn on_incremental_find(&mut self, query: &str, seq: InputSeq, end: bool) -> Result<()> {
         use KeySeq::*;
 
         if self.finding.last_match.is_some() {
@@ -278,7 +276,7 @@ where
         Ok(())
     }
 
-    fn find(&mut self) -> io::Result<()> {
+    fn find(&mut self) -> Result<()> {
         let (cx, cy, coloff, rowoff) = (
             self.buf().cx(),
             self.buf().cy(),
@@ -303,7 +301,7 @@ where
         Ok(())
     }
 
-    fn show_help(&mut self) -> io::Result<()> {
+    fn show_help(&mut self) -> Result<()> {
         self.screen.draw_help()?;
 
         // Consume any key
@@ -322,10 +320,10 @@ where
         Ok(())
     }
 
-    fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> io::Result<Option<String>>
+    fn prompt<S, F>(&mut self, prompt: S, mut incremental_callback: F) -> Result<Option<String>>
     where
         S: AsRef<str>,
-        F: FnMut(&mut Self, &str, InputSeq, bool) -> io::Result<()>,
+        F: FnMut(&mut Self, &str, InputSeq, bool) -> Result<()>,
     {
         let mut buf = String::new();
         let mut canceled = false;
@@ -379,7 +377,7 @@ where
         Ok(if canceled { None } else { Some(buf) })
     }
 
-    fn handle_quit(&mut self) -> io::Result<bool> {
+    fn handle_quit(&mut self) -> Result<bool> {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
             Ok(true)
@@ -397,7 +395,7 @@ where
             .set_error_message(format!("Key '{}' not mapped", seq));
     }
 
-    fn process_keypress(&mut self, s: InputSeq) -> io::Result<bool> {
+    fn process_keypress(&mut self, s: InputSeq) -> Result<bool> {
         use KeySeq::*;
 
         let rowoff = self.screen.rowoff;
@@ -495,7 +493,7 @@ where
         Ok(false)
     }
 
-    pub fn edit(&mut self) -> io::Result<()> {
+    pub fn edit(&mut self) -> Result<()> {
         self.refresh_screen()?; // First paint
 
         while let Some(seq) = self.input.next() {

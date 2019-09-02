@@ -1,4 +1,5 @@
 use crate::editor::Editor;
+use crate::error::Result;
 use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
 use std::fs::File;
@@ -9,7 +10,7 @@ use KeySeq::*;
 struct DummyInputs(Vec<InputSeq>);
 
 impl Iterator for DummyInputs {
-    type Item = io::Result<InputSeq>;
+    type Item = Result<InputSeq>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.0.is_empty() {
@@ -23,11 +24,11 @@ impl Iterator for DummyInputs {
 struct Discard;
 
 impl Write for Discard {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> Result<usize> {
         Ok(buf.len())
     }
 
-    fn flush(&mut self) -> io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         Ok(())
     }
 }

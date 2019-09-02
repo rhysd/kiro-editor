@@ -1,5 +1,5 @@
+use crate::error::Result;
 use signal_hook::{self, SigId, SIGWINCH};
-use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ pub struct SigwinchWatcher {
 }
 
 impl SigwinchWatcher {
-    pub fn new() -> io::Result<Self> {
+    pub fn new() -> Result<Self> {
         let flag = Arc::new(AtomicBool::new(false));
         let signal_id = signal_hook::flag::register(SIGWINCH, Arc::clone(&flag))?;
         Ok(Self { flag, signal_id })

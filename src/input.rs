@@ -1,3 +1,4 @@
+use crate::error::Result;
 use std::fmt;
 use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
@@ -14,7 +15,7 @@ pub struct StdinRawMode {
 // logic. This is useful when adding a new frontend (e.g. wasm).
 
 impl StdinRawMode {
-    pub fn new() -> io::Result<StdinRawMode> {
+    pub fn new() -> Result<StdinRawMode> {
         use termios::*;
 
         let stdin = io::stdin();
@@ -148,7 +149,7 @@ pub struct InputSequences {
 }
 
 impl InputSequences {
-    fn read_byte(&mut self) -> io::Result<Option<u8>> {
+    fn read_byte(&mut self) -> Result<Option<u8>> {
         let mut one_byte: [u8; 1] = [0];
         Ok(if self.stdin.read(&mut one_byte)? == 0 {
             None
@@ -157,7 +158,7 @@ impl InputSequences {
         })
     }
 
-    fn decode_escape_sequence(&mut self) -> io::Result<InputSeq> {
+    fn decode_escape_sequence(&mut self) -> Result<InputSeq> {
         use KeySeq::*;
 
         // Try to read expecting '[' as escape sequence header. Note that, if next input does
@@ -247,7 +248,7 @@ impl InputSequences {
         }
     }
 
-    fn decode_utf8(&mut self, b: u8) -> io::Result<InputSeq> {
+    fn decode_utf8(&mut self, b: u8) -> Result<InputSeq> {
         use KeySeq::*;
 
         let mut buf = Vec::with_capacity(4);
@@ -269,7 +270,7 @@ impl InputSequences {
         }
     }
 
-    fn decode(&mut self, b: u8) -> io::Result<InputSeq> {
+    fn decode(&mut self, b: u8) -> Result<InputSeq> {
         use KeySeq::*;
         match b {
             // (Maybe) Escape sequence. Ctrl-{ is not available due to this
@@ -287,7 +288,7 @@ impl InputSequences {
         }
     }
 
-    fn read_seq(&mut self) -> io::Result<InputSeq> {
+    fn read_seq(&mut self) -> Result<InputSeq> {
         if let Some(b) = self.read_byte()? {
             self.decode(b)
         } else {
@@ -297,7 +298,7 @@ impl InputSequences {
 }
 
 impl Iterator for InputSequences {
-    type Item = io::Result<InputSeq>;
+    type Item = Result<InputSeq>;
 
     // Read next byte from stdin with timeout 100ms. If nothing was read, it returns InputSeq::Unidentified.
     // This method never returns None so for loop never ends

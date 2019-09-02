@@ -10,6 +10,7 @@
 
 mod ansi_color;
 mod editor;
+mod error;
 mod highlight;
 mod input;
 mod language;
@@ -23,6 +24,7 @@ mod text_buffer;
 mod ui_test;
 
 pub use editor::Editor;
+pub use error::{Error, Result};
 pub use input::StdinRawMode;
 pub use language::Language;
 pub use screen::{Screen, HELP, VERSION};

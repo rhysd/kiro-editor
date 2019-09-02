@@ -7,7 +7,7 @@ use std::env;
 use std::io;
 use std::process::exit;
 
-use kiro_editor::{Editor, StdinRawMode, HELP, VERSION};
+use kiro_editor::{self as kiro, Editor, StdinRawMode, HELP, VERSION};
 
 fn print_help(program: &str, opts: Options) {
     let description = format!(
@@ -29,7 +29,7 @@ Mappings:
     println!("{}", opts.usage(&description));
 }
 
-fn edit(files: Vec<String>) -> io::Result<()> {
+fn edit(files: Vec<String>) -> kiro::Result<()> {
     // TODO: Read input from stdin before start
     let input = StdinRawMode::new()?.input_keys();
     Editor::open(input, io::stdout(), None, &files)?.edit()
