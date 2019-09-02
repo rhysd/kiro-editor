@@ -8,7 +8,6 @@
 #![allow(clippy::useless_let_if_seq)]
 #![allow(clippy::cognitive_complexity)]
 
-mod ansi_color;
 mod editor;
 mod error;
 mod highlight;
@@ -18,6 +17,7 @@ mod row;
 mod screen;
 mod signal;
 mod status_bar;
+mod term_color;
 mod text_buffer;
 
 #[cfg(test)]

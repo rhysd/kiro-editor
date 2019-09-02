@@ -280,13 +280,17 @@ the global variables and local static variables by moving them to each logic's s
   each `Row` with highlight colors by outputting characters and escape sequences to STDOUT. As described
   in previous section, it manages efficient rendering. It also manages and renders status bar and message
   bar located at bottom of screen.
-- [`ansi_color.rs`](src/ansi_color.rs): Exports small `AnsiColor` struct, which represents terminal
-  colors. This module also has logic to detect 24-bit colors and 256 colors support of terminal.
+- [`status_bar.rs`](src/status_bar.rs): Exports `StatusBar` struct which manages fields displayed in the
+  status bar. It has flag `redraw` to determine if it should be re-rendered.
+- [`term_color.rs`](src/term_color.rs): Exports small `TermColor` enum and `Color` enum, which represents
+  terminal colors. This module also has logic to detect 24-bit colors and 256 colors support of terminal.
 - [`language.rs`](src/language.rs): Exports small `Language` enum, which represents file types like
   C, Rust, Go, JavaScript, C++. It contains logic to detect a file type from file name.
 - [`signal.rs`](src/signal.rs): Exports `SigwinchWatcher` struct, which receives SIGWINCH signal and
   notifies it to `Screen`. The signal is sent when terminal window size changed. `Screen` requires
   the notification for resizing the screen.
+- [`error.rs`](src/error.rs): Exports `Error` enum and `Result<T>` type to handle all kinds of error
+  which may occur in Kiro editor.
 
 #### Error handling and resource clean up
 
@@ -440,13 +444,15 @@ text editor on terminal works.
 
 - Unit tests are not sufficient. More tests should be added
 - Improve scrolling performance
+- Minimal documentation
 - Undo/Redo is not implemented yet
 - Text selection and copy from or paste to system clipboard
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
   screen (`rowoff..rowoff+num_rows`)
 - Use parser library [combine](https://github.com/Marwes/combine) or [nom](https://github.com/Geal/nom)
   to calculate highlighting. Need some investigation since highlight parser must stop calculating when
-  current line exceeds the bottom line of screen
+  current line exceeds the bottom line of screen. Also [syntect](https://github.com/trishume/syntect) is
+  interesting.
 
 
 ### Future Works

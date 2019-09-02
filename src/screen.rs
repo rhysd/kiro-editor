@@ -1,10 +1,10 @@
-use crate::ansi_color::{AnsiColor, ColorSupport};
 use crate::error::{Error, Result};
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::signal::SigwinchWatcher;
 use crate::status_bar::StatusBar;
+use crate::term_color::{Color, TermColor};
 use crate::text_buffer::TextBuffer;
 use std::cmp;
 use std::io::Write;
@@ -102,10 +102,10 @@ pub struct Screen<W: Write> {
     dirty_start: Option<usize>,
     // Watch resize signal
     sigwinch: SigwinchWatcher,
+    term_color: TermColor,
     pub cursor_moved: bool,
     pub rowoff: usize, // Row scroll offset
     pub coloff: usize, // Column scroll offset
-    pub color_support: ColorSupport,
 }
 
 impl<W: Write> Screen<W> {
@@ -139,10 +139,10 @@ impl<W: Write> Screen<W> {
             )),
             dirty_start: Some(0), // Render entire screen at first paint
             sigwinch: SigwinchWatcher::new()?,
+            term_color: TermColor::from_env(),
             cursor_moved: true,
             rowoff: 0,
             coloff: 0,
-            color_support: ColorSupport::from_env(),
         })
     }
 
@@ -163,7 +163,7 @@ impl<W: Write> Screen<W> {
     fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> Result<()> {
         write!(buf, "\x1b[{}H", self.rows() + 1)?;
 
-        buf.write(AnsiColor::Invert.sequence(self.color_support))?;
+        buf.write(self.term_color.sequence(Color::Invert))?;
 
         let left = status_bar.left();
         // TODO: Handle multi-byte chars correctly
@@ -189,7 +189,7 @@ impl<W: Write> Screen<W> {
         buf.write(right.as_bytes())?;
 
         // Default argument of 'm' command is 0 so it resets attributes
-        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+        buf.write(self.term_color.sequence(Color::Reset))?;
         Ok(())
     }
 
@@ -214,9 +214,9 @@ impl<W: Write> Screen<W> {
             // TODO: Handle multi-byte chars correctly
             let msg = &message.text[..cmp::min(message.text.len(), self.num_cols)];
             if message.kind == StatusMessageKind::Error {
-                buf.write(AnsiColor::RedBG.sequence(self.color_support))?;
+                buf.write(self.term_color.sequence(Color::RedBG))?;
                 buf.write(msg.as_bytes())?;
-                buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+                buf.write(self.term_color.sequence(Color::Reset))?;
             } else {
                 buf.write(msg.as_bytes())?;
             }
@@ -248,11 +248,11 @@ impl<W: Write> Screen<W> {
         rows: &[Row],
         hl: &Highlighting,
     ) -> Result<()> {
-        let mut prev_color = AnsiColor::Reset;
+        let mut prev_color = Color::Reset;
         let row_len = rows.len();
         let num_rows = self.rows();
 
-        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+        buf.write(self.term_color.sequence(Color::Reset))?;
 
         for y in 0..num_rows {
             let file_row = y + self.rowoff;
@@ -268,9 +268,9 @@ impl<W: Write> Screen<W> {
                 if rows.is_empty() && y == num_rows / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
-                    if prev_color != AnsiColor::Reset {
-                        buf.write(AnsiColor::Reset.sequence(self.color_support))?;
-                        prev_color = AnsiColor::Reset;
+                    if prev_color != Color::Reset {
+                        buf.write(self.term_color.sequence(Color::Reset))?;
+                        prev_color = Color::Reset;
                     }
                     buf.write(b"~")?;
                 }
@@ -289,9 +289,9 @@ impl<W: Write> Screen<W> {
                     let color = hl.color();
                     if color != prev_color {
                         if prev_color.is_underlined() {
-                            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Stop underline
+                            buf.write(self.term_color.sequence(Color::Reset))?; // Stop underline
                         }
-                        buf.write(color.sequence(self.color_support))?;
+                        buf.write(self.term_color.sequence(color))?;
                         prev_color = color;
                     }
 
@@ -303,8 +303,8 @@ impl<W: Write> Screen<W> {
             buf.write(b"\x1b[K")?;
         }
 
-        if prev_color != AnsiColor::Reset {
-            buf.write(AnsiColor::Reset.sequence(self.color_support))?; // Ensure to reset color at end of screen
+        if prev_color != Color::Reset {
+            buf.write(self.term_color.sequence(Color::Reset))?; // Ensure to reset color at end of screen
         }
 
         Ok(())
@@ -458,12 +458,12 @@ impl<W: Write> Screen<W> {
             buf.write(left_pad.as_bytes())?;
 
             let help = &help[idx][..cmp::min(help[idx].len(), self.num_cols)];
-            buf.write(AnsiColor::Cyan.sequence(self.color_support))?;
+            buf.write(self.term_color.sequence(Color::Cyan))?;
             let mut cols = help.split(':');
             if let Some(col) = cols.next() {
                 buf.write(col.as_bytes())?;
             }
-            buf.write(AnsiColor::Reset.sequence(self.color_support))?;
+            buf.write(self.term_color.sequence(Color::Reset))?;
             if let Some(col) = cols.next() {
                 write!(buf, ":{}", col)?;
             }

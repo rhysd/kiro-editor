@@ -1,8 +1,8 @@
 use std::iter;
 
-use crate::ansi_color::AnsiColor;
 use crate::language::Language;
 use crate::row::Row;
+use crate::term_color::Color;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Highlight {
@@ -18,8 +18,8 @@ pub enum Highlight {
 }
 
 impl Highlight {
-    pub fn color(self) -> AnsiColor {
-        use AnsiColor::*;
+    pub fn color(self) -> Color {
+        use Color::*;
         use Highlight::*;
         match self {
             Normal => Reset,

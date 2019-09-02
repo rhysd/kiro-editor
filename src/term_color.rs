@@ -1,41 +1,8 @@
 use std::env;
 use term::terminfo::TermInfo;
 
-#[derive(Clone, Copy)]
-pub enum ColorSupport {
-    TrueColor,
-    Extended256,
-    Only16,
-}
-
-impl ColorSupport {
-    pub fn from_env() -> ColorSupport {
-        env::var("COLORTERM")
-            .ok()
-            .and_then(|v| {
-                if v == "truecolor" {
-                    Some(ColorSupport::TrueColor)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| {
-                TermInfo::from_env().ok().and_then(|info| {
-                    info.numbers.get("colors").map(|colors| {
-                        if *colors == 256 {
-                            ColorSupport::Extended256
-                        } else {
-                            ColorSupport::Only16
-                        }
-                    })
-                })
-            })
-            .unwrap_or(ColorSupport::Only16)
-    }
-}
-
-#[derive(PartialEq)]
-pub enum AnsiColor {
+#[derive(PartialEq, Clone, Copy)]
+pub enum Color {
     Reset,
     Red,
     Green,
@@ -49,8 +16,45 @@ pub enum AnsiColor {
     Invert,
 }
 
-impl AnsiColor {
-    pub fn sequence(&self, support: ColorSupport) -> &'static [u8] {
+impl Color {
+    pub fn is_underlined(self) -> bool {
+        self == Color::CyanUnderline
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum TermColor {
+    TrueColor,
+    Extended256,
+    Only16,
+}
+
+impl TermColor {
+    pub fn from_env() -> TermColor {
+        env::var("COLORTERM")
+            .ok()
+            .and_then(|v| {
+                if v == "truecolor" {
+                    Some(TermColor::TrueColor)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                TermInfo::from_env().ok().and_then(|info| {
+                    info.numbers.get("colors").map(|colors| {
+                        if *colors == 256 {
+                            TermColor::Extended256
+                        } else {
+                            TermColor::Only16
+                        }
+                    })
+                })
+            })
+            .unwrap_or(TermColor::Only16)
+    }
+
+    pub fn sequence(self, color: Color) -> &'static [u8] {
         // From color palette of gruvbox: https://github.com/morhetz/gruvbox#palette
         //
         // 'm' sets attributes to text printed after: https://vt100.net/docs/vt100-ug/chapter3.html#SGR
@@ -71,9 +75,9 @@ impl AnsiColor {
             };
         }
 
-        use AnsiColor::*;
-        match support {
-            ColorSupport::TrueColor => match self {
+        use Color::*;
+        match self {
+            TermColor::TrueColor => match color {
                 Reset => concat!(
                     "\x1b[39;0m",
                     rgb_color!(fg, 0xfb, 0xf1, 0xc7),
@@ -91,7 +95,7 @@ impl AnsiColor {
                 RedBG => rgb_color!(bg, 0xcc, 0x24, 0x1d).as_bytes(),
                 Invert => b"\x1b[7m",
             },
-            ColorSupport::Extended256 => match self {
+            TermColor::Extended256 => match color {
                 Reset => b"\x1b[39;0m\x1b[38;5;223m\x1b[48;5;235m",
                 Red => b"\x1b[38;5;167m",
                 Green => b"\x1b[38;5;142m",
@@ -104,7 +108,7 @@ impl AnsiColor {
                 RedBG => b"\x1b[48;5;124m",
                 Invert => b"\x1b[7m",
             },
-            ColorSupport::Only16 => match self {
+            TermColor::Only16 => match color {
                 Reset => b"\x1b[39;0m",
                 Red => b"\x1b[91m",
                 Green => b"\x1b[32m",
@@ -118,9 +122,5 @@ impl AnsiColor {
                 Invert => b"\x1b[7m",
             },
         }
-    }
-
-    pub fn is_underlined(&self) -> bool {
-        *self == AnsiColor::CyanUnderline
     }
 }
