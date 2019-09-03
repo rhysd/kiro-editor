@@ -96,7 +96,7 @@ impl TermColor {
                 Invert => b"\x1b[7m",
             },
             TermColor::Extended256 => match color {
-                Reset => b"\x1b[39;0m\x1b[38;5;223m\x1b[48;5;235m",
+                Reset => b"\x1b[39;0m\x1b[38;5;230m\x1b[48;5;235m",
                 Red => b"\x1b[38;5;167m",
                 Green => b"\x1b[38;5;142m",
                 Gray => b"\x1b[38;5;246m",
