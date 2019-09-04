@@ -126,7 +126,6 @@ Here is some screenshots for basic features.
 <img width=380 height=220 src="https://github.com/rhysd/ss/blob/master/kiro-editor/search.gif?raw=true" alt="screenshot for incremental text search" />
 
 
-
 ### Extended Features
 
 #### Support Editing UTF-8 Text
@@ -154,6 +153,13 @@ with [gruvbox][] color scheme falling back to 256 colors or eventually to 16 col
 - **16 colors**
 
 <img src="https://github.com/rhysd/ss/blob/master/kiro-editor/colors_16.png?raw=true" alt="16 colors screenshot" width=554 height=339 />
+
+#### Handle window resize
+
+Terminal notifies a window resize event via SIGWINCH signal. Kiro catches the signal and properly redraws
+its screen with new window size.
+
+![resize window](https://github.com/rhysd/ss/blob/master/kiro-editor/resize.gif?raw=true)
 
 
 
