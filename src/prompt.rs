@@ -4,7 +4,6 @@ use crate::input::{InputSeq, KeySeq};
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
-use std::cmp;
 use std::io::Write;
 
 #[derive(PartialEq)]
@@ -197,21 +196,8 @@ impl<'a, W: Write> Prompt<'a, W> {
         }
     }
 
-    fn refresh_status_bar(&mut self) {
-        let modified = self.buf.modified();
-        let lang = self.buf.lang();
-        let total_lines = self.buf.rows().len();
-        let line_num = cmp::min(self.buf.cy() + 1, total_lines);
-        let line_pos = (line_num, total_lines);
-
-        self.sb.set_modified(modified);
-        self.sb.set_filename(self.buf.filename());
-        self.sb.set_lang(lang);
-        self.sb.set_line_pos(line_pos);
-    }
-
     fn refresh_screen(&mut self) -> Result<()> {
-        self.refresh_status_bar();
+        self.sb.update_from_buf(&self.buf);
         self.screen.refresh(self.buf, &mut self.hl, &self.sb)?;
         self.sb.redraw = false;
         Ok(())

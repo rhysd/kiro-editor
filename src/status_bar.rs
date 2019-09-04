@@ -1,4 +1,5 @@
 use crate::language::Language;
+use crate::text_buffer::TextBuffer;
 
 #[derive(Default)]
 pub struct StatusBar {
@@ -49,5 +50,12 @@ impl StatusBar {
     pub fn right(&self) -> String {
         let (lang, (y, len)) = (self.lang, self.line_pos);
         format!("{} {}/{}", lang.name(), y, len)
+    }
+
+    pub fn update_from_buf(&mut self, buf: &TextBuffer) {
+        self.set_modified(buf.modified());
+        self.set_lang(buf.lang());
+        self.set_filename(buf.filename());
+        self.set_line_pos((buf.cy() + 1, buf.rows().len()));
     }
 }

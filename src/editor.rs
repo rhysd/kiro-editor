@@ -6,7 +6,6 @@ use crate::prompt::{self, Prompt, PromptResult};
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
-use std::cmp;
 use std::io::Write;
 use std::path::Path;
 use std::str;
@@ -75,19 +74,9 @@ where
     }
 
     fn refresh_status_bar(&mut self) {
-        let modified = self.buf().modified();
-        let buf_pos = (self.buf_idx + 1, self.bufs.len());
-        let lang = self.bufs[self.buf_idx].lang();
-        let total_lines = self.buf().rows().len();
-        let line_num = cmp::min(self.buf().cy() + 1, total_lines);
-        let line_pos = (line_num, total_lines);
-
-        self.status_bar.set_modified(modified);
         self.status_bar
-            .set_filename(self.bufs[self.buf_idx].filename());
-        self.status_bar.set_buf_pos(buf_pos);
-        self.status_bar.set_lang(lang);
-        self.status_bar.set_line_pos(line_pos);
+            .set_buf_pos((self.buf_idx + 1, self.bufs.len()));
+        self.status_bar.update_from_buf(&self.bufs[self.buf_idx]);
     }
 
     fn refresh_screen(&mut self) -> Result<()> {
