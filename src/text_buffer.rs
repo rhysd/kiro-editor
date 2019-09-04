@@ -72,7 +72,7 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self {
             cx: 0,
             cy: 0,
@@ -89,7 +89,7 @@ impl TextBuffer {
         let file = Some(FilePath::from(path));
         if !path.exists() {
             // When the path does not exist, consider it as a new file
-            let mut buf = Self::new();
+            let mut buf = Self::empty();
             buf.file = file;
             buf.modified = true;
             buf.lang = Language::detect(path);

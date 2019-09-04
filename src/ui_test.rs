@@ -56,7 +56,7 @@ fn test_empty_buffer() {
 
     assert!(editor.screen().rows() > 0);
     assert!(editor.screen().cols() > 0);
-    assert_eq!(editor.lines().count(), 0);
+    assert_eq!(editor.lines().collect::<Vec<_>>(), vec![""]);
 
     let msg = editor.screen().message_text();
     assert_eq!(msg, "Ctrl-? for help");

@@ -31,7 +31,7 @@ where
         window_size: Option<(usize, usize)>,
     ) -> Result<Editor<I, W>> {
         let screen = Screen::new(window_size, &mut input, output)?;
-        let buf = TextBuffer::new();
+        let buf = TextBuffer::empty();
         let status_bar = StatusBar::from_buffer(&buf, (1, 1));
         Ok(Editor {
             input,
@@ -103,7 +103,7 @@ where
             false,
         )? {
             let buf = if input.is_empty() {
-                TextBuffer::new()
+                TextBuffer::empty()
             } else {
                 TextBuffer::open(input)?
             };
