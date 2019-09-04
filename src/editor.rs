@@ -214,8 +214,8 @@ where
         // Consume any key
         while let Some(seq) = self.input.next() {
             if self.screen.maybe_resize(&mut self.input)? {
-                // XXX: Status bar is not redrawn
                 self.screen.draw_help()?;
+                self.status_bar.redraw = true;
             }
             if seq?.key != KeySeq::Unidentified {
                 break;
@@ -243,6 +243,13 @@ where
     fn handle_not_mapped(&mut self, seq: InputSeq) {
         self.screen
             .set_error_message(format!("Key '{}' not mapped", seq));
+    }
+
+    fn redraw_screen(&mut self) -> Result<()> {
+        self.screen.set_dirty_start(self.screen.rowoff);
+        self.screen.unset_message();
+        self.status_bar.redraw = true;
+        self.refresh_screen()
     }
 
     fn process_keypress(&mut self, s: InputSeq) -> Result<bool> {
@@ -348,7 +355,7 @@ where
 
         while let Some(seq) = self.input.next() {
             if self.screen.maybe_resize(&mut self.input)? {
-                self.refresh_screen()?;
+                self.redraw_screen()?;
             }
 
             if self.process_keypress(seq?)? {

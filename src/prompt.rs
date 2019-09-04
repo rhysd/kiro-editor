@@ -220,7 +220,11 @@ impl<'a, W: Write> Prompt<'a, W> {
             use KeySeq::*;
 
             if self.screen.maybe_resize(&mut input)? {
+                self.screen.set_dirty_start(self.screen.rowoff);
+                self.sb.redraw = true;
+                self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
                 self.refresh_screen()?;
+                continue;
             }
 
             let seq = seq?;
