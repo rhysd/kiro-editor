@@ -31,14 +31,16 @@ where
         window_size: Option<(usize, usize)>,
     ) -> Result<Editor<I, W>> {
         let screen = Screen::new(window_size, &mut input, output)?;
+        let buf = TextBuffer::new();
+        let status_bar = StatusBar::from_buffer(&buf, (1, 1));
         Ok(Editor {
             input,
             quitting: false,
             hl: Highlighting::default(),
             screen,
-            bufs: vec![TextBuffer::new()],
+            bufs: vec![buf],
             buf_idx: 0,
-            status_bar: StatusBar::default(),
+            status_bar,
         })
     }
 
@@ -54,6 +56,7 @@ where
         let screen = Screen::new(window_size, &mut input, output)?;
         let bufs: Vec<_> = paths.iter().map(TextBuffer::open).collect::<Result<_>>()?;
         let hl = Highlighting::new(bufs[0].lang(), bufs[0].rows());
+        let status_bar = StatusBar::from_buffer(&bufs[0], (1, bufs.len()));
         Ok(Editor {
             input,
             quitting: false,
@@ -61,7 +64,7 @@ where
             screen,
             bufs,
             buf_idx: 0,
-            status_bar: StatusBar::default(),
+            status_bar,
         })
     }
 

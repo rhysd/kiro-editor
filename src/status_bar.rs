@@ -1,7 +1,6 @@
 use crate::language::Language;
 use crate::text_buffer::TextBuffer;
 
-#[derive(Default)]
 pub struct StatusBar {
     pub modified: bool,
     pub filename: String,
@@ -36,6 +35,17 @@ impl StatusBar {
     setter!(set_filename, filename, &str, filename.to_string());
     setter!(set_lang, lang, Language);
     setter!(set_line_pos, line_pos, (usize, usize));
+
+    pub fn from_buffer(buf: &TextBuffer, buf_pos: (usize, usize)) -> Self {
+        Self {
+            modified: buf.modified(),
+            filename: buf.filename().to_string(),
+            lang: buf.lang(),
+            buf_pos,
+            line_pos: (buf.cy() + 1, buf.rows().len()),
+            redraw: false,
+        }
+    }
 
     pub fn left(&self) -> String {
         format!(

@@ -54,7 +54,6 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
-#[derive(Default)]
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
@@ -74,29 +73,41 @@ pub struct TextBuffer {
 
 impl TextBuffer {
     pub fn new() -> Self {
-        let mut buf = Self::default();
-        buf.dirty_start = Some(0); // Ensure to render first screen
-        buf
+        Self {
+            cx: 0,
+            cy: 0,
+            file: None,
+            row: vec![Row::new("")], // Ensure that every text ends with newline
+            modified: false,
+            lang: Language::Plain,
+            dirty_start: Some(0), // Ensure to render first screen
+        }
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        let mut buf = Self::new();
-
-        if path.exists() {
-            let file = File::open(path)?;
-            buf.row = io::BufReader::new(file)
-                .lines()
-                .map(|r| Ok(Row::new(r?)))
-                .collect::<Result<_>>()?;
-            buf.modified = false;
-        } else {
+        if !path.exists() {
             // When the path does not exist, consider it as a new file
+            let mut buf = Self::new();
             buf.modified = true;
+            buf.lang = Language::detect(path);
+            return Ok(buf);
         }
-        buf.lang = Language::detect(path);
-        buf.file = Some(FilePath::from(path));
-        Ok(buf)
+
+        let row = io::BufReader::new(File::open(path)?)
+            .lines()
+            .map(|r| Ok(Row::new(r?)))
+            .collect::<Result<_>>()?;
+
+        Ok(Self {
+            cx: 0,
+            cy: 0,
+            file: Some(FilePath::from(path)),
+            row,
+            modified: false,
+            lang: Language::detect(path),
+            dirty_start: Some(0),
+        })
     }
 
     fn set_dirty_start(&mut self) {
