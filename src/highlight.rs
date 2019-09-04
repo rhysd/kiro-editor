@@ -14,6 +14,7 @@ pub enum Highlight {
     Type,
     Char,
     Statement,
+    Function,
     Match,
 }
 
@@ -30,6 +31,7 @@ impl Highlight {
             Type => Yellow,
             Char => Green,
             Statement => Red,
+            Function => BrightYellow,
             Match => CyanUnderline,
         }
     }
@@ -43,6 +45,7 @@ struct SyntaxHighlight {
     bin_number: bool,
     number_delim: Option<char>,
     character: bool,
+    function: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
     keywords: &'static [&'static str],
@@ -58,6 +61,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: None,
     string_quotes: &[],
     character: false,
+    function: false,
     line_comment: None,
     block_comment: None,
     keywords: &[],
@@ -73,6 +77,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: None,
     string_quotes: &['"'],
     character: true,
+    function: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -96,6 +101,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: Some('_'),
     string_quotes: &['"'],
     character: true,
+    function: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -120,6 +126,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: None,
     string_quotes: &['"', '\''],
     character: false,
+    function: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -193,6 +200,7 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: Some('_'),
     string_quotes: &['"', '`'],
     character: true,
+    function: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -256,6 +264,7 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number_delim: Some('\''),
     string_quotes: &['"'],
     character: true,
+    function: true,
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
@@ -468,6 +477,15 @@ impl Highlighting {
             }
         }
 
+        fn lex_ident(input: &str) -> Option<(&str, char)> {
+            for (i, c) in input.char_indices() {
+                if !c.is_ascii_alphanumeric() && c != '_' {
+                    return Some((&input[..i], c));
+                }
+            }
+            None
+        }
+
         #[derive(PartialEq)]
         enum Num {
             Digit,
@@ -601,6 +619,24 @@ impl Highlighting {
                         iter.nth(len - 2);
 
                         continue;
+                    }
+                }
+
+                if hl == Highlight::Normal && self.syntax.function && is_bound {
+                    let line = &row.render_text()[idx..];
+                    if let Some((ident, next_char)) = lex_ident(line) {
+                        let len = ident.len();
+                        if len > 0 && next_char == '(' {
+                            self.replace(y, x, x + len, Highlight::Function);
+
+                            prev_hl = Highlight::Function;
+                            prev_char = line.chars().nth(len - 1).unwrap();
+                            // Consume keyword from input. `- 2` because first character will be
+                            // consumed by the while statement
+                            iter.nth(len - 2);
+
+                            continue;
+                        }
                     }
                 }
 
