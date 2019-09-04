@@ -446,7 +446,7 @@ text editor on terminal works.
 ### TODO
 
 - Unit tests are not sufficient. More tests should be added
-- Improve scrolling performance
+- Improve scrolling performance (Is terminal scrolling available?)
 - Minimal documentation
 - Undo/Redo is not implemented yet
 - Text selection and copy from or paste to system clipboard

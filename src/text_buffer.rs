@@ -86,9 +86,11 @@ impl TextBuffer {
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
+        let file = Some(FilePath::from(path));
         if !path.exists() {
             // When the path does not exist, consider it as a new file
             let mut buf = Self::new();
+            buf.file = file;
             buf.modified = true;
             buf.lang = Language::detect(path);
             return Ok(buf);
@@ -102,7 +104,7 @@ impl TextBuffer {
         Ok(Self {
             cx: 0,
             cy: 0,
-            file: Some(FilePath::from(path)),
+            file,
             row,
             modified: false,
             lang: Language::detect(path),

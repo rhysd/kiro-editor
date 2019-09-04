@@ -41,6 +41,7 @@ struct SyntaxHighlight {
     number: bool,
     hex_number: bool,
     bin_number: bool,
+    number_delim: Option<char>,
     character: bool,
     line_comment: Option<&'static str>,
     block_comment: Option<(&'static str, &'static str)>,
@@ -54,6 +55,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number: false,
     hex_number: false,
     bin_number: false,
+    number_delim: None,
     string_quotes: &[],
     character: false,
     line_comment: None,
@@ -68,6 +70,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number: true,
     hex_number: true,
     bin_number: false,
+    number_delim: None,
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -90,6 +93,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number: true,
     hex_number: true,
     bin_number: true,
+    number_delim: Some('_'),
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -113,6 +117,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number: true,
     hex_number: true,
     bin_number: false,
+    number_delim: None,
     string_quotes: &['"', '\''],
     character: false,
     line_comment: Some("//"),
@@ -184,7 +189,8 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Go,
     number: true,
     hex_number: true,
-    bin_number: false,
+    bin_number: true,
+    number_delim: Some('_'),
     string_quotes: &['"', '`'],
     character: true,
     line_comment: Some("//"),
@@ -247,6 +253,7 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     number: true,
     hex_number: true,
     bin_number: true,
+    number_delim: Some('\''),
     string_quotes: &['"'],
     character: true,
     line_comment: Some("//"),
@@ -527,7 +534,10 @@ impl Highlighting {
                     }
                 }
 
-                if hl == Highlight::Normal && self.syntax.character {
+                if hl == Highlight::Normal
+                    && self.syntax.character
+                    && !(self.syntax.number_delim == Some('\'') && prev_hl == Highlight::Number)
+                {
                     let mut i = row.render_text()[idx..].chars();
                     let len = match (i.next(), i.next(), i.next(), i.next()) {
                         (Some('\''), Some('\\'), _, Some('\'')) => Some(4),
@@ -586,7 +596,7 @@ impl Highlighting {
 
                         prev_hl = highlight;
                         prev_char = line.chars().nth(len - 1).unwrap();
-                        // Consume keyword from input. `- 2` because first character was already
+                        // Consume keyword from input. `- 2` because first character will be
                         // consumed by the while statement
                         iter.nth(len - 2);
 
@@ -597,7 +607,10 @@ impl Highlighting {
                 if hl == Highlight::Normal && self.syntax.hex_number {
                     let line = row.render_text()[idx..].as_bytes();
                     if is_bound {
-                        if line.starts_with(b"0x") && line.len() > 2 && line[2].is_ascii_hexdigit()
+                        if line.starts_with(b"0x")
+                            && line.len() > 2
+                            && (line[2].is_ascii_hexdigit()
+                                || self.syntax.number_delim == Some(line[2] as char))
                         {
                             self.lines[y][x] = Highlight::Number;
                             self.lines[y][x + 1] = Highlight::Number;
@@ -618,7 +631,11 @@ impl Highlighting {
                 if hl == Highlight::Normal && self.syntax.bin_number {
                     let line = row.render_text()[idx..].as_bytes();
                     if is_bound {
-                        if line.starts_with(b"0b") && line.len() > 2 && b"01".contains(&line[2]) {
+                        if line.starts_with(b"0b")
+                            && line.len() > 2
+                            && (b"01".contains(&line[2])
+                                || self.syntax.number_delim == Some(line[2] as char))
+                        {
                             self.lines[y][x] = Highlight::Number;
                             self.lines[y][x + 1] = Highlight::Number;
                             num = Num::Bin;
@@ -639,6 +656,12 @@ impl Highlighting {
                 {
                     hl = Highlight::Number;
                     num = Num::Digit;
+                }
+
+                if let Some(delim) = self.syntax.number_delim {
+                    if hl == Highlight::Normal && c == delim && prev_hl == Highlight::Number {
+                        hl = Highlight::Number;
+                    }
                 }
 
                 self.lines[y][x] = hl;
