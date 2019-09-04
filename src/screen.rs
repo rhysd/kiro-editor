@@ -3,7 +3,6 @@ use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::signal::SigwinchWatcher;
-use crate::status_bar::StatusBar;
 use crate::term_color::{Color, TermColor};
 use crate::text_buffer::TextBuffer;
 use std::cmp;
@@ -160,12 +159,22 @@ impl<W: Write> Screen<W> {
         line.chars().skip(self.coloff).take(self.num_cols).collect()
     }
 
-    fn draw_status_bar<B: Write>(&self, mut buf: B, status_bar: &StatusBar) -> Result<()> {
+    fn draw_status_bar<B: Write>(&self, mut buf: B, text_buf: &TextBuffer) -> Result<()> {
         write!(buf, "\x1b[{}H", self.rows() + 1)?;
 
         buf.write(self.term_color.sequence(Color::Invert))?;
 
-        let left = status_bar.left();
+        let left = format!(
+            "{:<20?} - {}/{} {}",
+            text_buf.filename(),
+            text_buf.buf_pos().0,
+            text_buf.buf_pos().1,
+            if text_buf.modified() {
+                "(modified) "
+            } else {
+                ""
+            }
+        );
         // TODO: Handle multi-byte chars correctly
         let left = &left[..cmp::min(left.len(), self.num_cols)];
         buf.write(left.as_bytes())?; // Left of status bar
@@ -175,7 +184,12 @@ impl<W: Write> Screen<W> {
             return Ok(());
         }
 
-        let right = status_bar.right();
+        let right = format!(
+            "{} {}/{}",
+            text_buf.lang().name(),
+            text_buf.cy() + 1,
+            text_buf.rows().len()
+        );
         if right.len() > rest_len {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
@@ -316,17 +330,13 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn redraw(
-        &mut self,
-        text_buf: &TextBuffer,
-        hl: &Highlighting,
-        status_bar: &StatusBar,
-    ) -> Result<Option<usize>> {
+    fn redraw(&mut self, text_buf: &TextBuffer, hl: &Highlighting) -> Result<Option<usize>> {
         let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
         let redraw_message_bar = self.should_redraw_message_bar()?;
+        let redraw_status_bar = text_buf.should_redraw_status_bar();
 
-        if self.dirty_start.is_none() && !status_bar.redraw && !redraw_message_bar {
+        if self.dirty_start.is_none() && !redraw_status_bar && !redraw_message_bar {
             if self.cursor_moved {
                 write!(self.output, "\x1b[{};{}H", cursor_row, cursor_col)?;
                 self.output.flush()?;
@@ -354,8 +364,8 @@ impl<W: Write> Screen<W> {
 
         // Previously message bar was not squashed but now it is squashed so it is being squashed now
         let squashing_message_bar = message_was_squashed != self.message_bar_squashed();
-        if status_bar.redraw || squashing_message_bar {
-            self.draw_status_bar(&mut buf, status_bar)?;
+        if redraw_status_bar || squashing_message_bar {
+            self.draw_status_bar(&mut buf, text_buf)?;
         }
 
         // Move cursor even if cursor_moved is false since cursor is moved by draw_* methods
@@ -425,15 +435,10 @@ impl<W: Write> Screen<W> {
         }
     }
 
-    pub fn refresh(
-        &mut self,
-        buf: &TextBuffer,
-        hl: &mut Highlighting,
-        status_bar: &StatusBar,
-    ) -> Result<()> {
+    pub fn refresh(&mut self, buf: &TextBuffer, hl: &mut Highlighting) -> Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
         hl.update(buf.rows(), self.rowoff + self.rows());
-        self.dirty_start = self.redraw(buf, hl, status_bar)?;
+        self.dirty_start = self.redraw(buf, hl)?;
         self.cursor_moved = false;
         Ok(())
     }

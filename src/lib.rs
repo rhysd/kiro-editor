@@ -17,7 +17,6 @@ mod prompt;
 mod row;
 mod screen;
 mod signal;
-mod status_bar;
 mod term_color;
 mod text_buffer;
 
