@@ -2,6 +2,7 @@ use crate::error::Result;
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
 use crate::screen::Screen;
+use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
 use std::io::Write;
 
@@ -174,28 +175,31 @@ pub struct Prompt<'a, W: Write> {
     screen: &'a mut Screen<W>,
     buf: &'a mut TextBuffer,
     hl: &'a mut Highlighting,
+    sb: &'a mut StatusBar,
     empty_is_cancel: bool,
 }
 
 impl<'a, W: Write> Prompt<'a, W> {
-    pub fn new<'s: 'a, 'tb: 'a, 'h: 'a>(
+    pub fn new<'s: 'a, 'tb: 'a, 'h: 'a, 'sb: 'a>(
         screen: &'s mut Screen<W>,
         buf: &'tb mut TextBuffer,
         hl: &'h mut Highlighting,
+        sb: &'sb mut StatusBar,
         empty_is_cancel: bool,
     ) -> Self {
         Self {
             screen,
             buf,
             hl,
+            sb,
             empty_is_cancel,
         }
     }
 
     fn refresh_screen(&mut self) -> Result<()> {
-        self.buf.check_line_pos_changed();
-        self.screen.refresh(self.buf, &mut self.hl)?;
-        self.buf.status_bar_was_drawn();
+        self.sb.update_from_buf(&self.buf);
+        self.screen.refresh(self.buf, &mut self.hl, &self.sb)?;
+        self.sb.redraw = false;
         Ok(())
     }
 
@@ -249,7 +253,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             PromptResult::Canceled
         } else {
             self.screen.unset_message();
-            self.buf.force_redraw_status_bar();
+            self.sb.redraw = true;
             PromptResult::Input(buf)
         };
 

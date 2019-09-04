@@ -4,6 +4,7 @@ use crate::input::{InputSeq, KeySeq};
 use crate::language::Language;
 use crate::prompt::{self, Prompt, PromptResult};
 use crate::screen::Screen;
+use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::io::Write;
 use std::path::Path;
@@ -16,6 +17,7 @@ pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
     screen: Screen<W>,
     bufs: Vec<TextBuffer>,
     buf_idx: usize,
+    status_bar: StatusBar,
 }
 
 impl<I, W> Editor<I, W>
@@ -29,7 +31,8 @@ where
         window_size: Option<(usize, usize)>,
     ) -> Result<Editor<I, W>> {
         let screen = Screen::new(window_size, &mut input, output)?;
-        let buf = TextBuffer::new((1, 1));
+        let buf = TextBuffer::new();
+        let status_bar = StatusBar::from_buffer(&buf, (1, 1));
         Ok(Editor {
             input,
             quitting: false,
@@ -37,6 +40,7 @@ where
             screen,
             bufs: vec![buf],
             buf_idx: 0,
+            status_bar,
         })
     }
 
@@ -49,14 +53,10 @@ where
         if paths.is_empty() {
             return Self::new(input, output, window_size);
         }
-        let len = paths.len();
         let screen = Screen::new(window_size, &mut input, output)?;
-        let bufs: Vec<_> = paths
-            .iter()
-            .enumerate()
-            .map(|(i, p)| TextBuffer::open(p, (i + 1, len)))
-            .collect::<Result<_>>()?;
+        let bufs: Vec<_> = paths.iter().map(TextBuffer::open).collect::<Result<_>>()?;
         let hl = Highlighting::new(bufs[0].lang(), bufs[0].rows());
+        let status_bar = StatusBar::from_buffer(&bufs[0], (1, bufs.len()));
         Ok(Editor {
             input,
             quitting: false,
@@ -64,6 +64,7 @@ where
             screen,
             bufs,
             buf_idx: 0,
+            status_bar,
         })
     }
 
@@ -75,11 +76,17 @@ where
         &mut self.bufs[self.buf_idx]
     }
 
+    fn refresh_status_bar(&mut self) {
+        self.status_bar
+            .set_buf_pos((self.buf_idx + 1, self.bufs.len()));
+        self.status_bar.update_from_buf(&self.bufs[self.buf_idx]);
+    }
+
     fn refresh_screen(&mut self) -> Result<()> {
-        self.buf_mut().check_line_pos_changed(); // For status bar
-        let b = &self.bufs[self.buf_idx];
-        self.screen.refresh(b, &mut self.hl)?;
-        self.buf_mut().status_bar_was_drawn();
+        self.refresh_status_bar();
+        self.screen
+            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
+        self.status_bar.redraw = false;
         Ok(())
     }
 
@@ -87,30 +94,26 @@ where
         self.screen.set_dirty_start(0);
         self.screen.rowoff = 0;
         self.screen.coloff = 0;
-        self.buf_mut().force_redraw_status_bar();
         self.refresh_screen()
     }
 
     fn open_buffer(&mut self) -> Result<()> {
-        let idx = self.bufs.len();
-        let next_len = idx + 1;
-        let buf_pos = (idx, next_len);
-        let buf = match self.prompt_new(
+        if let PromptResult::Input(input) = self.prompt_new(
             "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
             false,
         )? {
-            PromptResult::Input(ref i) if i.is_empty() => TextBuffer::new(buf_pos),
-            PromptResult::Input(i) => TextBuffer::open(i, buf_pos)?,
-            PromptResult::Canceled => return Ok(()),
-        };
-
-        for b in self.bufs.iter_mut() {
-            b.set_pos((b.buf_pos().0, next_len)); // Update buffer positions of existing buffers
+            let buf = if input.is_empty() {
+                TextBuffer::new()
+            } else {
+                TextBuffer::open(input)?
+            };
+            self.hl = Highlighting::new(buf.lang(), buf.rows());
+            self.bufs.push(buf);
+            self.buf_idx = self.bufs.len() - 1;
+            self.reset_screen()
+        } else {
+            Ok(()) // Canceled
         }
-        self.hl = Highlighting::new(buf.lang(), buf.rows());
-        self.bufs.push(buf);
-        self.buf_idx = idx;
-        self.reset_screen()
     }
 
     fn switch_buffer(&mut self, idx: usize) -> Result<()> {
@@ -155,6 +158,7 @@ where
             &mut self.screen,
             &mut self.bufs[self.buf_idx],
             &mut self.hl,
+            &mut self.status_bar,
             empty_is_cancel,
         )
         .run::<prompt::NoAction, _, _>(prompt, &mut self.input)
@@ -197,6 +201,7 @@ where
             &mut self.screen,
             &mut self.bufs[self.buf_idx],
             &mut self.hl,
+            &mut self.status_bar,
             true,
         )
         .run::<prompt::TextSearch, _, _>(prompt, &mut self.input)?;
@@ -286,7 +291,7 @@ where
                 Key(b'l') => {
                     self.screen.set_dirty_start(self.screen.rowoff); // Clear
                     self.screen.unset_message();
-                    self.buf_mut().force_redraw_status_bar();
+                    self.status_bar.redraw = true;
                 }
                 Key(b's') => self.save()?,
                 Key(b'i') => self.buf_mut().insert_tab(),

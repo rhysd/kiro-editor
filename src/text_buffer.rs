@@ -66,19 +66,13 @@ pub struct TextBuffer {
     modified: bool,
     // Language which current buffer belongs to
     lang: Language,
-    // Position of this buffer among all buffers
-    buf_pos: (usize, usize),
-    // Flag to or not to redraw status bar
-    dirty_status_bar: bool,
-    // Previous current line number and total line number. This is necessary for status bar
-    prev_line_pos: (usize, usize),
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
 }
 
 impl TextBuffer {
-    pub fn new(buf_pos: (usize, usize)) -> Self {
+    pub fn new() -> Self {
         Self {
             cx: 0,
             cy: 0,
@@ -86,24 +80,21 @@ impl TextBuffer {
             row: vec![Row::new("")], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
-            buf_pos,
-            dirty_status_bar: true,
-            prev_line_pos: (1, 1),
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
 
-    pub fn open<P: AsRef<Path>>(path: P, buf_pos: (usize, usize)) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
             // When the path does not exist, consider it as a new file
-            let mut buf = Self::new(buf_pos);
+            let mut buf = Self::new();
             buf.modified = true;
             buf.lang = Language::detect(path);
             return Ok(buf);
         }
 
-        let row: Vec<_> = io::BufReader::new(File::open(path)?)
+        let row = io::BufReader::new(File::open(path)?)
             .lines()
             .map(|r| Ok(Row::new(r?)))
             .collect::<Result<_>>()?;
@@ -112,12 +103,9 @@ impl TextBuffer {
             cx: 0,
             cy: 0,
             file: Some(FilePath::from(path)),
+            row,
             modified: false,
             lang: Language::detect(path),
-            buf_pos,
-            dirty_status_bar: true,
-            prev_line_pos: (1, row.len()),
-            row,
             dirty_start: Some(0),
         })
     }
@@ -131,24 +119,14 @@ impl TextBuffer {
         self.dirty_start = Some(self.cy);
     }
 
-    fn set_modified(&mut self, modified: bool) {
-        if modified {
-            self.set_dirty_start(); // When buffer is modified, redraw happens
-        }
-        if self.modified == modified {
-            return;
-        }
-        self.dirty_status_bar = true;
-        self.modified = modified;
-    }
-
     pub fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
             self.row.push(Row::default());
         }
         self.row[self.cy].insert_char(self.cx, ch);
         self.cx += 1;
-        self.set_modified(true);
+        self.modified = true;
+        self.set_dirty_start();
     }
 
     pub fn insert_tab(&mut self) {
@@ -165,7 +143,8 @@ impl TextBuffer {
         let s = s.as_ref();
         self.row[self.cy].insert_str(self.cx, s);
         self.cx += s.as_bytes().len();
-        self.set_modified(true);
+        self.modified = true;
+        self.set_dirty_start();
     }
 
     pub fn squash_to_previous_line(&mut self) {
@@ -174,7 +153,8 @@ impl TextBuffer {
         let row = self.row.remove(self.cy);
         self.cy -= 1; // Move cursor to previous line
         self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
-        self.set_modified(true);
+        self.modified = true;
+        self.set_dirty_start();
     }
 
     pub fn delete_char(&mut self) {
@@ -184,7 +164,8 @@ impl TextBuffer {
         if self.cx > 0 {
             self.row[self.cy].delete_char(self.cx - 1);
             self.cx -= 1;
-            self.set_modified(true);
+            self.modified = true;
+            self.set_dirty_start();
         } else {
             self.squash_to_previous_line();
         }
@@ -205,7 +186,8 @@ impl TextBuffer {
         } else {
             self.row[self.cy].truncate(self.cx);
         }
-        self.set_modified(true);
+        self.modified = true;
+        self.set_dirty_start();
     }
 
     pub fn delete_until_head_of_line(&mut self) {
@@ -217,7 +199,8 @@ impl TextBuffer {
         } else {
             self.row[self.cy].remove(0, self.cx);
             self.cx = 0;
-            self.set_modified(true);
+            self.modified = true;
+            self.set_dirty_start();
         }
     }
 
@@ -239,7 +222,8 @@ impl TextBuffer {
         if x < self.cx {
             self.row[self.cy].remove(x, self.cx);
             self.cx = x;
-            self.set_modified(true);
+            self.modified = true;
+            self.set_dirty_start();
         }
     }
 
@@ -430,14 +414,6 @@ impl TextBuffer {
         self.lang
     }
 
-    fn set_lang(&mut self, lang: Language) {
-        if lang == self.lang {
-            return;
-        }
-        self.dirty_status_bar = true;
-        self.lang = lang;
-    }
-
     pub fn cx(&self) -> usize {
         self.cx
     }
@@ -452,21 +428,11 @@ impl TextBuffer {
 
     pub fn set_file<S: Into<String>>(&mut self, file_path: S) {
         let file = FilePath::from_string(file_path);
-        if let Some(f) = &self.file {
-            if f.path == file.path {
-                return;
-            }
-        }
-        self.set_lang(Language::detect(&file.path));
+        self.lang = Language::detect(&file.path);
         self.file = Some(file);
-        self.dirty_status_bar = true;
     }
 
     pub fn set_unnamed(&mut self) {
-        if self.file.is_none() {
-            return;
-        }
-        self.dirty_status_bar = true;
         self.file = None;
     }
 
@@ -491,45 +457,12 @@ impl TextBuffer {
         f.flush()
             .map_err(|e| format!("Could not flush to file: {}", e))?;
 
-        let msg = format!("{} bytes written to {}", bytes, &file.display);
-
-        self.set_modified(false);
-        Ok(msg)
+        self.modified = false;
+        Ok(format!("{} bytes written to {}", bytes, &file.display))
     }
 
     pub fn set_cursor(&mut self, x: usize, y: usize) {
         self.cx = x;
         self.cy = y;
-    }
-
-    pub fn set_pos(&mut self, pos: (usize, usize)) {
-        if pos != self.buf_pos {
-            self.dirty_status_bar = true;
-        }
-        self.buf_pos = pos;
-    }
-
-    pub fn buf_pos(&self) -> (usize, usize) {
-        self.buf_pos
-    }
-
-    pub fn check_line_pos_changed(&mut self) {
-        let (prev_cy, prev_row_len) = self.prev_line_pos;
-        if prev_cy != self.cy || prev_row_len != self.row.len() {
-            self.dirty_status_bar = true;
-        }
-    }
-
-    pub fn status_bar_was_drawn(&mut self) {
-        self.dirty_status_bar = false;
-        self.prev_line_pos = (self.cy, self.row.len());
-    }
-
-    pub fn should_redraw_status_bar(&self) -> bool {
-        self.dirty_status_bar
-    }
-
-    pub fn force_redraw_status_bar(&mut self) {
-        self.dirty_status_bar = true;
     }
 }
