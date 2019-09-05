@@ -4,7 +4,7 @@ use crate::language::Language;
 use crate::row::Row;
 use crate::term_color::Color;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Highlight {
     Normal,
     Number,
@@ -12,6 +12,7 @@ pub enum Highlight {
     Comment,
     Keyword,
     Type,
+    Definition,
     Char,
     Statement,
     Match,
@@ -27,7 +28,8 @@ impl Highlight {
             String => Green,
             Comment => Gray,
             Keyword => Blue,
-            Type => Yellow,
+            Type => Orange,
+            Definition => Yellow,
             Char => Green,
             Statement => Red,
             Match => CyanUnderline,
@@ -48,6 +50,7 @@ struct SyntaxHighlight {
     keywords: &'static [&'static str],
     control_statements: &'static [&'static str],
     builtin_types: &'static [&'static str],
+    definition_keywords: &'static [&'static str],
 }
 
 const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -63,6 +66,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     keywords: &[],
     control_statements: &[],
     builtin_types: &[],
+    definition_keywords: &[],
 };
 
 const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -86,6 +90,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     builtin_types: &[
         "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void",
     ],
+    definition_keywords: &["enum", "struct", "union"],
 };
 
 const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -110,6 +115,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usuze",
         "f32", "f64", "bool", "char",
     ],
+    definition_keywords: &["fn", "let", "const", "mod", "struct", "enum", "trait"],
 };
 
 const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -133,6 +139,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "import",
         "in",
         "instanceof",
+        "let",
         "new",
         "super",
         "this",
@@ -183,6 +190,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "Intl",
         "WebAssembly",
     ],
+    definition_keywords: &["class", "const", "function", "var", "let"],
 };
 
 const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -245,6 +253,15 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "uint64",
         "uint8",
         "uintptr",
+    ],
+    definition_keywords: &[
+        "const",
+        "func",
+        "interface",
+        "package",
+        "struct",
+        "type",
+        "var",
     ],
 };
 
@@ -342,6 +359,15 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     builtin_types: &[
         "char", "char8_t", "char16_t", "char32_t", "double", "float", "int", "long", "short",
         "signed", "unsigned", "void", "wchar_t",
+    ],
+    definition_keywords: &[
+        "class",
+        "concept",
+        "enum",
+        "namespace",
+        "typename",
+        "union",
+        "module",
     ],
 };
 
@@ -451,20 +477,17 @@ impl Highlighting {
             c.is_ascii_whitespace() || (c.is_ascii_punctuation() && c != '_') || c == '\0'
         }
 
-        fn starts_with_word(input: &str, word: &str) -> bool {
-            if !input.starts_with(word) {
-                return false;
+        fn lex_ident(mut input: &str) -> Option<&str> {
+            for (i, c) in input.char_indices() {
+                if is_sep(c) {
+                    input = &input[..i];
+                    break;
+                }
             }
-
-            let word_len = word.len();
-            if input.len() == word_len {
-                return true;
-            }
-
-            if let Some(c) = input.chars().nth(word_len) {
-                is_sep(c)
+            if input.len() == 0 {
+                None
             } else {
-                false
+                Some(input)
             }
         }
 
@@ -489,9 +512,14 @@ impl Highlighting {
             let mut prev_char = '\0';
             let mut num = Num::Digit;
             let mut iter = row.render_text().char_indices().enumerate();
+            let mut after_def_keyword = false;
 
             while let Some((x, (idx, c))) = iter.next() {
                 let mut hl = Highlight::Normal;
+
+                if after_def_keyword && !c.is_ascii_whitespace() && is_sep(c) {
+                    after_def_keyword = false;
+                }
 
                 if let Some((comment_start, comment_end)) = self.syntax.block_comment {
                     if hl == Highlight::Normal && prev_quote.is_none() {
@@ -572,35 +600,53 @@ impl Highlighting {
                 // Highlight identifiers
                 if hl == Highlight::Normal && is_bound {
                     let line = &row.render_text()[idx..];
-                    if let Some((keyword, highlight)) = self
-                        .syntax
-                        .keywords
-                        .iter()
-                        .zip(iter::repeat(Highlight::Keyword))
-                        .chain(
-                            self.syntax
-                                .control_statements
-                                .iter()
-                                .zip(iter::repeat(Highlight::Statement)),
-                        )
-                        .chain(
-                            self.syntax
-                                .builtin_types
-                                .iter()
-                                .zip(iter::repeat(Highlight::Type)),
-                        )
-                        .find(|(k, _)| starts_with_word(line, k))
-                    {
-                        let len = keyword.len();
-                        self.replace(y, x, x + len, highlight);
+                    if let Some(ref ident) = lex_ident(line) {
+                        let highlighted_ident = self
+                            .syntax
+                            .keywords
+                            .iter()
+                            .zip(iter::repeat(Highlight::Keyword))
+                            .chain(
+                                self.syntax
+                                    .control_statements
+                                    .iter()
+                                    .zip(iter::repeat(Highlight::Statement)),
+                            )
+                            .chain(
+                                self.syntax
+                                    .builtin_types
+                                    .iter()
+                                    .zip(iter::repeat(Highlight::Type)),
+                            )
+                            .find(|(k, _)| *k == ident);
 
-                        prev_hl = highlight;
-                        prev_char = line.chars().nth(len - 1).unwrap();
-                        // Consume keyword from input. `- 2` because first character will be
-                        // consumed by the while statement
-                        iter.nth(len - 2);
+                        let found_keyword = highlighted_ident.is_some();
 
-                        continue;
+                        let highlighted_ident = highlighted_ident.or_else(|| {
+                            if after_def_keyword {
+                                Some((ident, Highlight::Definition))
+                            } else {
+                                None
+                            }
+                        });
+
+                        if found_keyword && self.syntax.definition_keywords.contains(&ident) {
+                            after_def_keyword = true;
+                        }
+
+                        if let Some((ident, highlight)) = highlighted_ident {
+                            let len = ident.len();
+                            self.replace(y, x, x + len, highlight);
+
+                            prev_hl = highlight;
+                            prev_char = line.chars().nth(len - 1).unwrap();
+                            // Consume ident from input. Subtracting 2 because first character will be
+                            // consumed by the while statement.
+                            // Note: Using saturating_sub() since identifier may be one character such as 'x'
+                            iter.nth(len.saturating_sub(2));
+
+                            continue;
+                        }
                     }
                 }
 
