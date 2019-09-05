@@ -393,6 +393,348 @@ impl SyntaxHighlight {
     }
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum NumLit {
+    Digit,
+    Hex,
+    Bin,
+}
+
+enum ParseNext {
+    Ahead(usize),
+    Break,
+}
+
+fn is_sep(c: char) -> bool {
+    c.is_ascii_whitespace() || (c.is_ascii_punctuation() && c != '_') || c == '\0'
+}
+
+struct Highlighter<'a> {
+    syntax: &'a SyntaxHighlight,
+    prev_quote: Option<char>,
+    in_block_comment: bool,
+    prev_hl: Highlight,
+    prev_char: char,
+    num: NumLit,
+    after_def_keyword: bool,
+}
+
+impl<'a> Highlighter<'a> {
+    fn new<'b: 'a>(syntax: &'b SyntaxHighlight) -> Self {
+        Self {
+            syntax,
+            prev_quote: None,
+            in_block_comment: false,
+            prev_hl: Highlight::Normal,
+            prev_char: '\0',
+            num: NumLit::Digit,
+            after_def_keyword: false,
+        }
+    }
+
+    fn eat_n(
+        &mut self,
+        out: &mut [Highlight],
+        input: &str,
+        hl: Highlight,
+        len: usize,
+    ) -> ParseNext {
+        debug_assert!(len > 0);
+        debug_assert!(!input.is_empty());
+        debug_assert!(!out.is_empty());
+
+        for out in out.iter_mut().take(len) {
+            *out = hl;
+        }
+        self.prev_hl = hl;
+        self.prev_char = input.chars().take(len - 1).next().unwrap();
+        ParseNext::Ahead(len)
+    }
+
+    fn eat_one(&mut self, out: &mut [Highlight], c: char, hl: Highlight) -> ParseNext {
+        out[0] = hl;
+        self.prev_hl = hl;
+        self.prev_char = c;
+        ParseNext::Ahead(1)
+    }
+
+    fn highlight_block_comment(
+        &mut self,
+        start: &str,
+        end: &str,
+        c: char,
+        out: &mut [Highlight],
+        input: &str,
+    ) -> Option<ParseNext> {
+        if self.prev_quote.is_some() {
+            return None;
+        }
+
+        let comment_delim = if self.in_block_comment && input.starts_with(end) {
+            self.in_block_comment = false;
+            end
+        } else if !self.in_block_comment && input.starts_with(start) {
+            self.in_block_comment = true;
+            start
+        } else {
+            return if self.in_block_comment {
+                Some(self.eat_one(out, c, Highlight::Comment))
+            } else {
+                None
+            };
+        };
+
+        // Consume whole '/*' here. Otherwise such as '/*/' is wrongly accepted
+        Some(self.eat_n(out, input, Highlight::Comment, comment_delim.len()))
+    }
+
+    fn highlight_line_comment(
+        &mut self,
+        leader: &str,
+        out: &mut [Highlight],
+        input: &str,
+    ) -> Option<ParseNext> {
+        if self.prev_quote.is_none() && input.starts_with(leader) {
+            // Highlight as comment until end of line
+            for hl in out.iter_mut() {
+                *hl = Highlight::Comment;
+            }
+            Some(ParseNext::Break)
+        } else {
+            None
+        }
+    }
+
+    fn highlight_string(&mut self, c: char, out: &mut [Highlight]) -> Option<ParseNext> {
+        if let Some(q) = self.prev_quote {
+            // In string literal. XXX: "\\" is not highlighted correctly
+            if self.prev_char != '\\' && q == c {
+                self.prev_quote = None;
+            }
+            Some(self.eat_one(out, c, Highlight::String))
+        } else if self.syntax.string_quotes.contains(&c) {
+            self.prev_quote = Some(c);
+            Some(self.eat_one(out, c, Highlight::String))
+        } else {
+            None
+        }
+    }
+
+    fn highlight_ident(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+        fn lex_ident(mut input: &str) -> Option<&str> {
+            for (i, c) in input.char_indices() {
+                if is_sep(c) {
+                    input = &input[..i];
+                    break;
+                }
+            }
+            if input.is_empty() {
+                None
+            } else {
+                Some(input)
+            }
+        }
+
+        lex_ident(input).and_then(|ref ident| {
+            let highlighted_ident = self
+                .syntax
+                .keywords
+                .iter()
+                .zip(iter::repeat(Highlight::Keyword))
+                .chain(
+                    self.syntax
+                        .control_statements
+                        .iter()
+                        .zip(iter::repeat(Highlight::Statement)),
+                )
+                .chain(
+                    self.syntax
+                        .builtin_types
+                        .iter()
+                        .zip(iter::repeat(Highlight::Type)),
+                )
+                .chain(
+                    self.syntax
+                        .special_vars
+                        .iter()
+                        .zip(iter::repeat(Highlight::SpecialVar)),
+                )
+                .find(|(k, _)| *k == ident);
+
+            let found_keyword = highlighted_ident.is_some();
+
+            let highlighted_ident = highlighted_ident.or_else(|| {
+                if self.after_def_keyword {
+                    Some((ident, Highlight::Definition))
+                } else {
+                    None
+                }
+            });
+
+            if found_keyword && self.syntax.definition_keywords.contains(&ident) {
+                self.after_def_keyword = true;
+            }
+
+            highlighted_ident.map(|(ident, hl)| self.eat_n(out, input, hl, ident.len()))
+        })
+    }
+
+    fn highlight_prefix_number(
+        &mut self,
+        num: NumLit,
+        is_bound: bool,
+        c: char,
+        out: &mut [Highlight],
+        input: &str,
+    ) -> Option<ParseNext> {
+        let prefix: &[_] = match num {
+            NumLit::Hex => b"0x",
+            NumLit::Bin => b"0b",
+            NumLit::Digit => unreachable!(),
+        };
+
+        fn is_num_char(b: u8, num: NumLit, delim: Option<char>) -> bool {
+            match num {
+                NumLit::Hex if b.is_ascii_hexdigit() => true,
+                NumLit::Bin if b"01".contains(&b) => true,
+                _ => delim == Some(b as char),
+            }
+        }
+
+        let bytes = input.as_bytes();
+        if is_bound {
+            if bytes.starts_with(prefix)
+                && bytes.len() > prefix.len()
+                && is_num_char(bytes[prefix.len()], num, self.syntax.number_delim)
+            {
+                self.num = num;
+                return Some(self.eat_n(out, input, Highlight::Number, prefix.len()));
+            }
+        } else if self.num == num
+            && self.prev_hl == Highlight::Number
+            && c.is_ascii()
+            && is_num_char(c as u8, num, self.syntax.number_delim)
+        {
+            return Some(self.eat_one(out, c, Highlight::Number));
+        }
+
+        None
+    }
+
+    fn highlight_digit_number(
+        &mut self,
+        is_bound: bool,
+        c: char,
+        out: &mut [Highlight],
+    ) -> Option<ParseNext> {
+        let prev_is_number = self.num == NumLit::Digit && self.prev_hl == Highlight::Number;
+        if is_bound {
+            if c.is_ascii_digit() || prev_is_number && c == '.' {
+                self.num = NumLit::Digit;
+                return Some(self.eat_one(out, c, Highlight::Number));
+            }
+        } else if prev_is_number && (self.syntax.number_delim == Some(c) || c.is_ascii_digit()) {
+            return Some(self.eat_one(out, c, Highlight::Number));
+        }
+
+        None
+    }
+
+    fn highlight_char(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+        if self.syntax.number_delim == Some('\'') && self.prev_hl == Highlight::Number {
+            return None; // Consider number literal delimiter in C++ (e.g. `123'456'789`)
+        }
+
+        let mut i = input.chars();
+        let len = match (i.next(), i.next(), i.next(), i.next()) {
+            (Some('\''), Some('\\'), _, Some('\'')) => Some(4),
+            (Some('\''), _, Some('\''), _) => Some(3),
+            _ => None,
+        };
+
+        len.map(|len| self.eat_n(out, input, Highlight::Char, len))
+    }
+
+    fn highlight_one(&mut self, c: char, out: &mut [Highlight], input: &str) -> ParseNext {
+        if self.after_def_keyword && !c.is_ascii_whitespace() && is_sep(c) {
+            self.after_def_keyword = false;
+        }
+
+        macro_rules! try_highlight {
+            ($call:expr) => {
+                if let Some(next) = $call {
+                    return next;
+                }
+            };
+        }
+
+        if let Some((comment_start, comment_end)) = self.syntax.block_comment {
+            try_highlight!(self.highlight_block_comment(comment_start, comment_end, c, out, input));
+        }
+
+        if let Some(comment_leader) = self.syntax.line_comment {
+            try_highlight!(self.highlight_line_comment(comment_leader, out, input));
+        }
+
+        if self.syntax.character {
+            try_highlight!(self.highlight_char(out, input));
+        }
+
+        if !self.syntax.string_quotes.is_empty() {
+            try_highlight!(self.highlight_string(c, out));
+        }
+
+        let is_bound = is_sep(self.prev_char) ^ is_sep(c);
+
+        // Highlight identifiers
+        if is_bound {
+            try_highlight!(self.highlight_ident(out, input));
+        }
+
+        if self.syntax.hex_number {
+            try_highlight!(self.highlight_prefix_number(NumLit::Hex, is_bound, c, out, input));
+        }
+
+        if self.syntax.bin_number {
+            try_highlight!(self.highlight_prefix_number(NumLit::Bin, is_bound, c, out, input));
+        }
+
+        if self.syntax.number {
+            try_highlight!(self.highlight_digit_number(is_bound, c, out));
+        }
+
+        self.eat_one(out, c, Highlight::Normal)
+    }
+
+    fn highlight_line(&mut self, out: &mut [Highlight], row: &str) {
+        if self.syntax.lang == Language::Plain {
+            // On 'plain' syntax, skip highlighting since nothing is highlighted.
+            return;
+        }
+
+        // Initialize states for line highlighting
+        self.prev_hl = Highlight::Normal;
+        self.prev_char = '\0';
+        self.num = NumLit::Digit;
+        self.after_def_keyword = false;
+
+        let mut iter = row.char_indices().enumerate();
+        while let Some((x, (idx, c))) = iter.next() {
+            let input = &row[idx..];
+            let out = &mut out[x..];
+            match self.highlight_one(c, out, input) {
+                ParseNext::Ahead(len) if len >= 2 => {
+                    // while statement always consume one character at top. Eat input chars considering that.
+                    iter.nth(len.saturating_sub(2));
+                }
+                ParseNext::Ahead(len) if len == 1 => { /* Go next */ }
+                ParseNext::Ahead(_) => unreachable!(),
+                ParseNext::Break => break,
+            }
+        }
+    }
+}
+
 struct Region {
     start: (usize, usize),
     end: (usize, usize),
@@ -458,10 +800,6 @@ impl Highlighting {
         self.needs_update = true;
     }
 
-    fn replace(&mut self, y: usize, start: usize, end: usize, hl: Highlight) {
-        self.lines[y].splice(start..end, iter::repeat(hl).take(end - start));
-    }
-
     fn apply_match(&mut self) {
         if let Some(m) = &self.matched {
             for y in m.start.1..=m.end.1 {
@@ -479,258 +817,17 @@ impl Highlighting {
             return;
         }
 
+        let mut highlighter = Highlighter::new(&self.syntax);
+
         self.lines.resize_with(rows.len(), Default::default);
-
-        fn is_sep(c: char) -> bool {
-            c.is_ascii_whitespace() || (c.is_ascii_punctuation() && c != '_') || c == '\0'
-        }
-
-        fn lex_ident(mut input: &str) -> Option<&str> {
-            for (i, c) in input.char_indices() {
-                if is_sep(c) {
-                    input = &input[..i];
-                    break;
-                }
-            }
-            if input.is_empty() {
-                None
-            } else {
-                Some(input)
-            }
-        }
-
-        #[derive(PartialEq)]
-        enum Num {
-            Digit,
-            Hex,
-            Bin,
-        }
-
-        let mut prev_quote = None;
-        let mut in_block_comment = false;
         for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
-            self.lines[y].resize(row.render_text().chars().count(), Highlight::Normal); // TODO: One item per one character
+            let row = row.render_text();
+            self.lines[y].resize(row.chars().count(), Highlight::Normal); // TODO: One item per one character
 
-            if self.syntax.lang == Language::Plain {
-                // On 'plain' syntax, skip highlighting since nothing is highlighted.
-                continue;
-            }
-
-            let mut prev_hl = Highlight::Normal;
-            let mut prev_char = '\0';
-            let mut num = Num::Digit;
-            let mut iter = row.render_text().char_indices().enumerate();
-            let mut after_def_keyword = false;
-
-            while let Some((x, (idx, c))) = iter.next() {
-                let mut hl = Highlight::Normal;
-
-                if after_def_keyword && !c.is_ascii_whitespace() && is_sep(c) {
-                    after_def_keyword = false;
-                }
-
-                if let Some((comment_start, comment_end)) = self.syntax.block_comment {
-                    if hl == Highlight::Normal && prev_quote.is_none() {
-                        let comment_delim = if in_block_comment
-                            && row.render_text()[idx..].starts_with(comment_end)
-                        {
-                            in_block_comment = false;
-                            Some(comment_end)
-                        } else if !in_block_comment
-                            && row.render_text()[idx..].starts_with(comment_start)
-                        {
-                            in_block_comment = true;
-                            Some(comment_start)
-                        } else {
-                            None
-                        };
-
-                        // Eat delimiter of block comment at once
-                        if let Some(comment_delim) = comment_delim {
-                            // Consume whole '/*' here. Otherwise such as '/*/' is wrongly accepted
-                            let len = comment_delim.len();
-                            self.replace(y, x, x + len, Highlight::Comment);
-                            prev_hl = Highlight::Comment;
-                            prev_char = comment_delim.chars().last().unwrap();
-                            iter.nth(len - 2);
-                            continue;
-                        }
-
-                        if in_block_comment {
-                            hl = Highlight::Comment;
-                        }
-                    }
-                }
-
-                if let Some(comment_leader) = self.syntax.line_comment {
-                    if prev_quote.is_none() && row.render_text()[idx..].starts_with(comment_leader)
-                    {
-                        self.replace(y, x, self.lines[y].len(), Highlight::Comment);
-                        break;
-                    }
-                }
-
-                if hl == Highlight::Normal
-                    && self.syntax.character
-                    && !(self.syntax.number_delim == Some('\'') && prev_hl == Highlight::Number)
-                {
-                    let mut i = row.render_text()[idx..].chars();
-                    let len = match (i.next(), i.next(), i.next(), i.next()) {
-                        (Some('\''), Some('\\'), _, Some('\'')) => Some(4),
-                        (Some('\''), _, Some('\''), _) => Some(3),
-                        _ => None,
-                    };
-
-                    if let Some(len) = len {
-                        self.replace(y, x, x + len, Highlight::Char);
-                        prev_hl = Highlight::Char;
-                        prev_char = '\'';
-                        iter.nth(len - 2);
-                        continue;
-                    }
-                }
-
-                if hl == Highlight::Normal && !self.syntax.string_quotes.is_empty() {
-                    if let Some(q) = prev_quote {
-                        // In string literal. XXX: "\\" is not highlighted correctly
-                        if prev_char != '\\' && q == c {
-                            prev_quote = None;
-                        }
-                        hl = Highlight::String;
-                    } else if self.syntax.string_quotes.contains(&c) {
-                        prev_quote = Some(c);
-                        hl = Highlight::String;
-                    }
-                }
-
-                let is_bound = is_sep(prev_char) ^ is_sep(c);
-
-                // Highlight identifiers
-                if hl == Highlight::Normal && is_bound {
-                    let line = &row.render_text()[idx..];
-                    if let Some(ref ident) = lex_ident(line) {
-                        let highlighted_ident = self
-                            .syntax
-                            .keywords
-                            .iter()
-                            .zip(iter::repeat(Highlight::Keyword))
-                            .chain(
-                                self.syntax
-                                    .control_statements
-                                    .iter()
-                                    .zip(iter::repeat(Highlight::Statement)),
-                            )
-                            .chain(
-                                self.syntax
-                                    .builtin_types
-                                    .iter()
-                                    .zip(iter::repeat(Highlight::Type)),
-                            )
-                            .chain(
-                                self.syntax
-                                    .special_vars
-                                    .iter()
-                                    .zip(iter::repeat(Highlight::SpecialVar)),
-                            )
-                            .find(|(k, _)| *k == ident);
-
-                        let found_keyword = highlighted_ident.is_some();
-
-                        let highlighted_ident = highlighted_ident.or_else(|| {
-                            if after_def_keyword {
-                                Some((ident, Highlight::Definition))
-                            } else {
-                                None
-                            }
-                        });
-
-                        if found_keyword && self.syntax.definition_keywords.contains(&ident) {
-                            after_def_keyword = true;
-                        }
-
-                        if let Some((ident, highlight)) = highlighted_ident {
-                            let len = ident.len();
-                            self.replace(y, x, x + len, highlight);
-
-                            prev_hl = highlight;
-                            prev_char = line.chars().nth(len - 1).unwrap();
-                            // Consume ident from input. Subtracting 2 because first character will be
-                            // consumed by the while statement.
-                            // Note: Using saturating_sub() since identifier may be one character such as 'x'
-                            iter.nth(len.saturating_sub(2));
-
-                            continue;
-                        }
-                    }
-                }
-
-                if hl == Highlight::Normal && self.syntax.hex_number {
-                    let line = row.render_text()[idx..].as_bytes();
-                    if is_bound {
-                        if line.starts_with(b"0x")
-                            && line.len() > 2
-                            && (line[2].is_ascii_hexdigit()
-                                || self.syntax.number_delim == Some(line[2] as char))
-                        {
-                            self.lines[y][x] = Highlight::Number;
-                            self.lines[y][x + 1] = Highlight::Number;
-                            num = Num::Hex;
-                            prev_hl = Highlight::Number;
-                            prev_char = 'x';
-                            iter.next();
-                            continue;
-                        }
-                    } else if num == Num::Hex
-                        && prev_hl == Highlight::Number
-                        && c.is_ascii_hexdigit()
-                    {
-                        hl = Highlight::Number;
-                    }
-                }
-
-                if hl == Highlight::Normal && self.syntax.bin_number {
-                    let line = row.render_text()[idx..].as_bytes();
-                    if is_bound {
-                        if line.starts_with(b"0b")
-                            && line.len() > 2
-                            && (b"01".contains(&line[2])
-                                || self.syntax.number_delim == Some(line[2] as char))
-                        {
-                            self.lines[y][x] = Highlight::Number;
-                            self.lines[y][x + 1] = Highlight::Number;
-                            num = Num::Bin;
-                            prev_hl = Highlight::Number;
-                            prev_char = 'b';
-                            iter.next();
-                            continue;
-                        }
-                    } else if num == Num::Bin && prev_hl == Highlight::Number && "01".contains(c) {
-                        hl = Highlight::Number;
-                    }
-                }
-
-                if hl == Highlight::Normal
-                    && self.syntax.number
-                    && (c.is_ascii_digit() && (prev_hl == Highlight::Number || is_bound)
-                        || c == '.' && prev_hl == Highlight::Number)
-                {
-                    hl = Highlight::Number;
-                    num = Num::Digit;
-                }
-
-                if let Some(delim) = self.syntax.number_delim {
-                    if hl == Highlight::Normal && c == delim && prev_hl == Highlight::Number {
-                        hl = Highlight::Number;
-                    }
-                }
-
-                self.lines[y][x] = hl;
-                prev_hl = hl;
-                prev_char = c;
-            }
+            highlighter.highlight_line(&mut self.lines[y], row);
         }
 
-        self.apply_match();
+        self.apply_match(); // Overwrite matched region
 
         self.needs_update = false;
         self.previous_bottom_of_screen = bottom_of_screen;
