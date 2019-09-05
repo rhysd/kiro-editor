@@ -492,7 +492,7 @@ impl Highlighting {
                     break;
                 }
             }
-            if input.len() == 0 {
+            if input.is_empty() {
                 None
             } else {
                 Some(input)
