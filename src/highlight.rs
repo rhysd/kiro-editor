@@ -15,6 +15,7 @@ pub enum Highlight {
     Definition,
     Char,
     Statement,
+    SpecialVar,
     Match,
 }
 
@@ -32,6 +33,7 @@ impl Highlight {
             Definition => Yellow,
             Char => Green,
             Statement => Red,
+            SpecialVar => Purple,
             Match => CyanUnderline,
         }
     }
@@ -50,6 +52,7 @@ struct SyntaxHighlight {
     keywords: &'static [&'static str],
     control_statements: &'static [&'static str],
     builtin_types: &'static [&'static str],
+    special_vars: &'static [&'static str],
     definition_keywords: &'static [&'static str],
 }
 
@@ -66,6 +69,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     keywords: &[],
     control_statements: &[],
     builtin_types: &[],
+    special_vars: &[],
     definition_keywords: &[],
 };
 
@@ -90,6 +94,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     builtin_types: &[
         "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void",
     ],
+    special_vars: &[],
     definition_keywords: &["enum", "struct", "union"],
 };
 
@@ -104,18 +109,22 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     line_comment: Some("//"),
     block_comment: Some(("/*", "*/")),
     keywords: &[
-        "as", "const", "crate", "dyn", "enum", "extern", "false", "fn", "impl", "let", "mod",
-        "move", "mut", "pub", "ref", "Self", "self", "static", "struct", "super", "trait", "true",
-        "type", "unsafe", "use", "where",
+        "as", "async", "await", "const", "crate", "dyn", "enum", "extern", "fn", "impl", "let",
+        "mod", "move", "mut", "pub", "ref", "Self", "static", "struct", "super", "trait", "type",
+        "union", "unsafe", "use", "where",
     ],
     control_statements: &[
         "break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while",
     ],
     builtin_types: &[
         "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usuze",
-        "f32", "f64", "bool", "char",
+        "f32", "f64", "bool", "char", "Box", "Option", "Some", "None", "Result", "Ok", "Err",
+        "String", "Vec",
     ],
-    definition_keywords: &["fn", "let", "const", "mod", "struct", "enum", "trait"],
+    special_vars: &["false", "self", "true"],
+    definition_keywords: &[
+        "fn", "let", "const", "mod", "struct", "enum", "trait", "union",
+    ],
 };
 
 const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
@@ -142,7 +151,6 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "let",
         "new",
         "super",
-        "this",
         "typeof",
         "var",
         "void",
@@ -190,6 +198,7 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "Intl",
         "WebAssembly",
     ],
+    special_vars: &["false", "null", "this", "true", "undefined"],
     definition_keywords: &["class", "const", "function", "var", "let"],
 };
 
@@ -254,6 +263,7 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "uint8",
         "uintptr",
     ],
+    special_vars: &["false", "nil", "true"],
     definition_keywords: &[
         "const",
         "func",
@@ -305,7 +315,6 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "explicit",
         "export",
         "extern",
-        "false",
         "friend",
         "inline",
         "mutable",
@@ -332,9 +341,7 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "struct",
         "synchronized",
         "template",
-        "this",
         "thread_local",
-        "true",
         "typedef",
         "typeid",
         "typename",
@@ -360,6 +367,7 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "char", "char8_t", "char16_t", "char32_t", "double", "float", "int", "long", "short",
         "signed", "unsigned", "void", "wchar_t",
     ],
+    special_vars: &["false", "this", "true"],
     definition_keywords: &[
         "class",
         "concept",
@@ -617,6 +625,12 @@ impl Highlighting {
                                     .builtin_types
                                     .iter()
                                     .zip(iter::repeat(Highlight::Type)),
+                            )
+                            .chain(
+                                self.syntax
+                                    .special_vars
+                                    .iter()
+                                    .zip(iter::repeat(Highlight::SpecialVar)),
                             )
                             .find(|(k, _)| *k == ident);
 
