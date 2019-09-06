@@ -1,3 +1,18 @@
+<a name="0.3.1"></a>
+# [0.3.1](https://github.com/rhysd/kiro-editor/releases/tag/0.3.1) - 05 Sep 2019
+
+- **Improve:** Better highlighting. Following items are newly highlighted
+  - Number literal delimiters such as `123_456`, `0xabc_def_ghi`, `0x_a_b_c_` in Rust and Go, `123'456'789` in C++
+  - Highlight identifiers in variable, struct and type definitions (e.g. `Foo` in `struct Foo`, `x` in `let x = ...`)
+  - Highlight special identifiers such as `true`, `false`, `self`, `this`, `nil`, `null`, `undefined` differently from keywords
+- **Fix:** Screen was not redrawn on window resize
+- **Fix:** Newline `\n` was missing in an empty text buffer
+- **Fix:** Foreground color of 256colors colorscheme
+
+
+[Changes][0.3.1]
+
+
 <a name="0.3.0"></a>
 # [0.3.0](https://github.com/rhysd/kiro-editor/releases/tag/0.3.0) - 02 Sep 2019
 
@@ -6,7 +21,7 @@
 - **Improve:** Rendering message bar made more efficient. It is re-rendered only when it's changed
 - **Improve:** Rendering status bar made more efficient. It is re-rendered only when it's contents are updated
 - **Fix:** Ensure to back to normal screen buffer even if an editor crashes
-- **Fix:** Line number in status bar was sometimes not correct
+- **Fix:** Line number in status bar was not correct
 - **Improve:** Many internal implementation refactoring
 
 [Changes][0.3.0]
@@ -15,7 +30,7 @@
 <a name="0.2.1"></a>
 # [0.2.1](https://github.com/rhysd/kiro-editor/releases/tag/0.2.1) - 29 Aug 2019
 
-- **Fix:** Rendering sometimes did not happen on inserting text or new line
+- **Fix:** Rendering did not happen on inserting text or new line just after opening an editor
 - **Fix:** Cursor position was not reset after quit
 
 [Changes][0.2.1]
@@ -53,6 +68,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.1]: https://github.com/rhysd/kiro-editor/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/rhysd/kiro-editor/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/rhysd/kiro-editor/compare/0.2.0...0.2.1
 [0.2.0]: https://github.com/rhysd/kiro-editor/compare/0.1.1...0.2.0
