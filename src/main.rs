@@ -3,11 +3,13 @@
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
 
 use getopts::Options;
+use kiro_editor::{self as kiro, Editor, StdinRawMode, HELP, VERSION};
 use std::env;
 use std::io;
 use std::process::exit;
 
-use kiro_editor::{self as kiro, Editor, StdinRawMode, HELP, VERSION};
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn print_help(program: &str, opts: Options) {
     let description = format!(
