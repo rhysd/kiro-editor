@@ -117,7 +117,7 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "break", "continue", "else", "for", "if", "in", "loop", "match", "return", "while",
     ],
     builtin_types: &[
-        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usuze",
+        "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize",
         "f32", "f64", "bool", "char", "Box", "Option", "Some", "None", "Result", "Ok", "Err",
         "String", "Vec",
     ],
