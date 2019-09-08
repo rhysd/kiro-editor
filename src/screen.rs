@@ -351,17 +351,17 @@ impl<W: Write> Screen<W> {
             self.draw_message_bar(&mut buf)?;
         }
 
-        // Previously message bar was not squashed but now it is squashed so it is being squashed now
-        let message_was_squashed = !self.message_is_shown;
-        let message_is_squashed = match self.message {
+        // Timestamp being set means message line was opened and will be shown until the time
+        let message_is_shown = match self.message {
             Some(StatusMessage {
                 timestamp: Some(_), ..
-            }) => false,
-            _ => true,
+            }) => true,
+            _ => false,
         };
-        let squashing_message_bar = !message_was_squashed && message_is_squashed;
-        let toggling_message_bar = message_was_squashed != message_is_squashed;
-        self.message_is_shown = !message_is_squashed;
+        // Previously message bar was not squashed but now it is squashed so it is being squashed now
+        let squashing_message_bar = self.message_is_shown && !message_is_shown;
+        let toggling_message_bar = self.message_is_shown != message_is_shown;
+        self.message_is_shown = message_is_shown;
         if status_bar.redraw || toggling_message_bar {
             self.draw_status_bar(&mut buf, status_bar)?;
         }
@@ -374,7 +374,7 @@ impl<W: Write> Screen<W> {
 
         self.write_flush(&buf)?;
 
-        // Toggling message bar reveals one more last line so the line should be rendered in next tick
+        // Squashing message bar reveals one more last line so the line should be rendered in next tick
         let next_dirty_start = if squashing_message_bar {
             Some(self.rowoff + self.rows() - 1)
         } else {
