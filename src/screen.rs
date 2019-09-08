@@ -97,6 +97,7 @@ pub struct Screen<W: Write> {
     num_cols: usize,
     num_rows: usize,
     message: Option<StatusMessage>,
+    message_is_shown: bool,
     // Dirty line which requires rendering update. After this line must be updated since
     // updating line may affect highlights of succeeding lines
     dirty_start: Option<usize>,
@@ -137,6 +138,7 @@ impl<W: Write> Screen<W> {
                 "Ctrl-? for help",
                 StatusMessageKind::Info,
             )),
+            message_is_shown: false,
             dirty_start: Some(0), // Render entire screen at first paint
             sigwinch: SigwinchWatcher::new()?,
             term_color: TermColor::from_env(),
@@ -256,11 +258,10 @@ impl<W: Write> Screen<W> {
     ) -> Result<()> {
         let mut prev_color = Color::Reset;
         let row_len = rows.len();
-        let num_rows = self.rows();
 
         buf.write(self.term_color.sequence(Color::Reset))?;
 
-        for y in 0..num_rows {
+        for y in 0..self.rows() {
             let file_row = y + self.rowoff;
 
             if file_row < dirty_start {
@@ -271,7 +272,7 @@ impl<W: Write> Screen<W> {
             write!(buf, "\x1b[{}H", y + 1)?;
 
             if file_row >= row_len {
-                if rows.is_empty() && y == num_rows / 3 {
+                if rows.is_empty() && y == self.rows() / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
                     if prev_color != Color::Reset {
@@ -340,8 +341,6 @@ impl<W: Write> Screen<W> {
         self.write_flush(b"\x1b[?25l")?;
 
         let mut buf = Vec::with_capacity((self.rows() + 2) * self.num_cols);
-        let message_was_squashed = self.message_bar_squashed();
-
         if let Some(s) = self.dirty_start {
             self.draw_rows(&mut buf, s, text_buf.rows(), hl)?;
         }
@@ -353,8 +352,17 @@ impl<W: Write> Screen<W> {
         }
 
         // Previously message bar was not squashed but now it is squashed so it is being squashed now
-        let squashing_message_bar = message_was_squashed != self.message_bar_squashed();
-        if status_bar.redraw || squashing_message_bar {
+        let message_was_squashed = !self.message_is_shown;
+        let message_is_squashed = match self.message {
+            Some(StatusMessage {
+                timestamp: Some(_), ..
+            }) => false,
+            _ => true,
+        };
+        let squashing_message_bar = !message_was_squashed && message_is_squashed;
+        let toggling_message_bar = message_was_squashed != message_is_squashed;
+        self.message_is_shown = !message_is_squashed;
+        if status_bar.redraw || toggling_message_bar {
             self.draw_status_bar(&mut buf, status_bar)?;
         }
 
@@ -366,7 +374,7 @@ impl<W: Write> Screen<W> {
 
         self.write_flush(&buf)?;
 
-        // Squashing message bar reveals one more last line so the line should be rendered in next tick
+        // Toggling message bar reveals one more last line so the line should be rendered in next tick
         let next_dirty_start = if squashing_message_bar {
             Some(self.rowoff + self.rows() - 1)
         } else {
@@ -412,7 +420,6 @@ impl<W: Write> Screen<W> {
             self.coloff = self.rx;
         }
         if self.rx >= self.coloff + self.num_cols {
-            // TODO: coloff must not be in the middle of character. It must be at boundary between characters
             self.coloff = self.next_coloff(self.rx - self.num_cols + 1, &rows[cy]);
         }
 
@@ -530,21 +537,11 @@ impl<W: Write> Screen<W> {
         self.message = None;
     }
 
-    fn message_bar_squashed(&self) -> bool {
-        // Note: Timestamp being set means message line is shown until the time
-        match self.message {
-            Some(StatusMessage {
-                timestamp: Some(_), ..
-            }) => false,
-            _ => true,
-        }
-    }
-
     pub fn rows(&self) -> usize {
-        if self.message_bar_squashed() {
-            self.num_rows + 1
-        } else {
+        if self.message_is_shown {
             self.num_rows
+        } else {
+            self.num_rows + 1
         }
     }
 
