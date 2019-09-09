@@ -303,6 +303,10 @@ impl<W: Write> Screen<W> {
                 }
             }
 
+            // Ensure to end with reset color sequence. Otherwise, when background color is highlighted
+            // at the end of line, highlight will continue to the end of last column in terminal window.
+            buf.write(self.term_color.sequence(Color::Reset))?;
+
             // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
             buf.write(b"\x1b[K")?;
         }
