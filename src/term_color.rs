@@ -17,6 +17,15 @@ pub enum Color {
     Invert,
 }
 
+impl Color {
+    pub fn has_bg_color(self) -> bool {
+        match self {
+            Color::YellowBG | Color::RedBG => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum TermColor {
     TrueColor,

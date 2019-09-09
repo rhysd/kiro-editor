@@ -256,7 +256,6 @@ impl<W: Write> Screen<W> {
         rows: &[Row],
         hl: &Highlighting,
     ) -> Result<()> {
-        let mut prev_color = Color::Reset;
         let row_len = rows.len();
 
         buf.write(self.term_color.sequence(Color::Reset))?;
@@ -275,16 +274,13 @@ impl<W: Write> Screen<W> {
                 if rows.is_empty() && y == self.rows() / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
-                    if prev_color != Color::Reset {
-                        buf.write(self.term_color.sequence(Color::Reset))?;
-                        prev_color = Color::Reset;
-                    }
                     buf.write(b"~")?;
                 }
             } else {
                 let row = &rows[file_row];
 
                 let mut col = 0;
+                let mut prev_color = Color::Reset;
                 for (c, hl) in row.render_text().chars().zip(hl.lines[file_row].iter()) {
                     col += c.width_cjk().unwrap_or(1);
                     if col <= self.coloff {
@@ -295,6 +291,9 @@ impl<W: Write> Screen<W> {
 
                     let color = hl.color();
                     if color != prev_color {
+                        if prev_color.has_bg_color() {
+                            buf.write(self.term_color.sequence(Color::Reset))?;
+                        }
                         buf.write(self.term_color.sequence(color))?;
                         prev_color = color;
                     }
@@ -309,10 +308,6 @@ impl<W: Write> Screen<W> {
 
             // Erases the part of the line to the right of the cursor. http://vt100.net/docs/vt100-ug/chapter3.html#EL
             buf.write(b"\x1b[K")?;
-        }
-
-        if prev_color != Color::Reset {
-            buf.write(self.term_color.sequence(Color::Reset))?; // Ensure to reset color at end of screen
         }
 
         Ok(())
