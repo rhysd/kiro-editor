@@ -447,7 +447,7 @@ impl<'a> Highlighter<'a> {
             *out = hl;
         }
         self.prev_hl = hl;
-        self.prev_char = input.chars().take(len - 1).next().unwrap();
+        self.prev_char = input.chars().nth(len - 1).unwrap();
         ParseNext::Ahead(len)
     }
 
