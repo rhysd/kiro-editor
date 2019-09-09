@@ -33,8 +33,8 @@ impl Highlight {
             Definition => Yellow,
             Char => Green,
             Statement => Red,
-            SpecialVar => Purple,
-            Match => CyanUnderline,
+            SpecialVar => Cyan,
+            Match => YellowBG,
         }
     }
 }

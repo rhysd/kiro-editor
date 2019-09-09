@@ -12,15 +12,9 @@ pub enum Color {
     Blue,
     Purple,
     Cyan,
-    CyanUnderline,
     RedBG,
+    YellowBG,
     Invert,
-}
-
-impl Color {
-    pub fn is_underlined(self) -> bool {
-        self == Color::CyanUnderline
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -93,8 +87,12 @@ impl TermColor {
                 Blue => rgb_color!(fg, 0x83, 0xa5, 0x98).as_bytes(),
                 Purple => rgb_color!(fg, 0xd3, 0x86, 0x9b).as_bytes(),
                 Cyan => rgb_color!(fg, 0x8e, 0xc0, 0x7c).as_bytes(),
-                CyanUnderline => concat!("\x1b[4m", rgb_color!(fg, 0x8e, 0xc0, 0x7c)).as_bytes(),
                 RedBG => rgb_color!(bg, 0xcc, 0x24, 0x1d).as_bytes(),
+                YellowBG => concat!(
+                    rgb_color!(fg, 0x28, 0x28, 0x28),
+                    rgb_color!(bg, 0xd7, 0x99, 0x21),
+                )
+                .as_bytes(),
                 Invert => b"\x1b[7m",
             },
             TermColor::Extended256 => match color {
@@ -107,8 +105,8 @@ impl TermColor {
                 Blue => b"\x1b[38;5;109m",
                 Purple => b"\x1b[38;5;175m",
                 Cyan => b"\x1b[38;5;108m",
-                CyanUnderline => b"\x1b[4m\x1b[38;5;208m",
                 RedBG => b"\x1b[48;5;124m",
+                YellowBG => b"\x1b[38;5;235m\x1b[48;5;214m",
                 Invert => b"\x1b[7m",
             },
             TermColor::Only16 => match color {
@@ -121,8 +119,8 @@ impl TermColor {
                 Blue => b"\x1b[94m",
                 Purple => b"\x1b[95m",
                 Cyan => b"\x1b[96m",
-                CyanUnderline => b"\x1b[96;4m",
                 RedBG => b"\x1b[41m",
+                YellowBG => b"\x1b[103m\x1b[30m",
                 Invert => b"\x1b[7m",
             },
         }

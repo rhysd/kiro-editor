@@ -295,9 +295,6 @@ impl<W: Write> Screen<W> {
 
                     let color = hl.color();
                     if color != prev_color {
-                        if prev_color.is_underlined() {
-                            buf.write(self.term_color.sequence(Color::Reset))?; // Stop underline
-                        }
                         buf.write(self.term_color.sequence(color))?;
                         prev_color = color;
                     }
