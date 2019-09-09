@@ -116,17 +116,17 @@ impl PromptAction for TextSearch {
                 let idx = row.char_idx_of(byte_idx);
                 prompt.buf.set_cursor(idx, y);
 
-                let row = &prompt.buf.rows()[y]; // Immutable borrow again since self.buf().set_cursor() yields mutable borrow
-                let rx = row.rx_from_cx(prompt.buf.cx());
-                // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
-                prompt.screen.rowoff = row_len;
+                let rx = prompt.buf.rows()[y].rx_from_cx(prompt.buf.cx());
+                // Cause do_scroll() to scroll upwards to half a screen above the matching line at
+                // next screen redraw
+                prompt.screen.rowoff = y.saturating_sub(prompt.screen.rows() / 2);
                 prompt.screen.coloff = 0;
                 self.last_match = Some(y);
                 // Set match highlight on the found line
                 prompt.hl.set_match(y, rx, rx + input.chars().count());
                 // XXX: It updates entire highlights
                 prompt.hl.needs_update = true;
-                prompt.screen.set_dirty_start(y);
+                prompt.screen.set_dirty_start(prompt.screen.rowoff);
                 break;
             }
             y = next_line(y, dir, row_len);
