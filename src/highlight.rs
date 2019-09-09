@@ -15,6 +15,7 @@ pub enum Highlight {
     Definition,
     Char,
     Statement,
+    Boolean,
     SpecialVar,
     Match,
 }
@@ -33,6 +34,7 @@ impl Highlight {
             Definition => Yellow,
             Char => Green,
             Statement => Red,
+            Boolean => Purple,
             SpecialVar => Cyan,
             Match => YellowBG,
         }
@@ -52,6 +54,7 @@ struct SyntaxHighlight {
     keywords: &'static [&'static str],
     control_statements: &'static [&'static str],
     builtin_types: &'static [&'static str],
+    boolean_constants: &'static [&'static str],
     special_vars: &'static [&'static str],
     definition_keywords: &'static [&'static str],
 }
@@ -69,6 +72,7 @@ const PLAIN_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     keywords: &[],
     control_statements: &[],
     builtin_types: &[],
+    boolean_constants: &[],
     special_vars: &[],
     definition_keywords: &[],
 };
@@ -94,6 +98,7 @@ const C_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     builtin_types: &[
         "char", "double", "float", "int", "long", "short", "signed", "unsigned", "void",
     ],
+    boolean_constants: &[],
     special_vars: &[],
     definition_keywords: &["enum", "struct", "union"],
 };
@@ -121,7 +126,8 @@ const RUST_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "f32", "f64", "bool", "char", "Box", "Option", "Some", "None", "Result", "Ok", "Err",
         "String", "Vec",
     ],
-    special_vars: &["false", "self", "true"],
+    boolean_constants: &["true", "false"],
+    special_vars: &["self"],
     definition_keywords: &[
         "fn", "let", "const", "mod", "struct", "enum", "trait", "union",
     ],
@@ -198,7 +204,8 @@ const JAVASCRIPT_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "Intl",
         "WebAssembly",
     ],
-    special_vars: &["false", "null", "this", "true", "undefined"],
+    boolean_constants: &["true", "false"],
+    special_vars: &["null", "this", "undefined"],
     definition_keywords: &["class", "const", "function", "var", "let"],
 };
 
@@ -263,7 +270,8 @@ const GO_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "uint8",
         "uintptr",
     ],
-    special_vars: &["false", "nil", "true"],
+    boolean_constants: &["true", "false"],
+    special_vars: &["nil"],
     definition_keywords: &[
         "const",
         "func",
@@ -367,7 +375,8 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
         "char", "char8_t", "char16_t", "char32_t", "double", "float", "int", "long", "short",
         "signed", "unsigned", "void", "wchar_t",
     ],
-    special_vars: &["false", "this", "true"],
+    boolean_constants: &["true", "false"],
+    special_vars: &["this"],
     definition_keywords: &[
         "class",
         "concept",
@@ -552,6 +561,12 @@ impl<'a> Highlighter<'a> {
                         .builtin_types
                         .iter()
                         .zip(iter::repeat(Highlight::Type)),
+                )
+                .chain(
+                    self.syntax
+                        .boolean_constants
+                        .iter()
+                        .zip(iter::repeat(Highlight::Boolean)),
                 )
                 .chain(
                     self.syntax
