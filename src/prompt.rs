@@ -120,6 +120,7 @@ impl PromptAction for TextSearch {
                 let rx = row.rx_from_cx(prompt.buf.cx());
                 // Cause do_scroll() to scroll upwards to the matching line at next screen redraw
                 prompt.screen.rowoff = row_len;
+                prompt.screen.coloff = 0;
                 self.last_match = Some(y);
                 // Set match highlight on the found line
                 prompt.hl.set_match(y, rx, rx + input.chars().count());
