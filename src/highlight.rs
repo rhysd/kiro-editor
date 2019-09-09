@@ -544,41 +544,25 @@ impl<'a> Highlighter<'a> {
             }
         }
 
-        lex_ident(input).and_then(|ref ident| {
-            let highlighted_ident = self
-                .syntax
-                .keywords
-                .iter()
-                .zip(iter::repeat(Highlight::Keyword))
-                .chain(
-                    self.syntax
-                        .control_statements
-                        .iter()
-                        .zip(iter::repeat(Highlight::Statement)),
-                )
-                .chain(
-                    self.syntax
-                        .builtin_types
-                        .iter()
-                        .zip(iter::repeat(Highlight::Type)),
-                )
-                .chain(
-                    self.syntax
-                        .boolean_constants
-                        .iter()
-                        .zip(iter::repeat(Highlight::Boolean)),
-                )
-                .chain(
-                    self.syntax
-                        .special_vars
-                        .iter()
-                        .zip(iter::repeat(Highlight::SpecialVar)),
-                )
+        // let iter_words = |words: &'static [&'static str], hl| words.iter().zip(iter::repeat(hl));
+        fn iter_words<'a>(
+            words: &'a [&'a str],
+            hl: Highlight,
+        ) -> impl Iterator<Item = (&&'a str, Highlight)> {
+            words.iter().zip(iter::repeat(hl))
+        }
+
+        lex_ident(input).as_ref().and_then(|ident| {
+            use Highlight::*;
+
+            let keyword = iter_words(self.syntax.keywords, Keyword)
+                .chain(iter_words(self.syntax.control_statements, Statement))
+                .chain(iter_words(self.syntax.builtin_types, Type))
+                .chain(iter_words(self.syntax.boolean_constants, Boolean))
+                .chain(iter_words(self.syntax.special_vars, SpecialVar))
                 .find(|(k, _)| *k == ident);
 
-            let found_keyword = highlighted_ident.is_some();
-
-            let highlighted_ident = highlighted_ident.or_else(|| {
+            let definition = keyword.or_else(|| {
                 if self.after_def_keyword {
                     Some((ident, Highlight::Definition))
                 } else {
@@ -586,11 +570,12 @@ impl<'a> Highlighter<'a> {
                 }
             });
 
-            if found_keyword && self.syntax.definition_keywords.contains(&ident) {
+            if keyword.is_some() && self.syntax.definition_keywords.contains(&ident) {
                 self.after_def_keyword = true;
             }
 
-            highlighted_ident.map(|(ident, hl)| self.eat_n(out, input, hl, ident.len()))
+            let highlighted = keyword.or(definition);
+            highlighted.map(|(ident, hl)| self.eat_n(out, input, hl, ident.len()))
         })
     }
 
