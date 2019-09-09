@@ -259,6 +259,7 @@ where
         let rows = self.screen.rows();
         let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
         self.buf_mut().dirty_start = None;
+        self.buf_mut().start_undo_point();
 
         match &s {
             InputSeq {
@@ -309,6 +310,16 @@ where
                 Key(b']') => self
                     .buf_mut()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),
+                Key(b'u') => {
+                    if !self.buf_mut().undo() {
+                        self.screen.set_info_message("No older change");
+                    }
+                }
+                Key(b'r') => {
+                    if !self.buf_mut().redo() {
+                        self.screen.set_info_message("Buffer is already newest");
+                    }
+                }
                 LeftKey => self.buf_mut().move_cursor_by_word(CursorDir::Left),
                 RightKey => self.buf_mut().move_cursor_by_word(CursorDir::Right),
                 DownKey => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
@@ -339,6 +350,7 @@ where
             },
         }
 
+        self.buf_mut().end_undo_point();
         if let Some(line) = self.buf().dirty_start {
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);
