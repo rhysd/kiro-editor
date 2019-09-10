@@ -1,3 +1,20 @@
+<a name="0.3.2"></a>
+# [0.3.2](https://github.com/rhysd/kiro-editor/releases/tag/0.3.2) - 10 Sep 2019
+
+- **Fix:** Highlighting one-length identifiers was wrong
+- **Fix:** Scrolling to next/previous match while text search does not show matched line in some situation
+- **Fix:** `usize` keyword highlighting was wrong in Rust source code
+- **Fix:** Background color does not end at end of line
+- **Improve:** Use better invert yellow color for matched region on text search
+- **Improve:** For special variables such as `this`, `self`, use different color from boolean constants like `true`, `false`
+- **Improve:** Show matched line from head of the line as much as possible on moving to next/previous match
+- **Improve:** Use [jemalloc](http://jemalloc.net/) for global memory allocator of `kiro` executable
+- **Improve:** Internal refactoring of highlighting logic
+
+
+[Changes][0.3.2]
+
+
 <a name="0.3.1"></a>
 # [0.3.1](https://github.com/rhysd/kiro-editor/releases/tag/0.3.1) - 05 Sep 2019
 
@@ -68,6 +85,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.2]: https://github.com/rhysd/kiro-editor/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/rhysd/kiro-editor/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/rhysd/kiro-editor/compare/0.2.1...0.3.0
 [0.2.1]: https://github.com/rhysd/kiro-editor/compare/0.2.0...0.2.1
