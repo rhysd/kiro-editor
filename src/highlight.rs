@@ -709,6 +709,10 @@ impl<'a> Highlighter<'a> {
     fn highlight_line(&mut self, out: &mut [Highlight], row: &str) {
         if self.syntax.lang == Language::Plain {
             // On 'plain' syntax, skip highlighting since nothing is highlighted.
+            for hl in out.iter_mut() {
+                // Filling with normal color is necessary since matched region may be highlighted
+                *hl = Highlight::Normal;
+            }
             return;
         }
 
