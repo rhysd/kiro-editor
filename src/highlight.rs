@@ -709,10 +709,6 @@ impl<'a> Highlighter<'a> {
     fn highlight_line(&mut self, out: &mut [Highlight], row: &str) {
         if self.syntax.lang == Language::Plain {
             // On 'plain' syntax, skip highlighting since nothing is highlighted.
-            for hl in out.iter_mut() {
-                // Filling with normal color is necessary since matched region may be highlighted
-                *hl = Highlight::Normal;
-            }
             return;
         }
 
@@ -804,12 +800,12 @@ impl Highlighting {
         self.needs_update = true;
     }
 
-    fn apply_match(&mut self) {
+    fn highlight_match(&mut self, highlight: Highlight) {
         if let Some(m) = &self.matched {
             for y in m.start.1..=m.end.1 {
                 for (x, hl) in self.lines[y].iter_mut().enumerate() {
                     if m.contains((x, y)) {
-                        *hl = Highlight::Match;
+                        *hl = highlight;
                     }
                 }
             }
@@ -831,7 +827,7 @@ impl Highlighting {
             highlighter.highlight_line(&mut self.lines[y], row);
         }
 
-        self.apply_match(); // Overwrite matched region
+        self.highlight_match(Highlight::Match); // Overwrite matched region
 
         self.needs_update = false;
         self.previous_bottom_of_screen = bottom_of_screen;
@@ -849,6 +845,7 @@ impl Highlighting {
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
         if let Some(y) = self.matched.as_ref().map(|r| r.start.1) {
+            self.highlight_match(Highlight::Normal); // Back to normal color. It is efficient on plain file type
             self.matched = None;
             Some(y)
         } else {

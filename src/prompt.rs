@@ -55,6 +55,18 @@ pub struct TextSearch {
     last_match: Option<usize>,
 }
 
+impl TextSearch {
+    fn cleanup_match_highlight<W: Write>(&self, prompt: &mut Prompt<'_, W>) {
+        if self.last_match.is_none() {
+            return;
+        }
+        if let Some(matched_line) = prompt.hl.clear_previous_match() {
+            prompt.hl.needs_update = true;
+            prompt.screen.set_dirty_start(matched_line);
+        }
+    }
+}
+
 impl PromptAction for TextSearch {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self {
         Self {
@@ -75,12 +87,7 @@ impl PromptAction for TextSearch {
     ) -> Result<()> {
         use KeySeq::*;
 
-        if self.last_match.is_some() {
-            if let Some(matched_line) = prompt.hl.clear_previous_match() {
-                prompt.hl.needs_update = true;
-                prompt.screen.set_dirty_start(matched_line);
-            }
-        }
+        self.cleanup_match_highlight(prompt);
 
         match (seq.key, seq.ctrl) {
             (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true) | (Key(b'n'), true) => {
@@ -140,12 +147,7 @@ impl PromptAction for TextSearch {
         prompt: &mut Prompt<'_, W>,
         result: PromptResult,
     ) -> Result<PromptResult> {
-        if self.last_match.is_some() {
-            if let Some(matched_line) = prompt.hl.clear_previous_match() {
-                prompt.hl.needs_update = true;
-                prompt.screen.set_dirty_start(matched_line);
-            }
-        }
+        self.cleanup_match_highlight(prompt);
 
         use PromptResult::*;
         let result = match &result {
