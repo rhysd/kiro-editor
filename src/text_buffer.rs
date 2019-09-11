@@ -56,6 +56,7 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+#[derive(Debug)]
 enum UndoRedo {
     Undo,
     Redo,
@@ -85,7 +86,7 @@ impl TextBuffer {
             cx: 0,
             cy: 0,
             file: None,
-            row: vec![Row::new("")], // Ensure that every text ends with newline
+            row: vec![Row::empty()], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
             history: History::default(),
@@ -516,7 +517,6 @@ impl TextBuffer {
         self.history.end_new_change();
     }
 
-    // Returns dirty line
     fn undo_change(&mut self, change: &Change) -> usize {
         match change {
             &Change::InsertChar(x, y, _) => {
@@ -573,7 +573,8 @@ impl TextBuffer {
             }
             &Change::DeleteLine(y, ref s) => {
                 self.row.insert(y, Row::new(s));
-                // Note: DeleteLine does not change cursor position (see concat_next_line())
+                self.cx = 0;
+                self.cy = y;
                 y
             }
         }
@@ -593,13 +594,50 @@ impl TextBuffer {
                 self.cy = y;
                 y
             }
-            &Change::Append(y, ref s) => unimplemented!(),
-            &Change::Truncate(y, ref s) => unimplemented!(),
-            &Change::Insert(x, y, ref s) => unimplemented!(),
-            &Change::Remove(x, y, ref s) => unimplemented!(),
-            &Change::Newline => unimplemented!(),
-            &Change::InsertLine(y, ref s) => unimplemented!(),
-            &Change::DeleteLine(y, ref s) => unimplemented!(),
+            &Change::Append(y, ref s) => {
+                self.cx = self.row[y].len();
+                self.cy = y;
+                self.row[y].append(s);
+                y
+            }
+            &Change::Truncate(y, ref s) => {
+                let count = s.chars().count();
+                let len = self.row[y].len();
+                self.row[y].truncate(len - count);
+                self.cx = len - count;
+                self.cy = y;
+                y
+            }
+            &Change::Insert(x, y, ref s) => {
+                self.row[y].insert_str(x, s);
+                self.cx = x;
+                self.cy = y;
+                y
+            }
+            &Change::Remove(x, y, ref s) => {
+                self.cx = x - s.chars().count();
+                self.row[y].remove(self.cx, x);
+                self.cy = y;
+                y
+            }
+            &Change::Newline => {
+                self.cx = 0;
+                self.cy = self.row.len();
+                self.row.push(Row::empty());
+                self.cy
+            }
+            &Change::InsertLine(y, ref s) => {
+                self.row.insert(y, Row::new(s));
+                self.cx = 0;
+                self.cy = y;
+                y
+            }
+            &Change::DeleteLine(y, _) => {
+                self.row.remove(y);
+                self.cy = y - 1;
+                self.cx = self.row[self.cy].len();
+                self.cy
+            }
         }
     }
 

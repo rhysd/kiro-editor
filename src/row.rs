@@ -13,6 +13,14 @@ pub struct Row {
 }
 
 impl Row {
+    pub fn empty() -> Row {
+        Row {
+            buf: "".to_string(),
+            render: "".to_string(),
+            indices: Vec::with_capacity(0),
+        }
+    }
+
     pub fn new<S: Into<String>>(line: S) -> Row {
         let mut row = Row {
             buf: line.into(),
