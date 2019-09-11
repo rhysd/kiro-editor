@@ -519,8 +519,8 @@ impl TextBuffer {
 
     fn undoredo_change(&mut self, change: &Change, which: UndoRedo) -> ((usize, usize), usize) {
         use UndoRedo::*;
-        match change {
-            &Change::InsertChar(x, y, c) => match which {
+        match *change {
+            Change::InsertChar(x, y, c) => match which {
                 Undo => {
                     self.row[y].remove_char(x);
                     ((x, y), y)
@@ -530,7 +530,7 @@ impl TextBuffer {
                     ((x + 1, y), y)
                 }
             },
-            &Change::DeleteChar(x, y, c) => match which {
+            Change::DeleteChar(x, y, c) => match which {
                 Undo => {
                     self.row[y].insert_char(x - 1, c);
                     ((x, y), y)
@@ -540,7 +540,7 @@ impl TextBuffer {
                     ((x - 1, y), y)
                 }
             },
-            &Change::Append(y, ref s) => match which {
+            Change::Append(y, ref s) => match which {
                 Undo => {
                     let count = s.chars().count();
                     let len = self.row[y].len();
@@ -554,7 +554,7 @@ impl TextBuffer {
                     ((x, y), y)
                 }
             },
-            &Change::Truncate(y, ref s) => match which {
+            Change::Truncate(y, ref s) => match which {
                 Undo => {
                     self.row[y].append(s);
                     let x = self.row[y].len() - s.chars().count();
@@ -567,7 +567,7 @@ impl TextBuffer {
                     ((len - count, y), y)
                 }
             },
-            &Change::Insert(x, y, ref s) => match which {
+            Change::Insert(x, y, ref s) => match which {
                 Undo => {
                     self.row[y].remove(x, s.chars().count());
                     ((x, y), y)
@@ -577,7 +577,7 @@ impl TextBuffer {
                     ((x, y), y)
                 }
             },
-            &Change::Remove(x, y, ref s) => match which {
+            Change::Remove(x, y, ref s) => match which {
                 Undo => {
                     let count = s.chars().count();
                     self.row[y].insert_str(x - count, s);
@@ -589,7 +589,7 @@ impl TextBuffer {
                     ((next_x, y), y)
                 }
             },
-            &Change::Newline => match which {
+            Change::Newline => match which {
                 Undo => {
                     debug_assert_eq!(self.row[self.row.len() - 1].buffer(), "");
                     self.row.pop();
@@ -602,7 +602,7 @@ impl TextBuffer {
                     ((0, y), y)
                 }
             },
-            &Change::InsertLine(y, ref s) => match which {
+            Change::InsertLine(y, ref s) => match which {
                 Undo => {
                     self.row.remove(y);
                     let x = self.row[y - 1].len();
@@ -614,7 +614,7 @@ impl TextBuffer {
                     ((0, y), y)
                 }
             },
-            &Change::DeleteLine(y, ref s) => match which {
+            Change::DeleteLine(y, ref s) => match which {
                 Undo => {
                     self.row.insert(y, Row::new(s));
                     ((0, y), y)
@@ -652,7 +652,7 @@ impl TextBuffer {
             Redo => history.redo(),
         };
         if let Some(changes) = changes {
-            debug_assert!(changes.len() > 0);
+            debug_assert!(!changes.is_empty());
             match which {
                 Undo => self.undoredo_changes(changes.iter().rev(), which),
                 Redo => self.undoredo_changes(changes.iter(), which),
