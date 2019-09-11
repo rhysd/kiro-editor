@@ -56,7 +56,7 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 enum UndoRedo {
     Undo,
     Redo,
@@ -517,127 +517,124 @@ impl TextBuffer {
         self.history.end_new_change();
     }
 
-    fn undo_change(&mut self, change: &Change) -> usize {
+    fn undoredo_change(&mut self, change: &Change, which: UndoRedo) -> ((usize, usize), usize) {
+        use UndoRedo::*;
         match change {
-            &Change::InsertChar(x, y, _) => {
-                self.row[y].remove_char(x);
-                self.cx = x;
-                self.cy = y;
-                y
-            }
-            &Change::DeleteChar(x, y, c) => {
-                self.row[y].insert_char(x - 1, c);
-                self.cx = x;
-                self.cy = y;
-                y
-            }
-            &Change::Append(y, ref s) => {
-                let count = s.chars().count();
-                let len = self.row[y].len();
-                self.row[y].remove(len - count, len);
-                self.cx = self.row[y].len();
-                self.cy = y;
-                y
-            }
-            &Change::Truncate(y, ref s) => {
-                self.row[y].append(s);
-                self.cx = self.row[y].len() - s.chars().count();
-                self.cy = y;
-                y
-            }
-            &Change::Insert(x, y, ref s) => {
-                self.row[y].remove(x, s.chars().count());
-                self.cx = x;
-                self.cy = y;
-                y
-            }
-            &Change::Remove(x, y, ref s) => {
-                let count = s.chars().count();
-                self.row[y].insert_str(x - count, s);
-                self.cx = x;
-                self.cy = y;
-                y
-            }
-            &Change::Newline => {
-                debug_assert_eq!(self.row[self.row.len() - 1].buffer(), "");
-                self.row.pop();
-                self.cy = self.row.len();
-                self.cx = 0;
-                self.cy
-            }
-            &Change::InsertLine(y, _) => {
-                self.row.remove(y);
-                self.cx = self.row[y - 1].len();
-                self.cy = y - 1;
-                y
-            }
-            &Change::DeleteLine(y, ref s) => {
-                self.row.insert(y, Row::new(s));
-                self.cx = 0;
-                self.cy = y;
-                y
-            }
+            &Change::InsertChar(x, y, c) => match which {
+                Undo => {
+                    self.row[y].remove_char(x);
+                    ((x, y), y)
+                }
+                Redo => {
+                    self.row[y].insert_char(x, c);
+                    ((x + 1, y), y)
+                }
+            },
+            &Change::DeleteChar(x, y, c) => match which {
+                Undo => {
+                    self.row[y].insert_char(x - 1, c);
+                    ((x, y), y)
+                }
+                Redo => {
+                    self.row[y].remove_char(x - 1);
+                    ((x - 1, y), y)
+                }
+            },
+            &Change::Append(y, ref s) => match which {
+                Undo => {
+                    let count = s.chars().count();
+                    let len = self.row[y].len();
+                    self.row[y].remove(len - count, len);
+                    let x = self.row[y].len();
+                    ((x, y), y)
+                }
+                Redo => {
+                    self.row[y].append(s);
+                    let x = self.row[y].len();
+                    ((x, y), y)
+                }
+            },
+            &Change::Truncate(y, ref s) => match which {
+                Undo => {
+                    self.row[y].append(s);
+                    let x = self.row[y].len() - s.chars().count();
+                    ((x, y), y)
+                }
+                Redo => {
+                    let count = s.chars().count();
+                    let len = self.row[y].len();
+                    self.row[y].truncate(len - count);
+                    ((len - count, y), y)
+                }
+            },
+            &Change::Insert(x, y, ref s) => match which {
+                Undo => {
+                    self.row[y].remove(x, s.chars().count());
+                    ((x, y), y)
+                }
+                Redo => {
+                    self.row[y].insert_str(x, s);
+                    ((x, y), y)
+                }
+            },
+            &Change::Remove(x, y, ref s) => match which {
+                Undo => {
+                    let count = s.chars().count();
+                    self.row[y].insert_str(x - count, s);
+                    ((x, y), y)
+                }
+                Redo => {
+                    let next_x = x - s.chars().count();
+                    self.row[y].remove(next_x, x);
+                    ((next_x, y), y)
+                }
+            },
+            &Change::Newline => match which {
+                Undo => {
+                    debug_assert_eq!(self.row[self.row.len() - 1].buffer(), "");
+                    self.row.pop();
+                    let y = self.row.len();
+                    ((0, y), y)
+                }
+                Redo => {
+                    let y = self.row.len();
+                    self.row.push(Row::empty());
+                    ((0, y), y)
+                }
+            },
+            &Change::InsertLine(y, ref s) => match which {
+                Undo => {
+                    self.row.remove(y);
+                    let x = self.row[y - 1].len();
+                    let y = y - 1;
+                    ((x, y), y)
+                }
+                Redo => {
+                    self.row.insert(y, Row::new(s));
+                    ((0, y), y)
+                }
+            },
+            &Change::DeleteLine(y, ref s) => match which {
+                Undo => {
+                    self.row.insert(y, Row::new(s));
+                    ((0, y), y)
+                }
+                Redo => {
+                    self.row.remove(y);
+                    let x = self.row[self.cy].len();
+                    let y = y - 1;
+                    ((x, y), y)
+                }
+            },
         }
     }
 
-    fn redo_change(&mut self, change: &Change) -> usize {
-        match change {
-            &Change::InsertChar(x, y, c) => {
-                self.row[y].insert_char(x, c);
-                self.cx = x + 1;
-                self.cy = y;
-                y
-            }
-            &Change::DeleteChar(x, y, _) => {
-                self.row[y].remove_char(x - 1);
-                self.cx = x - 1;
-                self.cy = y;
-                y
-            }
-            &Change::Append(y, ref s) => {
-                self.cx = self.row[y].len();
-                self.cy = y;
-                self.row[y].append(s);
-                y
-            }
-            &Change::Truncate(y, ref s) => {
-                let count = s.chars().count();
-                let len = self.row[y].len();
-                self.row[y].truncate(len - count);
-                self.cx = len - count;
-                self.cy = y;
-                y
-            }
-            &Change::Insert(x, y, ref s) => {
-                self.row[y].insert_str(x, s);
-                self.cx = x;
-                self.cy = y;
-                y
-            }
-            &Change::Remove(x, y, ref s) => {
-                self.cx = x - s.chars().count();
-                self.row[y].remove(self.cx, x);
-                self.cy = y;
-                y
-            }
-            &Change::Newline => {
-                self.cx = 0;
-                self.cy = self.row.len();
-                self.row.push(Row::empty());
-                self.cy
-            }
-            &Change::InsertLine(y, ref s) => {
-                self.row.insert(y, Row::new(s));
-                self.cx = 0;
-                self.cy = y;
-                y
-            }
-            &Change::DeleteLine(y, _) => {
-                self.row.remove(y);
-                self.cy = y - 1;
-                self.cx = self.row[self.cy].len();
-                self.cy
-            }
+    fn undoredo_changes<'a, I: Iterator<Item = &'a Change>>(&'a mut self, i: I, which: UndoRedo) {
+        for change in i {
+            let ((x, y), dirty_y) = self.undoredo_change(change, which);
+            self.cx = x;
+            self.cy = y;
+            self.set_dirty_start(dirty_y);
         }
     }
 
@@ -657,18 +654,8 @@ impl TextBuffer {
         if let Some(changes) = changes {
             debug_assert!(changes.len() > 0);
             match which {
-                Undo => {
-                    for change in changes.iter().rev() {
-                        let y = self.undo_change(change);
-                        self.set_dirty_start(y);
-                    }
-                }
-                Redo => {
-                    for change in changes.iter() {
-                        let y = self.redo_change(change);
-                        self.set_dirty_start(y);
-                    }
-                }
+                Undo => self.undoredo_changes(changes.iter().rev(), which),
+                Redo => self.undoredo_changes(changes.iter(), which),
             }
             self.modified = true;
             success = true;
