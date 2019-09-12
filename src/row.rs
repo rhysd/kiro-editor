@@ -158,28 +158,9 @@ impl Row {
         self.update_render();
     }
 
-    pub fn truncate(&mut self, at: usize) -> Option<String> {
-        if at < self.len() {
-            let idx = self.byte_idx_of(at);
-            let deleted = self.buf[idx..].to_owned();
-            self.buf.truncate(idx);
-            self.update_render();
-            Some(deleted)
-        } else {
-            None
-        }
-    }
-
-    pub fn drain(&mut self, start: usize, end: usize) -> Option<String> {
-        if start < end {
-            let start_idx = self.byte_idx_of(start);
-            let end_idx = self.byte_idx_of(end);
-            let removed = self.buf.drain(start_idx..end_idx).collect();
-            self.update_render();
-            Some(removed)
-        } else {
-            None
-        }
+    pub fn truncate(&mut self, at: usize) {
+        self.buf.truncate(self.byte_idx_of(at));
+        self.update_render();
     }
 
     // For undo

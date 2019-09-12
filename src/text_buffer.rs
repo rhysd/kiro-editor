@@ -1,8 +1,8 @@
 use crate::error::Result;
-use crate::history::{Change, History};
 use crate::language::{Indent, Language};
 use crate::row::Row;
 use std::cmp;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::mem;
@@ -56,11 +56,145 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+const MAX_ENTRIES: usize = 1000;
+
 #[derive(Debug, Clone, Copy)]
 enum UndoRedo {
     Undo,
     Redo,
 }
+
+#[derive(Debug)]
+pub enum Edit {
+    InsertChar(usize, usize, char),
+    DeleteChar(usize, usize, char),
+    Insert(usize, usize, String),
+    Append(usize, String),
+    Truncate(usize, String),
+    Remove(usize, usize, String),
+    Newline,
+    InsertLine(usize, String),
+    DeleteLine(usize, String),
+}
+
+impl Edit {
+    fn apply(&self, b: &mut TextBuffer, which: UndoRedo) {
+        use UndoRedo::*;
+        let ((new_cx, new_cy), dirty_start) = match *self {
+            Edit::InsertChar(x, y, c) => match which {
+                Undo => {
+                    b.row[y].remove_char(x);
+                    ((x, y), y)
+                }
+                Redo => {
+                    b.row[y].insert_char(x, c);
+                    ((x + 1, y), y)
+                }
+            },
+            Edit::DeleteChar(x, y, c) => match which {
+                Undo => {
+                    b.row[y].insert_char(x - 1, c);
+                    ((x, y), y)
+                }
+                Redo => {
+                    b.row[y].remove_char(x - 1);
+                    ((x - 1, y), y)
+                }
+            },
+            Edit::Append(y, ref s) => match which {
+                Undo => {
+                    let count = s.chars().count();
+                    let len = b.row[y].len();
+                    b.row[y].remove(len - count, len);
+                    let x = b.row[y].len();
+                    ((x, y), y)
+                }
+                Redo => {
+                    b.row[y].append(s);
+                    let x = b.row[y].len();
+                    ((x, y), y)
+                }
+            },
+            Edit::Truncate(y, ref s) => match which {
+                Undo => {
+                    b.row[y].append(s);
+                    let x = b.row[y].len() - s.chars().count();
+                    ((x, y), y)
+                }
+                Redo => {
+                    let count = s.chars().count();
+                    let len = b.row[y].len();
+                    b.row[y].truncate(len - count);
+                    ((len - count, y), y)
+                }
+            },
+            Edit::Insert(x, y, ref s) => match which {
+                Undo => {
+                    b.row[y].remove(x, s.chars().count());
+                    ((x, y), y)
+                }
+                Redo => {
+                    b.row[y].insert_str(x, s);
+                    ((x, y), y)
+                }
+            },
+            Edit::Remove(x, y, ref s) => match which {
+                Undo => {
+                    let count = s.chars().count();
+                    b.row[y].insert_str(x - count, s);
+                    ((x, y), y)
+                }
+                Redo => {
+                    let next_x = x - s.chars().count();
+                    b.row[y].remove(next_x, x);
+                    ((next_x, y), y)
+                }
+            },
+            Edit::Newline => match which {
+                Undo => {
+                    debug_assert_eq!(b.row[b.row.len() - 1].buffer(), "");
+                    b.row.pop();
+                    let y = b.row.len();
+                    ((0, y), y)
+                }
+                Redo => {
+                    let y = b.row.len();
+                    b.row.push(Row::empty());
+                    ((0, y), y)
+                }
+            },
+            Edit::InsertLine(y, ref s) => match which {
+                Undo => {
+                    b.row.remove(y);
+                    let x = b.row[y - 1].len();
+                    let y = y - 1;
+                    ((x, y), y)
+                }
+                Redo => {
+                    b.row.insert(y, Row::new(s));
+                    ((0, y), y)
+                }
+            },
+            Edit::DeleteLine(y, ref s) => match which {
+                Undo => {
+                    b.row.insert(y, Row::new(s));
+                    ((0, y), y)
+                }
+                Redo => {
+                    b.row.remove(y);
+                    let x = b.row[b.cy].len();
+                    let y = y - 1;
+                    ((x, y), y)
+                }
+            },
+        };
+        b.set_cursor(new_cx, new_cy);
+        b.set_dirty_start(dirty_start);
+        b.modified = true;
+    }
+}
+
+type Edits = Vec<Edit>;
 
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
@@ -74,7 +208,9 @@ pub struct TextBuffer {
     modified: bool,
     // Language which current buffer belongs to
     lang: Language,
-    history: History,
+    history_index: usize,
+    history: VecDeque<Edits>,
+    ongoing_edits: Option<Edits>,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -89,7 +225,9 @@ impl TextBuffer {
             row: vec![Row::empty()], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
-            history: History::default(),
+            history_index: 0,
+            history: VecDeque::new(),
+            ongoing_edits: None,
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -118,7 +256,9 @@ impl TextBuffer {
             row,
             modified: false,
             lang: Language::detect(path),
-            history: History::default(),
+            history_index: 0,
+            history: VecDeque::new(),
+            ongoing_edits: None,
             dirty_start: Some(0),
         })
     }
@@ -132,57 +272,41 @@ impl TextBuffer {
         self.dirty_start = Some(line);
     }
 
-    fn current_line_is_dirty(&mut self) {
-        self.set_dirty_start(self.cy);
+    fn edit(&mut self, edit: Edit) {
+        edit.apply(self, UndoRedo::Redo);
+        if let Some(ongoing) = &mut self.ongoing_edits {
+            ongoing.push(edit);
+        }
     }
 
     pub fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
-            self.history.push(Change::Newline);
-            self.row.push(Row::default());
+            self.edit(Edit::Newline);
         }
-        self.history.push(Change::InsertChar(self.cx, self.cy, ch));
-        self.row[self.cy].insert_char(self.cx, ch);
-        self.cx += 1;
-        self.modified = true;
-        self.current_line_is_dirty();
+        self.edit(Edit::InsertChar(self.cx, self.cy, ch));
     }
 
     pub fn insert_tab(&mut self) {
         match self.lang.indent() {
             Indent::AsIs => self.insert_char('\t'),
             Indent::Fixed(indent) => {
-                self.history
-                    .push(Change::Insert(self.cx, self.cy, indent.to_owned()));
-                self.insert_str(indent);
+                self.edit(Edit::Insert(self.cx, self.cy, indent.to_owned()));
             }
         }
     }
 
-    pub fn insert_str<S: AsRef<str>>(&mut self, s: S) {
+    pub fn insert_str<S: Into<String>>(&mut self, s: S) {
         if self.cy == self.row.len() {
-            self.history.push(Change::Newline);
-            self.row.push(Row::default());
+            self.edit(Edit::Newline);
         }
-        let s = s.as_ref();
-        self.history
-            .push(Change::Insert(self.cx, self.cy, s.to_owned()));
-        self.row[self.cy].insert_str(self.cx, s);
-        self.cx += s.chars().count();
-        self.modified = true;
-        self.current_line_is_dirty();
+        self.edit(Edit::Insert(self.cx, self.cy, s.into()));
     }
 
     fn concat_next_line(&mut self) {
         // TODO: Move buffer rather than copy
-        let removed = self.row.remove(self.cy + 1);
-        self.history
-            .push(Change::DeleteLine(self.cy + 1, removed.buffer().to_owned()));
-        self.row[self.cy].append(removed.buffer());
-        self.history
-            .push(Change::Append(self.cy, removed.buffer().to_owned()));
-        self.modified = true;
-        self.current_line_is_dirty();
+        let removed = self.row[self.cy + 1].buffer().to_owned();
+        self.edit(Edit::DeleteLine(self.cy + 1, removed.clone()));
+        self.edit(Edit::Append(self.cy, removed));
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -199,12 +323,7 @@ impl TextBuffer {
         if self.cx > 0 {
             let idx = self.cx - 1;
             let deleted = self.row[self.cy].char_at(idx);
-            self.row[self.cy].delete_char(idx);
-            self.history
-                .push(Change::DeleteChar(self.cx, self.cy, deleted));
-            self.cx -= 1;
-            self.modified = true;
-            self.current_line_is_dirty();
+            self.edit(Edit::DeleteChar(self.cx, self.cy, deleted));
         } else {
             self.squash_to_previous_line();
         }
@@ -214,16 +333,16 @@ impl TextBuffer {
         if self.cy == self.row.len() {
             return;
         }
-        if self.cx == self.row[self.cy].len() {
+        let row = &self.row[self.cy];
+        if self.cx == row.len() {
             // Do nothing when cursor is at end of line of end of text buffer
             if self.cy == self.row.len() - 1 {
                 return;
             }
             self.concat_next_line();
-        } else if let Some(truncated) = self.row[self.cy].truncate(self.cx) {
-            self.history.push(Change::Truncate(self.cy, truncated));
-            self.modified = true;
-            self.current_line_is_dirty();
+        } else if self.cx < row.buffer().len() {
+            let truncated = row[self.cx..].to_owned();
+            self.edit(Edit::Truncate(self.cy, truncated));
         }
     }
 
@@ -233,11 +352,9 @@ impl TextBuffer {
         }
         if self.cx == 0 {
             self.squash_to_previous_line();
-        } else if let Some(removed) = self.row[self.cy].drain(0, self.cx) {
-            self.history.push(Change::Remove(self.cx, self.cy, removed));
-            self.cx = 0;
-            self.modified = true;
-            self.current_line_is_dirty();
+        } else {
+            let removed = self.row[self.cy][..self.cx].to_owned();
+            self.edit(Edit::Remove(self.cx, self.cy, removed));
         }
     }
 
@@ -256,12 +373,8 @@ impl TextBuffer {
             x -= 1;
         }
 
-        if let Some(removed) = self.row[self.cy].drain(x, self.cx) {
-            self.history.push(Change::Remove(x, self.cx, removed));
-            self.cx = x;
-            self.modified = true;
-            self.current_line_is_dirty();
-        }
+        let removed = self.row[self.cy][x..self.cx].to_owned();
+        self.edit(Edit::Remove(x, self.cx, removed));
     }
 
     pub fn delete_right_char(&mut self) {
@@ -270,26 +383,16 @@ impl TextBuffer {
     }
 
     pub fn insert_line(&mut self) {
+        let row = &self.row[self.cy];
         if self.cy >= self.row.len() {
-            self.row.push(Row::default());
-            self.history.push(Change::Newline);
-        } else if self.cx >= self.row[self.cy].len() {
-            self.row.insert(self.cy + 1, Row::default());
-            self.history
-                .push(Change::InsertLine(self.cy + 1, "".to_string()));
-        } else {
-            let split = self.row[self.cy][self.cx..].to_string();
-            if let Some(truncated) = self.row[self.cy].truncate(self.cx) {
-                self.history.push(Change::Truncate(self.cy, truncated));
-            }
-            self.row.insert(self.cy + 1, Row::new(split.clone()));
-            self.history.push(Change::InsertLine(self.cy + 1, split));
+            self.edit(Edit::Newline);
+        } else if self.cx >= row.len() {
+            self.edit(Edit::InsertLine(self.cy + 1, "".to_string()));
+        } else if self.cx <= row.buffer().len() {
+            let truncated = row[self.cx..].to_owned();
+            self.edit(Edit::Truncate(self.cy, truncated.clone()));
+            self.edit(Edit::InsertLine(self.cy + 1, truncated));
         }
-
-        self.current_line_is_dirty();
-
-        self.cy += 1;
-        self.cx = 0;
     }
 
     pub fn move_cursor_one(&mut self, dir: CursorDir) {
@@ -510,159 +613,64 @@ impl TextBuffer {
     }
 
     pub fn start_undo_point(&mut self) {
-        self.history.start_new_change();
+        self.ongoing_edits = Some(vec![]);
     }
 
     pub fn end_undo_point(&mut self) {
-        self.history.end_new_change();
-    }
+        debug_assert!(self.history.len() <= MAX_ENTRIES);
+        if let Some(edits) = mem::replace(&mut self.ongoing_edits, None) {
+            if edits.is_empty() {
+                return;
+            }
 
-    fn undoredo_change(&mut self, change: &Change, which: UndoRedo) -> ((usize, usize), usize) {
-        use UndoRedo::*;
-        match *change {
-            Change::InsertChar(x, y, c) => match which {
-                Undo => {
-                    self.row[y].remove_char(x);
-                    ((x, y), y)
-                }
-                Redo => {
-                    self.row[y].insert_char(x, c);
-                    ((x + 1, y), y)
-                }
-            },
-            Change::DeleteChar(x, y, c) => match which {
-                Undo => {
-                    self.row[y].insert_char(x - 1, c);
-                    ((x, y), y)
-                }
-                Redo => {
-                    self.row[y].remove_char(x - 1);
-                    ((x - 1, y), y)
-                }
-            },
-            Change::Append(y, ref s) => match which {
-                Undo => {
-                    let count = s.chars().count();
-                    let len = self.row[y].len();
-                    self.row[y].remove(len - count, len);
-                    let x = self.row[y].len();
-                    ((x, y), y)
-                }
-                Redo => {
-                    self.row[y].append(s);
-                    let x = self.row[y].len();
-                    ((x, y), y)
-                }
-            },
-            Change::Truncate(y, ref s) => match which {
-                Undo => {
-                    self.row[y].append(s);
-                    let x = self.row[y].len() - s.chars().count();
-                    ((x, y), y)
-                }
-                Redo => {
-                    let count = s.chars().count();
-                    let len = self.row[y].len();
-                    self.row[y].truncate(len - count);
-                    ((len - count, y), y)
-                }
-            },
-            Change::Insert(x, y, ref s) => match which {
-                Undo => {
-                    self.row[y].remove(x, s.chars().count());
-                    ((x, y), y)
-                }
-                Redo => {
-                    self.row[y].insert_str(x, s);
-                    ((x, y), y)
-                }
-            },
-            Change::Remove(x, y, ref s) => match which {
-                Undo => {
-                    let count = s.chars().count();
-                    self.row[y].insert_str(x - count, s);
-                    ((x, y), y)
-                }
-                Redo => {
-                    let next_x = x - s.chars().count();
-                    self.row[y].remove(next_x, x);
-                    ((next_x, y), y)
-                }
-            },
-            Change::Newline => match which {
-                Undo => {
-                    debug_assert_eq!(self.row[self.row.len() - 1].buffer(), "");
-                    self.row.pop();
-                    let y = self.row.len();
-                    ((0, y), y)
-                }
-                Redo => {
-                    let y = self.row.len();
-                    self.row.push(Row::empty());
-                    ((0, y), y)
-                }
-            },
-            Change::InsertLine(y, ref s) => match which {
-                Undo => {
-                    self.row.remove(y);
-                    let x = self.row[y - 1].len();
-                    let y = y - 1;
-                    ((x, y), y)
-                }
-                Redo => {
-                    self.row.insert(y, Row::new(s));
-                    ((0, y), y)
-                }
-            },
-            Change::DeleteLine(y, ref s) => match which {
-                Undo => {
-                    self.row.insert(y, Row::new(s));
-                    ((0, y), y)
-                }
-                Redo => {
-                    self.row.remove(y);
-                    let x = self.row[self.cy].len();
-                    let y = y - 1;
-                    ((x, y), y)
-                }
-            },
+            if self.history.len() == MAX_ENTRIES {
+                self.history.pop_front();
+                self.history_index -= 1;
+            }
+
+            if self.history_index < self.history.len() {
+                // When new change is added after undo, remove edits after current point
+                self.history.truncate(self.history_index);
+            }
+
+            self.history_index += 1;
+            self.history.push_back(edits);
         }
     }
 
-    fn undoredo_changes<'a, I: Iterator<Item = &'a Change>>(&'a mut self, i: I, which: UndoRedo) {
-        for change in i {
-            let ((x, y), dirty_y) = self.undoredo_change(change, which);
-            self.cx = x;
-            self.cy = y;
-            self.set_dirty_start(dirty_y);
+    fn undoredo_changes<'a, I: Iterator<Item = &'a Edit>>(&'a mut self, i: I, which: UndoRedo) {
+        for edit in i {
+            edit.apply(self, which);
         }
     }
 
     fn undoredo(&mut self, which: UndoRedo) -> bool {
         use UndoRedo::*;
 
-        // Move out self.history. Following `for` statement requires to borrow `self.history` but in body
-        // of the loop we need to borrow `self` mutably to update text buffer. It is not allowed by Rust
-        // compiler
-        let mut history = mem::replace(&mut self.history, Default::default());
-        let mut success = false;
-
-        let changes = match which {
-            Undo => history.undo(),
-            Redo => history.redo(),
-        };
-        if let Some(changes) = changes {
-            debug_assert!(!changes.is_empty());
-            match which {
-                Undo => self.undoredo_changes(changes.iter().rev(), which),
-                Redo => self.undoredo_changes(changes.iter(), which),
+        let index = match which {
+            Undo if self.history_index == 0 => return false,
+            Undo => {
+                self.history_index -= 1;
+                self.history_index
             }
-            self.modified = true;
-            success = true;
+            Redo if self.history_index == self.history.len() => return false,
+            Redo => {
+                self.history_index += 1;
+                self.history_index - 1
+            }
+        };
+
+        let edits = mem::replace(&mut self.history[index], vec![]);
+        debug_assert!(!edits.is_empty());
+
+        match which {
+            Undo => self.undoredo_changes(edits.iter().rev(), which),
+            Redo => self.undoredo_changes(edits.iter(), which),
         }
 
-        mem::replace(&mut self.history, history);
-        success
+        mem::replace(&mut self.history[index], edits);
+        self.modified = true;
+        true
     }
 
     pub fn undo(&mut self) -> bool {

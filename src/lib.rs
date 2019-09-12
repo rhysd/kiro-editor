@@ -11,7 +11,6 @@
 mod editor;
 mod error;
 mod highlight;
-mod history;
 mod input;
 mod language;
 mod prompt;
