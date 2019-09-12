@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::mem;
 
+const MAX_ENTRIES: usize = 1000;
+
 #[derive(Debug)]
 pub enum Change {
     InsertChar(usize, usize, char),
@@ -29,15 +31,20 @@ impl History {
     }
 
     pub fn end_new_change(&mut self) {
-        let changes = mem::replace(&mut self.ongoing, None);
-        if let Some(changes) = changes {
+        debug_assert!(self.entries.len() <= MAX_ENTRIES);
+        if let Some(changes) = mem::replace(&mut self.ongoing, None) {
             if changes.is_empty() {
                 self.ongoing = None;
                 return;
             }
 
-            // TODO: Limit number of undo entries
+            if self.entries.len() == MAX_ENTRIES {
+                self.entries.pop_front();
+                self.index -= 1;
+            }
+
             if self.index < self.entries.len() {
+                // When new change is added after undo, remove changes after current point
                 self.entries.truncate(self.index);
             }
 
