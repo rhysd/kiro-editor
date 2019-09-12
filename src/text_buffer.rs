@@ -373,7 +373,7 @@ impl TextBuffer {
         }
 
         let removed = self.row[self.cy][x..self.cx].to_owned();
-        self.new_diff(Diff::Remove(x, self.cx, removed));
+        self.new_diff(Diff::Remove(self.cx, self.cy, removed));
     }
 
     pub fn delete_right_char(&mut self) {
