@@ -65,7 +65,7 @@ enum UndoRedo {
 }
 
 #[derive(Debug)]
-pub enum Edit {
+pub enum Diff {
     InsertChar(usize, usize, char),
     DeleteChar(usize, usize, char),
     Insert(usize, usize, String),
@@ -77,11 +77,11 @@ pub enum Edit {
     DeleteLine(usize, String),
 }
 
-impl Edit {
+impl Diff {
     fn apply(&self, b: &mut TextBuffer, which: UndoRedo) {
         use UndoRedo::*;
         let ((new_cx, new_cy), dirty_start) = match *self {
-            Edit::InsertChar(x, y, c) => match which {
+            Diff::InsertChar(x, y, c) => match which {
                 Undo => {
                     b.row[y].remove_char(x);
                     ((x, y), y)
@@ -91,7 +91,7 @@ impl Edit {
                     ((x + 1, y), y)
                 }
             },
-            Edit::DeleteChar(x, y, c) => match which {
+            Diff::DeleteChar(x, y, c) => match which {
                 Undo => {
                     b.row[y].insert_char(x - 1, c);
                     ((x, y), y)
@@ -101,7 +101,7 @@ impl Edit {
                     ((x - 1, y), y)
                 }
             },
-            Edit::Append(y, ref s) => match which {
+            Diff::Append(y, ref s) => match which {
                 Undo => {
                     let count = s.chars().count();
                     let len = b.row[y].len();
@@ -115,7 +115,7 @@ impl Edit {
                     ((x, y), y)
                 }
             },
-            Edit::Truncate(y, ref s) => match which {
+            Diff::Truncate(y, ref s) => match which {
                 Undo => {
                     b.row[y].append(s);
                     let x = b.row[y].len() - s.chars().count();
@@ -128,7 +128,7 @@ impl Edit {
                     ((len - count, y), y)
                 }
             },
-            Edit::Insert(x, y, ref s) => match which {
+            Diff::Insert(x, y, ref s) => match which {
                 Undo => {
                     b.row[y].remove(x, s.chars().count());
                     ((x, y), y)
@@ -138,7 +138,7 @@ impl Edit {
                     ((x, y), y)
                 }
             },
-            Edit::Remove(x, y, ref s) => match which {
+            Diff::Remove(x, y, ref s) => match which {
                 Undo => {
                     let count = s.chars().count();
                     b.row[y].insert_str(x - count, s);
@@ -150,7 +150,7 @@ impl Edit {
                     ((next_x, y), y)
                 }
             },
-            Edit::Newline => match which {
+            Diff::Newline => match which {
                 Undo => {
                     debug_assert_eq!(b.row[b.row.len() - 1].buffer(), "");
                     b.row.pop();
@@ -163,7 +163,7 @@ impl Edit {
                     ((0, y), y)
                 }
             },
-            Edit::InsertLine(y, ref s) => match which {
+            Diff::InsertLine(y, ref s) => match which {
                 Undo => {
                     b.row.remove(y);
                     let x = b.row[y - 1].len();
@@ -175,7 +175,7 @@ impl Edit {
                     ((0, y), y)
                 }
             },
-            Edit::DeleteLine(y, ref s) => match which {
+            Diff::DeleteLine(y, ref s) => match which {
                 Undo => {
                     b.row.insert(y, Row::new(s));
                     ((0, y), y)
@@ -194,7 +194,7 @@ impl Edit {
     }
 }
 
-type Edits = Vec<Edit>;
+type Diffs = Vec<Diff>;
 
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
@@ -208,9 +208,10 @@ pub struct TextBuffer {
     modified: bool,
     // Language which current buffer belongs to
     lang: Language,
+    // History per undo point for undo/redo
     history_index: usize,
-    history: VecDeque<Edits>,
-    ongoing_edits: Option<Edits>,
+    history: VecDeque<Diffs>,
+    ongoing_edit: Diffs,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -227,7 +228,7 @@ impl TextBuffer {
             lang: Language::Plain,
             history_index: 0,
             history: VecDeque::new(),
-            ongoing_edits: None,
+            ongoing_edit: vec![],
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -258,7 +259,7 @@ impl TextBuffer {
             lang: Language::detect(path),
             history_index: 0,
             history: VecDeque::new(),
-            ongoing_edits: None,
+            ongoing_edit: vec![],
             dirty_start: Some(0),
         })
     }
@@ -272,41 +273,39 @@ impl TextBuffer {
         self.dirty_start = Some(line);
     }
 
-    fn edit(&mut self, edit: Edit) {
-        edit.apply(self, UndoRedo::Redo);
-        if let Some(ongoing) = &mut self.ongoing_edits {
-            ongoing.push(edit);
-        }
+    fn new_diff(&mut self, diff: Diff) {
+        diff.apply(self, UndoRedo::Redo);
+        self.ongoing_edit.push(diff);
     }
 
     pub fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
-            self.edit(Edit::Newline);
+            self.new_diff(Diff::Newline);
         }
-        self.edit(Edit::InsertChar(self.cx, self.cy, ch));
+        self.new_diff(Diff::InsertChar(self.cx, self.cy, ch));
     }
 
     pub fn insert_tab(&mut self) {
         match self.lang.indent() {
             Indent::AsIs => self.insert_char('\t'),
             Indent::Fixed(indent) => {
-                self.edit(Edit::Insert(self.cx, self.cy, indent.to_owned()));
+                self.new_diff(Diff::Insert(self.cx, self.cy, indent.to_owned()));
             }
         }
     }
 
     pub fn insert_str<S: Into<String>>(&mut self, s: S) {
         if self.cy == self.row.len() {
-            self.edit(Edit::Newline);
+            self.new_diff(Diff::Newline);
         }
-        self.edit(Edit::Insert(self.cx, self.cy, s.into()));
+        self.new_diff(Diff::Insert(self.cx, self.cy, s.into()));
     }
 
     fn concat_next_line(&mut self) {
         // TODO: Move buffer rather than copy
         let removed = self.row[self.cy + 1].buffer().to_owned();
-        self.edit(Edit::DeleteLine(self.cy + 1, removed.clone()));
-        self.edit(Edit::Append(self.cy, removed));
+        self.new_diff(Diff::DeleteLine(self.cy + 1, removed.clone()));
+        self.new_diff(Diff::Append(self.cy, removed));
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -323,7 +322,7 @@ impl TextBuffer {
         if self.cx > 0 {
             let idx = self.cx - 1;
             let deleted = self.row[self.cy].char_at(idx);
-            self.edit(Edit::DeleteChar(self.cx, self.cy, deleted));
+            self.new_diff(Diff::DeleteChar(self.cx, self.cy, deleted));
         } else {
             self.squash_to_previous_line();
         }
@@ -342,7 +341,7 @@ impl TextBuffer {
             self.concat_next_line();
         } else if self.cx < row.buffer().len() {
             let truncated = row[self.cx..].to_owned();
-            self.edit(Edit::Truncate(self.cy, truncated));
+            self.new_diff(Diff::Truncate(self.cy, truncated));
         }
     }
 
@@ -354,7 +353,7 @@ impl TextBuffer {
             self.squash_to_previous_line();
         } else {
             let removed = self.row[self.cy][..self.cx].to_owned();
-            self.edit(Edit::Remove(self.cx, self.cy, removed));
+            self.new_diff(Diff::Remove(self.cx, self.cy, removed));
         }
     }
 
@@ -374,7 +373,7 @@ impl TextBuffer {
         }
 
         let removed = self.row[self.cy][x..self.cx].to_owned();
-        self.edit(Edit::Remove(x, self.cx, removed));
+        self.new_diff(Diff::Remove(x, self.cx, removed));
     }
 
     pub fn delete_right_char(&mut self) {
@@ -385,13 +384,13 @@ impl TextBuffer {
     pub fn insert_line(&mut self) {
         let row = &self.row[self.cy];
         if self.cy >= self.row.len() {
-            self.edit(Edit::Newline);
+            self.new_diff(Diff::Newline);
         } else if self.cx >= row.len() {
-            self.edit(Edit::InsertLine(self.cy + 1, "".to_string()));
+            self.new_diff(Diff::InsertLine(self.cy + 1, "".to_string()));
         } else if self.cx <= row.buffer().len() {
             let truncated = row[self.cx..].to_owned();
-            self.edit(Edit::Truncate(self.cy, truncated.clone()));
-            self.edit(Edit::InsertLine(self.cy + 1, truncated));
+            self.new_diff(Diff::Truncate(self.cy, truncated.clone()));
+            self.new_diff(Diff::InsertLine(self.cy + 1, truncated));
         }
     }
 
@@ -612,36 +611,26 @@ impl TextBuffer {
         self.cy = y;
     }
 
-    pub fn start_undo_point(&mut self) {
-        self.ongoing_edits = Some(vec![]);
-    }
-
-    pub fn end_undo_point(&mut self) {
+    pub fn finish_undo_point(&mut self) {
         debug_assert!(self.history.len() <= MAX_ENTRIES);
-        if let Some(edits) = mem::replace(&mut self.ongoing_edits, None) {
-            if edits.is_empty() {
-                return;
-            }
-
-            if self.history.len() == MAX_ENTRIES {
-                self.history.pop_front();
-                self.history_index -= 1;
-            }
-
-            if self.history_index < self.history.len() {
-                // When new change is added after undo, remove edits after current point
-                self.history.truncate(self.history_index);
-            }
-
-            self.history_index += 1;
-            self.history.push_back(edits);
+        if self.ongoing_edit.is_empty() {
+            return;
         }
-    }
 
-    fn undoredo_changes<'a, I: Iterator<Item = &'a Edit>>(&'a mut self, i: I, which: UndoRedo) {
-        for edit in i {
-            edit.apply(self, which);
+        let diffs = mem::replace(&mut self.ongoing_edit, vec![]);
+
+        if self.history.len() == MAX_ENTRIES {
+            self.history.pop_front();
+            self.history_index -= 1;
         }
+
+        if self.history_index < self.history.len() {
+            // When new change is added after undo, remove diffs after current point
+            self.history.truncate(self.history_index);
+        }
+
+        self.history_index += 1;
+        self.history.push_back(diffs);
     }
 
     fn undoredo(&mut self, which: UndoRedo) -> bool {
@@ -660,16 +649,23 @@ impl TextBuffer {
             }
         };
 
-        let edits = mem::replace(&mut self.history[index], vec![]);
-        debug_assert!(!edits.is_empty());
+        let diffs = mem::replace(&mut self.history[index], vec![]); // Move out for borrowing
+        debug_assert!(!diffs.is_empty());
 
         match which {
-            Undo => self.undoredo_changes(edits.iter().rev(), which),
-            Redo => self.undoredo_changes(edits.iter(), which),
+            Undo => {
+                for diff in diffs.iter().rev() {
+                    diff.apply(self, which);
+                }
+            }
+            Redo => {
+                for diff in diffs.iter() {
+                    diff.apply(self, which);
+                }
+            }
         }
 
-        mem::replace(&mut self.history[index], edits);
-        self.modified = true;
+        mem::replace(&mut self.history[index], diffs); // Replace back
         true
     }
 

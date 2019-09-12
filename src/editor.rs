@@ -259,7 +259,6 @@ where
         let rows = self.screen.rows();
         let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
         self.buf_mut().dirty_start = None;
-        self.buf_mut().start_undo_point();
 
         match &s {
             InputSeq {
@@ -350,7 +349,7 @@ where
             },
         }
 
-        self.buf_mut().end_undo_point();
+        self.buf_mut().finish_undo_point();
         if let Some(line) = self.buf().dirty_start {
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);

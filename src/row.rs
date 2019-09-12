@@ -159,11 +159,11 @@ impl Row {
     }
 
     pub fn truncate(&mut self, at: usize) {
-        self.buf.truncate(self.byte_idx_of(at));
-        self.update_render();
+        if at < self.len() {
+            self.buf.truncate(self.byte_idx_of(at));
+            self.update_render();
+        }
     }
-
-    // For undo
 
     pub fn remove_char(&mut self, at: usize) {
         self.buf.remove(self.byte_idx_of(at));
