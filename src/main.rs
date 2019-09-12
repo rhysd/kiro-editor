@@ -1,7 +1,6 @@
 // Refs:
 //   Build Your Own Text Editor: https://viewsourcecode.org/snaptoken/kilo/index.html
 //   VT100 User Guide: https://vt100.net/docs/vt100-ug/chapter3.html
-
 use getopts::Options;
 use kiro_editor::{self as kiro, Editor, StdinRawMode, HELP, VERSION};
 use std::env;

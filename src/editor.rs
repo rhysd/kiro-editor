@@ -259,6 +259,7 @@ where
         let rows = self.screen.rows();
         let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
         self.buf_mut().dirty_start = None;
+        let mut break_undo = false;
 
         match &s {
             InputSeq {
@@ -331,8 +332,14 @@ where
                 Key(0x08) => self.buf_mut().delete_char(), // Backspace
                 Key(0x7f) => self.buf_mut().delete_char(), // Delete key is mapped to \x1b[3~
                 Key(b'\r') => self.buf_mut().insert_line(),
-                Key(b) if !b.is_ascii_control() => self.buf_mut().insert_char(*b as char),
-                Utf8Key(c) => self.buf_mut().insert_char(*c),
+                Key(b) if !b.is_ascii_control() => {
+                    self.buf_mut().insert_char(*b as char);
+                    break_undo = true;
+                }
+                Utf8Key(c) => {
+                    self.buf_mut().insert_char(*c);
+                    break_undo = true;
+                }
                 UpKey => self.buf_mut().move_cursor_one(CursorDir::Up),
                 LeftKey => self.buf_mut().move_cursor_one(CursorDir::Left),
                 DownKey => self.buf_mut().move_cursor_one(CursorDir::Down),
@@ -349,7 +356,9 @@ where
             },
         }
 
-        self.buf_mut().finish_undo_point();
+        if !break_undo {
+            self.buf_mut().finish_undo_point();
+        }
         if let Some(line) = self.buf().dirty_start {
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);

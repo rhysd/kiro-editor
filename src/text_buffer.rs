@@ -636,6 +636,10 @@ impl TextBuffer {
     fn undoredo(&mut self, which: UndoRedo) -> bool {
         use UndoRedo::*;
 
+        if !self.ongoing_edit.is_empty() {
+            self.finish_undo_point();
+        }
+
         let index = match which {
             Undo if self.history_index == 0 => return false,
             Undo => {
