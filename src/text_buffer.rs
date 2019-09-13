@@ -136,10 +136,14 @@ impl TextBuffer {
         self.dirty_start = Some(line);
     }
 
-    fn new_diff(&mut self, diff: EditDiff) {
-        let (x, y) = diff.apply(self.cx, self.cy, &mut self.row, UndoRedo::Redo);
+    fn apply_diff(&mut self, diff: &EditDiff, which: UndoRedo) {
+        let (x, y) = diff.apply(&mut self.row, which);
         self.set_cursor(x, y);
         self.set_dirty_start(y);
+    }
+
+    fn new_diff(&mut self, diff: EditDiff) {
+        self.apply_diff(&diff, UndoRedo::Redo);
         self.modified = true;
         self.ongoing_edit.push(diff); // Remember diff for undo/redo
     }
@@ -175,9 +179,10 @@ impl TextBuffer {
     }
 
     fn squash_to_previous_line(&mut self) {
+        // Move cursor to previous line
+        self.cy -= 1;
         // At top of line, backspace concats current line to previous line
-        self.cx = self.row[self.cy - 1].len(); // Move cursor column to end of previous line
-        self.cy -= 1; // Move cursor to previous line
+        self.cx = self.row[self.cy].len(); // Move cursor column to end of previous line
         self.concat_next_line();
     }
 
@@ -525,12 +530,12 @@ impl TextBuffer {
         match which {
             Undo => {
                 for diff in diffs.iter().rev() {
-                    diff.apply(self.cx, self.cy, &mut self.row, which);
+                    self.apply_diff(diff, which);
                 }
             }
             Redo => {
                 for diff in diffs.iter() {
-                    diff.apply(self.cx, self.cy, &mut self.row, which);
+                    self.apply_diff(diff, which);
                 }
             }
         }

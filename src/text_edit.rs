@@ -22,13 +22,7 @@ pub enum EditDiff {
 pub type Edit = Vec<EditDiff>;
 
 impl EditDiff {
-    pub fn apply(
-        &self,
-        _cx: usize,
-        cy: usize,
-        rows: &mut Vec<Row>,
-        which: UndoRedo,
-    ) -> (usize, usize) {
+    pub fn apply(&self, rows: &mut Vec<Row>, which: UndoRedo) -> (usize, usize) {
         use UndoRedo::*;
         match *self {
             EditDiff::InsertChar(x, y, c) => match which {
@@ -60,8 +54,8 @@ impl EditDiff {
                     (x, y)
                 }
                 Redo => {
-                    rows[y].append(s);
                     let x = rows[y].len();
+                    rows[y].append(s);
                     (x, y)
                 }
             },
@@ -127,14 +121,20 @@ impl EditDiff {
             },
             EditDiff::DeleteLine(y, ref s) => match which {
                 Undo => {
-                    rows.insert(y, Row::new(s));
+                    if y == rows.len() {
+                        rows.push(Row::new(s));
+                    } else {
+                        rows.insert(y, Row::new(s));
+                    }
                     (0, y)
                 }
                 Redo => {
-                    rows.remove(y);
-                    let x = rows[cy].len();
-                    let y = y - 1;
-                    (x, y)
+                    if y == rows.len() - 1 {
+                        rows.pop();
+                    } else {
+                        rows.remove(y);
+                    }
+                    (rows[y - 1].len(), y - 1)
                 }
             },
         }
