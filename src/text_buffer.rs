@@ -1,7 +1,7 @@
+use crate::edit_diff::{EditDiff, UndoRedo};
 use crate::error::Result;
 use crate::language::{Indent, Language};
 use crate::row::Row;
-use crate::text_edit::{Edit, EditDiff, UndoRedo};
 use std::cmp;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -58,6 +58,8 @@ impl<'a> Iterator for Lines<'a> {
 }
 
 const MAX_ENTRIES: usize = 1000;
+
+pub type Edit = Vec<EditDiff>;
 
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows

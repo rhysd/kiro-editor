@@ -19,8 +19,6 @@ pub enum EditDiff {
     DeleteLine(usize, String),
 }
 
-pub type Edit = Vec<EditDiff>;
-
 impl EditDiff {
     pub fn apply(&self, rows: &mut Vec<Row>, which: UndoRedo) -> (usize, usize) {
         use UndoRedo::*;

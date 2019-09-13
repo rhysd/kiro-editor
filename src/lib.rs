@@ -20,7 +20,7 @@ mod signal;
 mod status_bar;
 mod term_color;
 mod text_buffer;
-mod text_edit;
+mod edit_diff;
 
 #[cfg(test)]
 mod ui_test;
