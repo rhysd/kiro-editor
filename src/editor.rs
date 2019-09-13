@@ -8,7 +8,6 @@ use crate::status_bar::StatusBar;
 use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::io::Write;
 use std::path::Path;
-use std::str;
 
 pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
     input: I,       // Escape sequences stream represented as Iterator
@@ -25,13 +24,13 @@ where
     I: Iterator<Item = Result<InputSeq>>,
     W: Write,
 {
-    pub fn new(
+    fn with_buf(
+        buf: TextBuffer,
         mut input: I,
         output: W,
         window_size: Option<(usize, usize)>,
     ) -> Result<Editor<I, W>> {
         let screen = Screen::new(window_size, &mut input, output)?;
-        let buf = TextBuffer::empty();
         let status_bar = StatusBar::from_buffer(&buf, (1, 1));
         Ok(Editor {
             input,
@@ -42,6 +41,19 @@ where
             buf_idx: 0,
             status_bar,
         })
+    }
+
+    pub fn new(input: I, output: W, window_size: Option<(usize, usize)>) -> Result<Editor<I, W>> {
+        Self::with_buf(TextBuffer::empty(), input, output, window_size)
+    }
+
+    pub fn with_lines<'a, L: Iterator<Item = &'a str>>(
+        lines: L,
+        input: I,
+        output: W,
+        window_size: Option<(usize, usize)>,
+    ) -> Result<Editor<I, W>> {
+        Self::with_buf(TextBuffer::with_lines(lines), input, output, window_size)
     }
 
     pub fn open<P: AsRef<Path>>(

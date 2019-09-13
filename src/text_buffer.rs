@@ -96,6 +96,21 @@ impl TextBuffer {
         }
     }
 
+    pub fn with_lines<'a, I: Iterator<Item = &'a str>>(lines: I) -> Self {
+        Self {
+            cx: 0,
+            cy: 0,
+            file: None,
+            row: lines.map(Row::new).collect(),
+            modified: false,
+            lang: Language::Plain,
+            history_index: 0,
+            history: VecDeque::new(),
+            ongoing_edit: vec![],
+            dirty_start: Some(0), // Ensure to render first screen
+        }
+    }
+
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let file = Some(FilePath::from(path));
@@ -162,13 +177,6 @@ impl TextBuffer {
                 self.new_diff(EditDiff::Insert(self.cx, self.cy, indent.to_owned()));
             }
         }
-    }
-
-    pub fn insert_str<S: Into<String>>(&mut self, s: S) {
-        if self.cy == self.row.len() {
-            self.new_diff(EditDiff::Newline);
-        }
-        self.new_diff(EditDiff::Insert(self.cx, self.cy, s.into()));
     }
 
     fn concat_next_line(&mut self) {
@@ -253,13 +261,12 @@ impl TextBuffer {
     }
 
     pub fn insert_line(&mut self) {
-        let row = &self.row[self.cy];
         if self.cy >= self.row.len() {
             self.new_diff(EditDiff::Newline);
-        } else if self.cx >= row.len() {
+        } else if self.cx >= self.row[self.cy].len() {
             self.new_diff(EditDiff::InsertLine(self.cy + 1, "".to_string()));
-        } else if self.cx <= row.buffer().len() {
-            let truncated = row[self.cx..].to_owned();
+        } else if self.cx <= self.row[self.cy].buffer().len() {
+            let truncated = self.row[self.cy][self.cx..].to_owned();
             self.new_diff(EditDiff::Truncate(self.cy, truncated.clone()));
             self.new_diff(EditDiff::InsertLine(self.cy + 1, truncated));
         }
