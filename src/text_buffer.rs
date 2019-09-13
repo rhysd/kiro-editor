@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::language::{Indent, Language};
 use crate::row::Row;
+use crate::text_edit::{Edit, EditDiff, UndoRedo};
 use std::cmp;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -58,144 +59,6 @@ impl<'a> Iterator for Lines<'a> {
 
 const MAX_ENTRIES: usize = 1000;
 
-#[derive(Debug, Clone, Copy)]
-enum UndoRedo {
-    Undo,
-    Redo,
-}
-
-#[derive(Debug)]
-pub enum Diff {
-    InsertChar(usize, usize, char),
-    DeleteChar(usize, usize, char),
-    Insert(usize, usize, String),
-    Append(usize, String),
-    Truncate(usize, String),
-    Remove(usize, usize, String),
-    Newline,
-    InsertLine(usize, String),
-    DeleteLine(usize, String),
-}
-
-impl Diff {
-    fn apply(&self, b: &mut TextBuffer, which: UndoRedo) {
-        use UndoRedo::*;
-        let ((new_cx, new_cy), dirty_start) = match *self {
-            Diff::InsertChar(x, y, c) => match which {
-                Undo => {
-                    b.row[y].remove_char(x);
-                    ((x, y), y)
-                }
-                Redo => {
-                    b.row[y].insert_char(x, c);
-                    ((x + 1, y), y)
-                }
-            },
-            Diff::DeleteChar(x, y, c) => match which {
-                Undo => {
-                    b.row[y].insert_char(x - 1, c);
-                    ((x, y), y)
-                }
-                Redo => {
-                    b.row[y].remove_char(x - 1);
-                    ((x - 1, y), y)
-                }
-            },
-            Diff::Append(y, ref s) => match which {
-                Undo => {
-                    let count = s.chars().count();
-                    let len = b.row[y].len();
-                    b.row[y].remove(len - count, len);
-                    let x = b.row[y].len();
-                    ((x, y), y)
-                }
-                Redo => {
-                    b.row[y].append(s);
-                    let x = b.row[y].len();
-                    ((x, y), y)
-                }
-            },
-            Diff::Truncate(y, ref s) => match which {
-                Undo => {
-                    b.row[y].append(s);
-                    let x = b.row[y].len() - s.chars().count();
-                    ((x, y), y)
-                }
-                Redo => {
-                    let count = s.chars().count();
-                    let len = b.row[y].len();
-                    b.row[y].truncate(len - count);
-                    ((len - count, y), y)
-                }
-            },
-            Diff::Insert(x, y, ref s) => match which {
-                Undo => {
-                    b.row[y].remove(x, s.chars().count());
-                    ((x, y), y)
-                }
-                Redo => {
-                    b.row[y].insert_str(x, s);
-                    ((x, y), y)
-                }
-            },
-            Diff::Remove(x, y, ref s) => match which {
-                Undo => {
-                    let count = s.chars().count();
-                    b.row[y].insert_str(x - count, s);
-                    ((x, y), y)
-                }
-                Redo => {
-                    let next_x = x - s.chars().count();
-                    b.row[y].remove(next_x, x);
-                    ((next_x, y), y)
-                }
-            },
-            Diff::Newline => match which {
-                Undo => {
-                    debug_assert_eq!(b.row[b.row.len() - 1].buffer(), "");
-                    b.row.pop();
-                    let y = b.row.len();
-                    ((0, y), y)
-                }
-                Redo => {
-                    let y = b.row.len();
-                    b.row.push(Row::empty());
-                    ((0, y), y)
-                }
-            },
-            Diff::InsertLine(y, ref s) => match which {
-                Undo => {
-                    b.row.remove(y);
-                    let x = b.row[y - 1].len();
-                    let y = y - 1;
-                    ((x, y), y)
-                }
-                Redo => {
-                    b.row.insert(y, Row::new(s));
-                    ((0, y), y)
-                }
-            },
-            Diff::DeleteLine(y, ref s) => match which {
-                Undo => {
-                    b.row.insert(y, Row::new(s));
-                    ((0, y), y)
-                }
-                Redo => {
-                    b.row.remove(y);
-                    let x = b.row[b.cy].len();
-                    let y = y - 1;
-                    ((x, y), y)
-                }
-            },
-        };
-        b.set_cursor(new_cx, new_cy);
-        b.set_dirty_start(dirty_start);
-        b.modified = true;
-    }
-}
-
-type Diffs = Vec<Diff>;
-
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
@@ -210,8 +73,8 @@ pub struct TextBuffer {
     lang: Language,
     // History per undo point for undo/redo
     history_index: usize,
-    history: VecDeque<Diffs>,
-    ongoing_edit: Diffs,
+    history: VecDeque<Edit>,
+    ongoing_edit: Edit,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -273,39 +136,42 @@ impl TextBuffer {
         self.dirty_start = Some(line);
     }
 
-    fn new_diff(&mut self, diff: Diff) {
-        diff.apply(self, UndoRedo::Redo);
-        self.ongoing_edit.push(diff);
+    fn new_diff(&mut self, diff: EditDiff) {
+        let (x, y) = diff.apply(self.cx, self.cy, &mut self.row, UndoRedo::Redo);
+        self.set_cursor(x, y);
+        self.set_dirty_start(y);
+        self.modified = true;
+        self.ongoing_edit.push(diff); // Remember diff for undo/redo
     }
 
     pub fn insert_char(&mut self, ch: char) {
         if self.cy == self.row.len() {
-            self.new_diff(Diff::Newline);
+            self.new_diff(EditDiff::Newline);
         }
-        self.new_diff(Diff::InsertChar(self.cx, self.cy, ch));
+        self.new_diff(EditDiff::InsertChar(self.cx, self.cy, ch));
     }
 
     pub fn insert_tab(&mut self) {
         match self.lang.indent() {
             Indent::AsIs => self.insert_char('\t'),
             Indent::Fixed(indent) => {
-                self.new_diff(Diff::Insert(self.cx, self.cy, indent.to_owned()));
+                self.new_diff(EditDiff::Insert(self.cx, self.cy, indent.to_owned()));
             }
         }
     }
 
     pub fn insert_str<S: Into<String>>(&mut self, s: S) {
         if self.cy == self.row.len() {
-            self.new_diff(Diff::Newline);
+            self.new_diff(EditDiff::Newline);
         }
-        self.new_diff(Diff::Insert(self.cx, self.cy, s.into()));
+        self.new_diff(EditDiff::Insert(self.cx, self.cy, s.into()));
     }
 
     fn concat_next_line(&mut self) {
         // TODO: Move buffer rather than copy
         let removed = self.row[self.cy + 1].buffer().to_owned();
-        self.new_diff(Diff::DeleteLine(self.cy + 1, removed.clone()));
-        self.new_diff(Diff::Append(self.cy, removed));
+        self.new_diff(EditDiff::DeleteLine(self.cy + 1, removed.clone()));
+        self.new_diff(EditDiff::Append(self.cy, removed));
     }
 
     fn squash_to_previous_line(&mut self) {
@@ -322,7 +188,7 @@ impl TextBuffer {
         if self.cx > 0 {
             let idx = self.cx - 1;
             let deleted = self.row[self.cy].char_at(idx);
-            self.new_diff(Diff::DeleteChar(self.cx, self.cy, deleted));
+            self.new_diff(EditDiff::DeleteChar(self.cx, self.cy, deleted));
         } else {
             self.squash_to_previous_line();
         }
@@ -341,7 +207,7 @@ impl TextBuffer {
             self.concat_next_line();
         } else if self.cx < row.buffer().len() {
             let truncated = row[self.cx..].to_owned();
-            self.new_diff(Diff::Truncate(self.cy, truncated));
+            self.new_diff(EditDiff::Truncate(self.cy, truncated));
         }
     }
 
@@ -353,7 +219,7 @@ impl TextBuffer {
             self.squash_to_previous_line();
         } else {
             let removed = self.row[self.cy][..self.cx].to_owned();
-            self.new_diff(Diff::Remove(self.cx, self.cy, removed));
+            self.new_diff(EditDiff::Remove(self.cx, self.cy, removed));
         }
     }
 
@@ -373,7 +239,7 @@ impl TextBuffer {
         }
 
         let removed = self.row[self.cy][x..self.cx].to_owned();
-        self.new_diff(Diff::Remove(self.cx, self.cy, removed));
+        self.new_diff(EditDiff::Remove(self.cx, self.cy, removed));
     }
 
     pub fn delete_right_char(&mut self) {
@@ -384,13 +250,13 @@ impl TextBuffer {
     pub fn insert_line(&mut self) {
         let row = &self.row[self.cy];
         if self.cy >= self.row.len() {
-            self.new_diff(Diff::Newline);
+            self.new_diff(EditDiff::Newline);
         } else if self.cx >= row.len() {
-            self.new_diff(Diff::InsertLine(self.cy + 1, "".to_string()));
+            self.new_diff(EditDiff::InsertLine(self.cy + 1, "".to_string()));
         } else if self.cx <= row.buffer().len() {
             let truncated = row[self.cx..].to_owned();
-            self.new_diff(Diff::Truncate(self.cy, truncated.clone()));
-            self.new_diff(Diff::InsertLine(self.cy + 1, truncated));
+            self.new_diff(EditDiff::Truncate(self.cy, truncated.clone()));
+            self.new_diff(EditDiff::InsertLine(self.cy + 1, truncated));
         }
     }
 
@@ -659,12 +525,12 @@ impl TextBuffer {
         match which {
             Undo => {
                 for diff in diffs.iter().rev() {
-                    diff.apply(self, which);
+                    diff.apply(self.cx, self.cy, &mut self.row, which);
                 }
             }
             Redo => {
                 for diff in diffs.iter() {
-                    diff.apply(self, which);
+                    diff.apply(self.cx, self.cy, &mut self.row, which);
                 }
             }
         }
