@@ -228,9 +228,9 @@ macro_rules! test_text_edit {
 }
 
 test_text_edit!(
-    inesrt_char,
-    inesrt_char_undo,
-    inesrt_char_redo {
+    insert_char,
+    insert_char_undo,
+    insert_char_redo {
         before: "",
         input: [key('a'), key('b'), key('c'), key('\r'), key('d'), key('e'),],
         after: "

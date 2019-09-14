@@ -1,12 +1,11 @@
 use crate::edit_diff::{EditDiff, UndoRedo};
 use crate::error::Result;
+use crate::history::History;
 use crate::language::{Indent, Language};
 use crate::row::Row;
 use std::cmp;
-use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::slice;
 
@@ -57,10 +56,6 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
-const MAX_ENTRIES: usize = 1000;
-
-pub type Edit = Vec<EditDiff>;
-
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,
@@ -74,9 +69,7 @@ pub struct TextBuffer {
     // Language which current buffer belongs to
     lang: Language,
     // History per undo point for undo/redo
-    history_index: usize,
-    history: VecDeque<Edit>,
-    ongoing_edit: Edit,
+    history: History,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -91,9 +84,7 @@ impl TextBuffer {
             row: vec![Row::empty()], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
-            history_index: 0,
-            history: VecDeque::new(),
-            ongoing_edit: vec![],
+            history: History::default(),
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -106,9 +97,7 @@ impl TextBuffer {
             row: lines.map(Row::new).collect(),
             modified: false,
             lang: Language::Plain,
-            history_index: 0,
-            history: VecDeque::new(),
-            ongoing_edit: vec![],
+            history: History::default(),
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -137,9 +126,7 @@ impl TextBuffer {
             row,
             modified: false,
             lang: Language::detect(path),
-            history_index: 0,
-            history: VecDeque::new(),
-            ongoing_edit: vec![],
+            history: History::default(),
             dirty_start: Some(0),
         })
     }
@@ -162,7 +149,7 @@ impl TextBuffer {
     fn new_diff(&mut self, diff: EditDiff) {
         self.apply_diff(&diff, UndoRedo::Redo);
         self.modified = true;
-        self.ongoing_edit.push(diff); // Remember diff for undo/redo
+        self.history.push(diff); // Remember diff for undo/redo
     }
 
     pub fn insert_char(&mut self, ch: char) {
@@ -492,65 +479,36 @@ impl TextBuffer {
     }
 
     pub fn finish_undo_point(&mut self) {
-        debug_assert!(self.history.len() <= MAX_ENTRIES);
-        if self.ongoing_edit.is_empty() {
-            return;
-        }
-
-        let diffs = mem::replace(&mut self.ongoing_edit, vec![]);
-
-        if self.history.len() == MAX_ENTRIES {
-            self.history.pop_front();
-            self.history_index -= 1;
-        }
-
-        if self.history_index < self.history.len() {
-            // When new change is added after undo, remove diffs after current point
-            self.history.truncate(self.history_index);
-        }
-
-        self.history_index += 1;
-        self.history.push_back(diffs);
+        self.history.finish_ongoing_edit();
     }
 
     fn undoredo(&mut self, which: UndoRedo) -> bool {
         use UndoRedo::*;
 
-        if !self.ongoing_edit.is_empty() {
-            self.finish_undo_point();
-        }
-
-        let index = match which {
-            Undo if self.history_index == 0 => return false,
-            Undo => {
-                self.history_index -= 1;
-                self.history_index
-            }
-            Redo if self.history_index == self.history.len() => return false,
-            Redo => {
-                self.history_index += 1;
-                self.history_index - 1
-            }
+        let entry = match which {
+            Undo => self.history.undo(),
+            Redo => self.history.redo(),
         };
+        let did = entry.is_some();
 
-        let diffs = mem::replace(&mut self.history[index], vec![]); // Move out for borrowing
-        debug_assert!(!diffs.is_empty());
-
-        match which {
-            Undo => {
-                for diff in diffs.iter().rev() {
-                    self.apply_diff(diff, which);
+        if let Some(diffs) = entry {
+            debug_assert!(!diffs.is_empty());
+            match which {
+                Undo => {
+                    for diff in diffs.iter().rev() {
+                        self.apply_diff(diff, which);
+                    }
+                }
+                Redo => {
+                    for diff in diffs.iter() {
+                        self.apply_diff(diff, which);
+                    }
                 }
             }
-            Redo => {
-                for diff in diffs.iter() {
-                    self.apply_diff(diff, which);
-                }
-            }
+            self.history.finish_undoredo(diffs);
         }
 
-        mem::replace(&mut self.history[index], diffs); // Replace back
-        true
+        did
     }
 
     pub fn undo(&mut self) -> bool {
