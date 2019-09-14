@@ -1,24 +1,12 @@
-use crate::edit_diff::EditDiff;
+use crate::edit_diff::{EditDiff, UndoRedo};
+use crate::row::Row;
+use std::cmp;
 use std::collections::VecDeque;
 use std::mem;
-use std::ops::Deref;
 
 const MAX_ENTRIES: usize = 1000;
 
 pub type Edit = Vec<EditDiff>;
-
-pub struct HistoryEntry {
-    index: usize,
-    edit: Edit,
-}
-
-impl Deref for HistoryEntry {
-    type Target = Edit;
-
-    fn deref(&self) -> &Self::Target {
-        &self.edit
-    }
-}
 
 #[derive(Default)]
 pub struct History {
@@ -54,32 +42,34 @@ impl History {
         self.entries.push_back(diffs);
     }
 
-    fn move_out_entry(&mut self, index: usize) -> HistoryEntry {
-        HistoryEntry {
-            index,
-            edit: mem::replace(&mut self.entries[index], vec![]),
-        }
+    fn apply_diffs<'a, I: Iterator<Item = &'a EditDiff>>(
+        diffs: I,
+        which: UndoRedo,
+        rows: &mut Vec<Row>,
+    ) -> (usize, usize, usize) {
+        diffs.fold((0, 0, usize::max_value()), |(_, _, dirty_start), diff| {
+            let (x, y) = diff.apply(rows, which);
+            (x, y, cmp::min(dirty_start, y))
+        })
     }
 
-    pub fn undo(&mut self) -> Option<HistoryEntry> {
+    pub fn undo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
+        self.finish_ongoing_edit();
         if self.index == 0 {
             return None;
         }
-        self.finish_ongoing_edit();
         self.index -= 1;
-        Some(self.move_out_entry(self.index))
+        let i = self.entries[self.index].iter().rev();
+        Some(Self::apply_diffs(i, UndoRedo::Undo, rows))
     }
 
-    pub fn redo(&mut self) -> Option<HistoryEntry> {
+    pub fn redo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
+        self.finish_ongoing_edit();
         if self.index == self.entries.len() {
             return None;
         }
-        self.finish_ongoing_edit();
         self.index += 1;
-        Some(self.move_out_entry(self.index - 1))
-    }
-
-    pub fn finish_undoredo(&mut self, entry: HistoryEntry) {
-        mem::replace(&mut self.entries[entry.index], entry.edit); // Replace back
+        let i = self.entries[self.index - 1].iter();
+        Some(Self::apply_diffs(i, UndoRedo::Redo, rows))
     }
 }

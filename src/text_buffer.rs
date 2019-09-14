@@ -482,40 +482,24 @@ impl TextBuffer {
         self.history.finish_ongoing_edit();
     }
 
-    fn undoredo(&mut self, which: UndoRedo) -> bool {
-        use UndoRedo::*;
-
-        let entry = match which {
-            Undo => self.history.undo(),
-            Redo => self.history.redo(),
-        };
-        let did = entry.is_some();
-
-        if let Some(diffs) = entry {
-            debug_assert!(!diffs.is_empty());
-            match which {
-                Undo => {
-                    for diff in diffs.iter().rev() {
-                        self.apply_diff(diff, which);
-                    }
-                }
-                Redo => {
-                    for diff in diffs.iter() {
-                        self.apply_diff(diff, which);
-                    }
-                }
+    fn after_undoredo(&mut self, state: Option<(usize, usize, usize)>) -> bool {
+        match state {
+            Some((x, y, s)) => {
+                self.set_cursor(x, y);
+                self.set_dirty_start(s);
+                true
             }
-            self.history.finish_undoredo(diffs);
+            None => false,
         }
-
-        did
     }
 
     pub fn undo(&mut self) -> bool {
-        self.undoredo(UndoRedo::Undo)
+        let state = self.history.undo(&mut self.row);
+        self.after_undoredo(state)
     }
 
     pub fn redo(&mut self) -> bool {
-        self.undoredo(UndoRedo::Redo)
+        let state = self.history.redo(&mut self.row);
+        self.after_undoredo(state)
     }
 }
