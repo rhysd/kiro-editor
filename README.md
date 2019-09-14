@@ -20,6 +20,7 @@ And Kiro extends [kilo][] to improve editing (please see 'Extended Features' sec
 section below for more details):
 
 - Support editing UTF-8 characters like '🐶' (kilo only supports ASCII characters)
+- Undo/Redo
 - More userful shortcuts (Alt modifier is supported)
 - 24bit colors (true colors) and 256 colors support using [gruvbox][] retro color palette with 16
   colors fallback
@@ -114,6 +115,8 @@ remember all mappings. Please type `Ctrl-?` to know all mappings in editor.
 | `Ctrl-J`                | Delete until head of line |
 | `Ctrl-K`                | Delete until end of line  |
 | `Ctrl-M`                | Insert new line           |
+| `Ctrl-U`                | Undo last change          |
+| `Ctrl-R`                | Redo last undo change     |
 
 Here is some screenshots for basic features.
 
@@ -136,6 +139,8 @@ characters support.
 ![UTF-8 supports](https://github.com/rhysd/ss/blob/master/kiro-editor/multibyte_chars.gif?raw=true)
 
 Note that emojis using `U+200D` (zero width joiner) like '👪' are not supported yet.
+
+Please read 'Support Editing UTF-8 Text' subsection for implementation details.
 
 #### 24-bit colors (true colors) and 256 colors support
 
@@ -160,6 +165,15 @@ Terminal notifies a window resize event via SIGWINCH signal. Kiro catches the si
 its screen with new window size.
 
 ![resize window](https://github.com/rhysd/ss/blob/master/kiro-editor/resize.gif?raw=true)
+
+### Undo/Redo
+
+Kiro supports undo/redo editing (`Ctrl-U` for undo, `Ctrl-R` for redo). Max number of history entries
+is 1000. After exceeding it, oldest entry is removed on adding new change to text.
+
+<img src="https://github.com/rhysd/ss/blob/master/kiro-editor/undo_redo.gif?raw=true" alt="undo/redo screencast" width=589 height=412 />
+
+Please read 'Text editing as sequence of diffs' subsection.
 
 
 
@@ -256,6 +270,34 @@ when the line text contains non-ASCII characters. In terms of programming code e
 rare case, I believe.
 
 
+### Text Editing  as Sequence of Diffs
+
+In Kiro editor, every text edit is represented as diff of text. So text editing means applying diffs to
+current text buffer. Undo is represented as unapplying diffs. Redo is represented as apllying diffs
+again.
+
+One undo is represented as multiple diffs, not one diff. This is because users usually don't want to
+undo per inserting one character. So diffs each character inserts a character is put together as one
+undo.
+
+![UTF-8 support diagram](./assets/undo-redo-support-diagram.png)
+
+At first a user inputs "abc" to text. The input is represented as 3 diffs of each
+characters and they consist of one undo unit. So inserting "abc" is reverted at once on undo though
+it is represented as multiple diffs.
+Then a user backs cursor by one character and delete characters "ab" until head of line. It is represented
+as one diff.
+Finally a user adds a new line by ENTER key. Inserting line is represented as two diffs. At first, editor
+truncates a text after cursor ("c") and then it inserts new line "c" to next line to the cursor. These
+two diffs consist of one undo unit.
+
+By managing history of text editing with undo units, every text edit can be represented as sequence of
+diffs. Redo applies diffs in one undo unit to current text buffer. And undo unapplies diffs in one undo
+unit to current text buffer.
+
+Normal input is also treated as redo internally so that editor doesn't need to handle normal input with
+separate implementation.
+
 ### Porting C editor to Rust
 
 #### Separate one C source into several Rust modules
@@ -270,11 +312,16 @@ the global variables and local static variables by moving them to each logic's s
   which gets key input, updates a text buffer and highlight then renders screen.
 - [`text_buffer.rs`](src/text_buffer.rs): Exports `TextBuffer` struct, which manages an editing text
   buffer as `Vec<Row>`. It also contains metadata such as file name and file type of the buffer.
+- [`edit_diff.rs`](src/edit_diff.rs): Editing text is defined as applying sequence of diffs to text.
+  This module exports an enum `EditDiff` which represents the diff and logic to apply it to text.
 - [`row.rs`](src/row.rs): Exports `Row` struct which represents one line of text buffer and contains
   actual text and rendered text. Since Kiro is dedicated for UTF-8 text editing, internal text buffer
   is also kept as UTF-8 string. When the internal text buffer is updated by `Editor`, it automatically
   updates rendered text also. It may also contain character indices for UTF-8 non-ASCII characters
   (Please see below 'UTF-8 Support' section).
+- [`history.rs`](src/history.rs): It exports struct `History` which manages the edit history. The history
+  is represented as sequence of edit diffs. It manages the state of undo/redo and how many changes should
+  happen on one undo/redo operation.
 - [`input.rs`](src/input.rs): Exports `StdinRawMode` struct and `InputSequences` iterator.
   `StdinRawMode` setups STDIN as raw mode (disable various terminal features such as echo back).
   `InputSequences` reads user's key input as byte sequence with timeout and parses it as stream of
@@ -454,7 +501,6 @@ text editor on terminal works.
 - Unit tests are not sufficient. More tests should be added
 - Improve scrolling performance (Is terminal scrolling available?)
 - Minimal documentation
-- Undo/Redo is not implemented yet
 - Text selection and copy from or paste to system clipboard
 - Keeping all highlights (`Vec<Highlight>`) is not memory efficient. Keep bits only for current
   screen (`rowoff..rowoff+num_rows`)
@@ -466,7 +512,6 @@ text editor on terminal works.
 
 ### Future Works
 
-- Use more efficient data structure such as rope, gap buffer or piece table
 - Use incremental parsing for accurate syntax highlighting
 - Support more systems and terminals
 - Look editor configuration file such as [EditorConfig](https://editorconfig.org/)

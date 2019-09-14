@@ -37,6 +37,8 @@ pub const HELP: &str = "\
     Ctrl-W                        : Delete a word
     Ctrl-J                        : Delete until head of line
     Ctrl-K                        : Delete until end of line
+    Ctrl-U                        : Undo last change
+    Ctrl-R                        : Redo last undo change
     Ctrl-G                        : Search text
     Ctrl-M                        : New line
     Ctrl-L                        : Refresh screen
