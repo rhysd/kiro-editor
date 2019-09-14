@@ -13,6 +13,14 @@ pub struct Row {
 }
 
 impl Row {
+    pub fn empty() -> Row {
+        Row {
+            buf: "".to_string(),
+            render: "".to_string(),
+            indices: Vec::with_capacity(0),
+        }
+    }
+
     pub fn new<S: Into<String>>(line: S) -> Row {
         let mut row = Row {
             buf: line.into(),
@@ -155,6 +163,11 @@ impl Row {
             self.buf.truncate(self.byte_idx_of(at));
             self.update_render();
         }
+    }
+
+    pub fn remove_char(&mut self, at: usize) {
+        self.buf.remove(self.byte_idx_of(at));
+        self.update_render();
     }
 
     pub fn remove(&mut self, start: usize, end: usize) {

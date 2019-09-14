@@ -1,4 +1,6 @@
+use crate::edit_diff::{EditDiff, UndoRedo};
 use crate::error::Result;
+use crate::history::History;
 use crate::language::{Indent, Language};
 use crate::row::Row;
 use std::cmp;
@@ -66,6 +68,10 @@ pub struct TextBuffer {
     modified: bool,
     // Language which current buffer belongs to
     lang: Language,
+    // History per undo point for undo/redo
+    history: History,
+    // Flag to ensure at most one undo point per one key input
+    inserted_undo: bool,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -77,9 +83,25 @@ impl TextBuffer {
             cx: 0,
             cy: 0,
             file: None,
-            row: vec![Row::new("")], // Ensure that every text ends with newline
+            row: vec![Row::empty()], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
+            history: History::default(),
+            inserted_undo: false,
+            dirty_start: Some(0), // Ensure to render first screen
+        }
+    }
+
+    pub fn with_lines<'a, I: Iterator<Item = &'a str>>(lines: I) -> Self {
+        Self {
+            cx: 0,
+            cy: 0,
+            file: None,
+            row: lines.map(Row::new).collect(),
+            modified: false,
+            lang: Language::Plain,
+            history: History::default(),
+            inserted_undo: false,
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -108,66 +130,89 @@ impl TextBuffer {
             row,
             modified: false,
             lang: Language::detect(path),
+            history: History::default(),
+            inserted_undo: false,
             dirty_start: Some(0),
         })
     }
 
-    fn set_dirty_start(&mut self) {
+    fn set_dirty_start(&mut self, line: usize) {
         if let Some(l) = self.dirty_start {
-            if l <= self.cy {
+            if l <= line {
                 return;
             }
         }
-        self.dirty_start = Some(self.cy);
+        self.dirty_start = Some(line);
+    }
+
+    fn apply_diff(&mut self, diff: &EditDiff, which: UndoRedo) {
+        let (x, y) = diff.apply(&mut self.row, which);
+        self.set_cursor(x, y);
+        self.set_dirty_start(y);
+    }
+
+    fn new_diff(&mut self, diff: EditDiff) {
+        self.apply_diff(&diff, UndoRedo::Redo);
+        self.modified = true;
+        self.history.push(diff); // Remember diff for undo/redo
+    }
+
+    fn insert_undo_point(&mut self) {
+        if !self.inserted_undo {
+            self.history.finish_ongoing_edit();
+            self.inserted_undo = true;
+        }
+    }
+
+    // This method must be called after handling one key input.
+    // TODO: This should be replaced with Drop when separating logic to edit text buffer from TextBuffer
+    // by introducing RenderContext.
+    pub fn finish_edit(&mut self) {
+        self.inserted_undo = false;
     }
 
     pub fn insert_char(&mut self, ch: char) {
+        // Don't add undo point to squash multiple insert_char changes into one undo
         if self.cy == self.row.len() {
-            self.row.push(Row::default());
+            self.new_diff(EditDiff::Newline);
         }
-        self.row[self.cy].insert_char(self.cx, ch);
-        self.cx += 1;
-        self.modified = true;
-        self.set_dirty_start();
+        self.new_diff(EditDiff::InsertChar(self.cx, self.cy, ch));
     }
 
     pub fn insert_tab(&mut self) {
+        self.insert_undo_point();
         match self.lang.indent() {
             Indent::AsIs => self.insert_char('\t'),
-            Indent::Fixed(indent) => self.insert_str(indent),
+            Indent::Fixed(indent) => {
+                self.new_diff(EditDiff::Insert(self.cx, self.cy, indent.to_owned()));
+            }
         }
     }
 
-    pub fn insert_str<S: AsRef<str>>(&mut self, s: S) {
-        if self.cy == self.row.len() {
-            self.row.push(Row::default());
-        }
-        let s = s.as_ref();
-        self.row[self.cy].insert_str(self.cx, s);
-        self.cx += s.as_bytes().len();
-        self.modified = true;
-        self.set_dirty_start();
+    fn concat_next_line(&mut self) {
+        // TODO: Move buffer rather than copy
+        let removed = self.row[self.cy + 1].buffer().to_owned();
+        self.new_diff(EditDiff::DeleteLine(self.cy + 1, removed.clone()));
+        self.new_diff(EditDiff::Append(self.cy, removed));
     }
 
-    pub fn squash_to_previous_line(&mut self) {
+    fn squash_to_previous_line(&mut self) {
+        // Move cursor to previous line
+        self.cy -= 1;
         // At top of line, backspace concats current line to previous line
-        self.cx = self.row[self.cy - 1].len(); // Move cursor column to end of previous line
-        let row = self.row.remove(self.cy);
-        self.cy -= 1; // Move cursor to previous line
-        self.row[self.cy].append(row.buffer()); // TODO: Move buffer rather than copy
-        self.modified = true;
-        self.set_dirty_start();
+        self.cx = self.row[self.cy].len(); // Move cursor column to end of previous line
+        self.concat_next_line();
     }
 
     pub fn delete_char(&mut self) {
         if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
             return;
         }
+        self.insert_undo_point();
         if self.cx > 0 {
-            self.row[self.cy].delete_char(self.cx - 1);
-            self.cx -= 1;
-            self.modified = true;
-            self.set_dirty_start();
+            let idx = self.cx - 1;
+            let deleted = self.row[self.cy].char_at(idx);
+            self.new_diff(EditDiff::DeleteChar(self.cx, self.cy, deleted));
         } else {
             self.squash_to_previous_line();
         }
@@ -177,32 +222,30 @@ impl TextBuffer {
         if self.cy == self.row.len() {
             return;
         }
-        if self.cx == self.row[self.cy].len() {
+        self.insert_undo_point();
+        let row = &self.row[self.cy];
+        if self.cx == row.len() {
             // Do nothing when cursor is at end of line of end of text buffer
             if self.cy == self.row.len() - 1 {
                 return;
             }
-            // At end of line, concat with next line
-            let deleted = self.row.remove(self.cy + 1);
-            self.row[self.cy].append(deleted.buffer()); // TODO: Move buffer rather than copy
-        } else {
-            self.row[self.cy].truncate(self.cx);
+            self.concat_next_line();
+        } else if self.cx < row.buffer().len() {
+            let truncated = row[self.cx..].to_owned();
+            self.new_diff(EditDiff::Truncate(self.cy, truncated));
         }
-        self.modified = true;
-        self.set_dirty_start();
     }
 
     pub fn delete_until_head_of_line(&mut self) {
         if self.cx == 0 && self.cy == 0 || self.cy == self.row.len() {
             return;
         }
+        self.insert_undo_point();
         if self.cx == 0 {
             self.squash_to_previous_line();
         } else {
-            self.row[self.cy].remove(0, self.cx);
-            self.cx = 0;
-            self.modified = true;
-            self.set_dirty_start();
+            let removed = self.row[self.cy][..self.cx].to_owned();
+            self.new_diff(EditDiff::Remove(self.cx, self.cy, removed));
         }
     }
 
@@ -210,6 +253,7 @@ impl TextBuffer {
         if self.cx == 0 || self.cy == self.row.len() {
             return;
         }
+        self.insert_undo_point();
 
         let mut x = self.cx - 1;
         let row = &self.row[self.cy];
@@ -221,12 +265,8 @@ impl TextBuffer {
             x -= 1;
         }
 
-        if x < self.cx {
-            self.row[self.cy].remove(x, self.cx);
-            self.cx = x;
-            self.modified = true;
-            self.set_dirty_start();
-        }
+        let removed = self.row[self.cy][x..self.cx].to_owned();
+        self.new_diff(EditDiff::Remove(self.cx, self.cy, removed));
     }
 
     pub fn delete_right_char(&mut self) {
@@ -235,20 +275,16 @@ impl TextBuffer {
     }
 
     pub fn insert_line(&mut self) {
+        self.insert_undo_point();
         if self.cy >= self.row.len() {
-            self.row.push(Row::default());
+            self.new_diff(EditDiff::Newline);
         } else if self.cx >= self.row[self.cy].len() {
-            self.row.insert(self.cy + 1, Row::default());
-        } else {
-            let split = self.row[self.cy][self.cx..].to_string();
-            self.row[self.cy].truncate(self.cx);
-            self.row.insert(self.cy + 1, Row::new(split));
+            self.new_diff(EditDiff::InsertLine(self.cy + 1, "".to_string()));
+        } else if self.cx <= self.row[self.cy].buffer().len() {
+            let truncated = self.row[self.cy][self.cx..].to_owned();
+            self.new_diff(EditDiff::Truncate(self.cy, truncated.clone()));
+            self.new_diff(EditDiff::InsertLine(self.cy + 1, truncated));
         }
-
-        self.set_dirty_start();
-
-        self.cy += 1;
-        self.cx = 0;
     }
 
     pub fn move_cursor_one(&mut self, dir: CursorDir) {
@@ -466,5 +502,26 @@ impl TextBuffer {
     pub fn set_cursor(&mut self, x: usize, y: usize) {
         self.cx = x;
         self.cy = y;
+    }
+
+    fn after_undoredo(&mut self, state: Option<(usize, usize, usize)>) -> bool {
+        match state {
+            Some((x, y, s)) => {
+                self.set_cursor(x, y);
+                self.set_dirty_start(s);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn undo(&mut self) -> bool {
+        let state = self.history.undo(&mut self.row);
+        self.after_undoredo(state)
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let state = self.history.redo(&mut self.row);
+        self.after_undoredo(state)
     }
 }

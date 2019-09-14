@@ -8,9 +8,11 @@
 #![allow(clippy::useless_let_if_seq)]
 #![allow(clippy::cognitive_complexity)]
 
+mod edit_diff;
 mod editor;
 mod error;
 mod highlight;
+mod history;
 mod input;
 mod language;
 mod prompt;
