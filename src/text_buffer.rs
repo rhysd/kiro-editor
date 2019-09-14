@@ -70,6 +70,8 @@ pub struct TextBuffer {
     lang: Language,
     // History per undo point for undo/redo
     history: History,
+    // Flag to ensure at most one undo point per one key input
+    inserted_undo: bool,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
     pub dirty_start: Option<usize>,
@@ -85,6 +87,7 @@ impl TextBuffer {
             modified: false,
             lang: Language::Plain,
             history: History::default(),
+            inserted_undo: false,
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -98,6 +101,7 @@ impl TextBuffer {
             modified: false,
             lang: Language::Plain,
             history: History::default(),
+            inserted_undo: false,
             dirty_start: Some(0), // Ensure to render first screen
         }
     }
@@ -127,6 +131,7 @@ impl TextBuffer {
             modified: false,
             lang: Language::detect(path),
             history: History::default(),
+            inserted_undo: false,
             dirty_start: Some(0),
         })
     }
@@ -152,7 +157,22 @@ impl TextBuffer {
         self.history.push(diff); // Remember diff for undo/redo
     }
 
+    fn insert_undo_point(&mut self) {
+        if !self.inserted_undo {
+            self.history.finish_ongoing_edit();
+            self.inserted_undo = true;
+        }
+    }
+
+    // This method must be called after handling one key input.
+    // TODO: This should be replaced with Drop when separating logic to edit text buffer from TextBuffer
+    // by introducing RenderContext.
+    pub fn finish_edit(&mut self) {
+        self.inserted_undo = false;
+    }
+
     pub fn insert_char(&mut self, ch: char) {
+        // Don't add undo point to squash multiple insert_char changes into one undo
         if self.cy == self.row.len() {
             self.new_diff(EditDiff::Newline);
         }
@@ -160,6 +180,7 @@ impl TextBuffer {
     }
 
     pub fn insert_tab(&mut self) {
+        self.insert_undo_point();
         match self.lang.indent() {
             Indent::AsIs => self.insert_char('\t'),
             Indent::Fixed(indent) => {
@@ -187,6 +208,7 @@ impl TextBuffer {
         if self.cy == self.row.len() || self.cx == 0 && self.cy == 0 {
             return;
         }
+        self.insert_undo_point();
         if self.cx > 0 {
             let idx = self.cx - 1;
             let deleted = self.row[self.cy].char_at(idx);
@@ -200,6 +222,7 @@ impl TextBuffer {
         if self.cy == self.row.len() {
             return;
         }
+        self.insert_undo_point();
         let row = &self.row[self.cy];
         if self.cx == row.len() {
             // Do nothing when cursor is at end of line of end of text buffer
@@ -217,6 +240,7 @@ impl TextBuffer {
         if self.cx == 0 && self.cy == 0 || self.cy == self.row.len() {
             return;
         }
+        self.insert_undo_point();
         if self.cx == 0 {
             self.squash_to_previous_line();
         } else {
@@ -229,6 +253,7 @@ impl TextBuffer {
         if self.cx == 0 || self.cy == self.row.len() {
             return;
         }
+        self.insert_undo_point();
 
         let mut x = self.cx - 1;
         let row = &self.row[self.cy];
@@ -250,6 +275,7 @@ impl TextBuffer {
     }
 
     pub fn insert_line(&mut self) {
+        self.insert_undo_point();
         if self.cy >= self.row.len() {
             self.new_diff(EditDiff::Newline);
         } else if self.cx >= self.row[self.cy].len() {
@@ -476,10 +502,6 @@ impl TextBuffer {
     pub fn set_cursor(&mut self, x: usize, y: usize) {
         self.cx = x;
         self.cy = y;
-    }
-
-    pub fn finish_undo_point(&mut self) {
-        self.history.finish_ongoing_edit();
     }
 
     fn after_undoredo(&mut self, state: Option<(usize, usize, usize)>) -> bool {

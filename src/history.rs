@@ -23,7 +23,7 @@ impl History {
     pub fn finish_ongoing_edit(&mut self) {
         debug_assert!(self.entries.len() <= MAX_ENTRIES);
         if self.ongoing.is_empty() {
-            return;
+            return; // Do nothing when no change was added
         }
 
         let diffs = mem::replace(&mut self.ongoing, vec![]);
