@@ -21,111 +21,98 @@ pub enum EditDiff {
 
 impl EditDiff {
     pub fn apply(&self, rows: &mut Vec<Row>, which: UndoRedo) -> (usize, usize) {
+        // Returns cursor's next position (x, y)
         use UndoRedo::*;
         match *self {
             EditDiff::InsertChar(x, y, c) => match which {
-                Undo => {
-                    rows[y].remove_char(x);
-                    (x, y)
-                }
                 Redo => {
                     rows[y].insert_char(x, c);
                     (x + 1, y)
                 }
-            },
-            EditDiff::DeleteChar(x, y, c) => match which {
                 Undo => {
-                    rows[y].insert_char(x - 1, c);
+                    rows[y].remove_char(x);
                     (x, y)
                 }
+            },
+            EditDiff::DeleteChar(x, y, c) => match which {
                 Redo => {
                     rows[y].remove_char(x - 1);
                     (x - 1, y)
                 }
+                Undo => {
+                    rows[y].insert_char(x - 1, c);
+                    (x, y)
+                }
             },
             EditDiff::Append(y, ref s) => match which {
+                Redo => {
+                    rows[y].append(s);
+                    (rows[y].len() - 1, y)
+                }
                 Undo => {
                     let count = s.chars().count();
                     let len = rows[y].len();
                     rows[y].remove(len - count, len);
-                    let x = rows[y].len();
-                    (x, y)
-                }
-                Redo => {
-                    let x = rows[y].len();
-                    rows[y].append(s);
-                    (x, y)
+                    (rows[y].len(), y)
                 }
             },
             EditDiff::Truncate(y, ref s) => match which {
-                Undo => {
-                    rows[y].append(s);
-                    let x = rows[y].len() - s.chars().count();
-                    (x, y)
-                }
                 Redo => {
                     let count = s.chars().count();
                     let len = rows[y].len();
                     rows[y].truncate(len - count);
                     (len - count, y)
                 }
-            },
-            EditDiff::Insert(x, y, ref s) => match which {
                 Undo => {
-                    rows[y].remove(x, s.chars().count());
+                    rows[y].append(s);
+                    let x = rows[y].len() - s.chars().count();
                     (x, y)
                 }
+            },
+            EditDiff::Insert(x, y, ref s) => match which {
                 Redo => {
                     rows[y].insert_str(x, s);
                     (x, y)
                 }
-            },
-            EditDiff::Remove(x, y, ref s) => match which {
                 Undo => {
-                    let count = s.chars().count();
-                    rows[y].insert_str(x - count, s);
+                    rows[y].remove(x, s.chars().count());
                     (x, y)
                 }
+            },
+            EditDiff::Remove(x, y, ref s) => match which {
                 Redo => {
                     let next_x = x - s.chars().count();
                     rows[y].remove(next_x, x);
                     (next_x, y)
                 }
+                Undo => {
+                    let count = s.chars().count();
+                    rows[y].insert_str(x - count, s);
+                    (x, y)
+                }
             },
             EditDiff::Newline => match which {
+                Redo => {
+                    rows.push(Row::empty());
+                    (0, rows.len() - 1)
+                }
                 Undo => {
                     debug_assert_eq!(rows[rows.len() - 1].buffer(), "");
                     rows.pop();
-                    let y = rows.len();
-                    (0, y)
-                }
-                Redo => {
-                    let y = rows.len();
-                    rows.push(Row::empty());
-                    (0, y)
+                    (0, rows.len())
                 }
             },
             EditDiff::InsertLine(y, ref s) => match which {
-                Undo => {
-                    rows.remove(y);
-                    let x = rows[y - 1].len();
-                    let y = y - 1;
-                    (x, y)
-                }
                 Redo => {
                     rows.insert(y, Row::new(s));
                     (0, y)
                 }
+                Undo => {
+                    rows.remove(y);
+                    (rows[y - 1].len(), y - 1)
+                }
             },
             EditDiff::DeleteLine(y, ref s) => match which {
-                Undo => {
-                    if y == rows.len() {
-                        rows.push(Row::new(s));
-                    } else {
-                        rows.insert(y, Row::new(s));
-                    }
-                    (0, y)
-                }
                 Redo => {
                     if y == rows.len() - 1 {
                         rows.pop();
@@ -133,6 +120,14 @@ impl EditDiff {
                         rows.remove(y);
                     }
                     (rows[y - 1].len(), y - 1)
+                }
+                Undo => {
+                    if y == rows.len() {
+                        rows.push(Row::new(s));
+                    } else {
+                        rows.insert(y, Row::new(s));
+                    }
+                    (0, y)
                 }
             },
         }
