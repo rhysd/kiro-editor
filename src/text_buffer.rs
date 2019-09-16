@@ -270,6 +270,12 @@ impl TextBuffer {
     }
 
     pub fn delete_right_char(&mut self) {
+        if self.cy == self.row.len()
+            || self.cy == self.row.len() - 1 && self.cx == self.row[self.cy].len()
+        {
+            // At end of buffer, nothing can be deleted and cursor should not move
+            return;
+        }
         self.move_cursor_one(CursorDir::Right);
         self.delete_char();
     }

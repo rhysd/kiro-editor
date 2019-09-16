@@ -367,11 +367,14 @@ g",
             sp(DeleteKey), // Delete empty line
             ctrl('v'),     // Move to end of buffer
             sp(DeleteKey), // Do nothing
+            sp(UpKey),
+            sp(EndKey),
+            sp(DeleteKey), // Do nothing at end of last line
         ],
         after: "
 b
 g",
-        cursor: (0, 2),
+        cursor: (1, 1),
     }
 );
 
