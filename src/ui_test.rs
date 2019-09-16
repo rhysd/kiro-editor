@@ -132,6 +132,7 @@ macro_rules! test_text_edit {
         before: $before:expr,
         input: [$($input:expr,)+],
         after: $after:expr,
+        cursor: $cursor:expr,
     }) => {
         #[test]
         fn $title() {
@@ -157,6 +158,8 @@ macro_rules! test_text_edit {
                     "Line {} mismatch! expected='{:?} actual='{:?}'", idx+1, expected, actual,
                 );
             }
+
+            assert_eq!(editor.buf().cursor(), $cursor)
         }
 
         #[test]
@@ -232,10 +235,20 @@ test_text_edit!(
     insert_char_undo,
     insert_char_redo {
         before: "",
-        input: [key('a'), key('b'), key('c'), key('\r'), key('d'), key('e'),],
+        input: [
+            key('a'),
+            key('b'),
+            sp(DownKey),
+            key('c'), // Insert first char to new line
+            key('\r'),
+            key('d'),
+            key('e'),
+        ],
         after: "
-abc
+ab
+c
 de",
+        cursor: (2, 2),
     }
 );
 
@@ -249,24 +262,25 @@ de
 
 fg",
         input: [
-            key('\x08'), // Do nothing
+            key('\x08'), // Do nothing (0x08 means backspace)
             sp(EndKey),
             key('\x08'), // Delete c
             key('\x08'), // Delete b
             sp(DownKey),
             sp(DownKey),
-            key('\x08'), // Remove empty key
+            key('\x08'), // Remove empty line
             ctrl('v'),   // Move to end of buffer
             key('\x08'), // Do nothing
             sp(UpKey),
             sp(RightKey),
             key('\x08'), // Delete f
-            key('\x08'), // Line
+            key('\x08'), // Delete a line
             key('\x08'), // Delete e
         ],
         after: "
 a
 dg",
+        cursor: (1, 1),
     }
 );
 
@@ -297,6 +311,7 @@ ef",
 	ab
 c	d
 ef	",
+        cursor: (3, 3),
     }
 );
 
@@ -331,6 +346,7 @@ cd
 
 
 ",
+        cursor: (0, 8),
     }
 );
 
@@ -354,6 +370,7 @@ g",
         after: "
 b
 g",
+        cursor: (0, 2),
     }
 );
 
@@ -387,6 +404,7 @@ h",
 c
 efg
 h",
+        cursor: (0, 4),
     }
 );
 
@@ -423,6 +441,7 @@ b
 
 efgh
 i",
+        cursor: (0, 4),
     }
 );
 
@@ -470,5 +489,6 @@ c  hi
 pqr
 
 s",
+        cursor: (0, 4),
     }
 );

@@ -31,4 +31,4 @@ pub use error::{Error, Result};
 pub use input::StdinRawMode;
 pub use language::Language;
 pub use screen::{Screen, HELP, VERSION};
-pub use text_buffer::Lines;
+pub use text_buffer::{Lines, TextBuffer};

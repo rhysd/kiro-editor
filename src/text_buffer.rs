@@ -504,6 +504,10 @@ impl TextBuffer {
         self.cy = y;
     }
 
+    pub fn cursor(&self) -> (usize, usize) {
+        (self.cx, self.cy)
+    }
+
     fn after_undoredo(&mut self, state: Option<(usize, usize, usize)>) -> bool {
         match state {
             Some((x, y, s)) => {

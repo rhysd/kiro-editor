@@ -80,7 +80,7 @@ where
         })
     }
 
-    fn buf(&self) -> &TextBuffer {
+    pub fn buf(&self) -> &TextBuffer {
         &self.bufs[self.buf_idx]
     }
 
