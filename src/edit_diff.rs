@@ -46,8 +46,9 @@ impl EditDiff {
             },
             EditDiff::Append(y, ref s) => match which {
                 Redo => {
+                    let len = rows[y].len();
                     rows[y].append(s);
-                    (rows[y].len() - 1, y)
+                    (len, y)
                 }
                 Undo => {
                     let count = s.chars().count();

@@ -258,9 +258,9 @@ test_text_edit!(
     delete_char_redo {
         before: "
 abc
-de
+def
 
-fg",
+gh",
         input: [
             key('\x08'), // Do nothing (0x08 means backspace)
             sp(EndKey),
@@ -269,17 +269,18 @@ fg",
             sp(DownKey),
             sp(DownKey),
             key('\x08'), // Remove empty line
+            key('\x08'), // Remove f
             ctrl('v'),   // Move to end of buffer
             key('\x08'), // Do nothing
             sp(UpKey),
             sp(RightKey),
-            key('\x08'), // Delete f
+            key('\x08'), // Delete g
             key('\x08'), // Delete a line
             key('\x08'), // Delete e
         ],
         after: "
 a
-dg",
+dh",
         cursor: (1, 1),
     }
 );
