@@ -48,6 +48,10 @@ fn sp(k: KeySeq) -> InputSeq {
     InputSeq::new(k)
 }
 
+fn utf8(c: char) -> InputSeq {
+    InputSeq::new(Utf8Key(c))
+}
+
 #[test]
 fn test_empty_buffer() {
     let input = DummyInputs(vec![InputSeq::ctrl(Key(b'q'))]);
@@ -493,6 +497,273 @@ c  hi
 pqr
 
 s",
+        cursor: (0, 4),
+    }
+);
+
+test_text_edit!(
+    insert_utf8_char,
+    insert_utf8_char_undo,
+    insert_utf8_char_redo {
+        before: "",
+        input: [
+            utf8('あ'),
+            utf8('い'),
+            sp(DownKey),
+            utf8('う'), // Insert first char to new line
+            key('\r'),
+            utf8('え'),
+            utf8('お'),
+        ],
+        after: "
+あい
+う
+えお",
+        cursor: (2, 2),
+    }
+);
+
+test_text_edit!(
+    delete_utf8_char,
+    delete_utf8_char_undo,
+    delete_utf8_char_redo {
+        before: "
+あいう
+えおか
+
+きく",
+        input: [
+            key('\x08'), // Do nothing (0x08 means backspace)
+            sp(EndKey),
+            key('\x08'), // Delete c
+            key('\x08'), // Delete b
+            sp(DownKey),
+            sp(DownKey),
+            key('\x08'), // Remove empty line
+            key('\x08'), // Remove f
+            ctrl('v'),   // Move to end of buffer
+            key('\x08'), // Do nothing
+            sp(UpKey),
+            sp(RightKey),
+            key('\x08'), // Delete g
+            key('\x08'), // Delete a line
+            key('\x08'), // Delete e
+        ],
+        after: "
+あ
+えく",
+        cursor: (1, 1),
+    }
+);
+
+test_text_edit!(
+    insert_tab_utf8,
+    insert_tab_utf8_undo,
+    insert_tab_utf8_redo {
+        before: "
+
+あい
+うえ
+おか",
+        input: [
+            ctrl('i'),
+            sp(DownKey),
+            sp(HomeKey),
+            ctrl('i'),
+            sp(DownKey),
+            sp(HomeKey),
+            sp(RightKey),
+            ctrl('i'),
+            sp(DownKey),
+            sp(EndKey),
+            ctrl('i'),
+        ],
+        after: "
+	
+	あい
+う	え
+おか	",
+        cursor: (3, 3),
+    }
+);
+
+test_text_edit!(
+    insert_line_utf8,
+    insert_line_utf8_undo,
+    insert_line_utf8_redo {
+        before: "
+
+あい
+うえ",
+        input: [
+            key('\r'), // insert line at empty line
+            sp(DownKey),
+            key('\r'), // insert line at head of line
+            sp(RightKey),
+            key('\r'), // insert line at middle of line
+            sp(EndKey),
+            key('\r'), // insert line at end of line
+            ctrl('v'), // move to end of buffer
+            key('\r'), // insert new line
+            key('\r'), // insert new line
+        ],
+        after: "
+
+
+
+あ
+い
+
+うえ
+
+
+",
+        cursor: (0, 8),
+    }
+);
+
+test_text_edit!(
+    delete_right_utf8_char,
+    delete_right_utf8_char_undo,
+    delete_right_utf8_char_redo {
+        before: "
+あいう
+
+え",
+        input: [
+            sp(DeleteKey), // Delete a
+            sp(RightKey),
+            sp(DeleteKey), // Delete c
+            sp(DownKey),
+            sp(DeleteKey), // Delete empty line
+            ctrl('v'),     // Move to end of buffer
+            sp(DeleteKey), // Do nothing
+            sp(UpKey),
+            sp(EndKey),
+            sp(DeleteKey), // Do nothing at end of last line
+        ],
+        after: "
+い
+え",
+        cursor: (1, 1),
+    }
+);
+
+test_text_edit!(
+    delete_until_end_of_line_utf8,
+    delete_until_end_of_line_utf8_undo,
+    delete_until_end_of_line_utf8_redo {
+        before: "
+あい
+うえ
+おか
+き
+
+く",
+        input: [
+            ctrl('k'), // Delete at head of line
+            sp(DownKey),
+            sp(RightKey),
+            ctrl('k'), // Delete at middle of line
+            sp(DownKey),
+            sp(RightKey),
+            ctrl('k'), // Delete at end of line
+            sp(DownKey),
+            ctrl('k'), // Delete at empty line
+            ctrl('v'), // Move to end of buffer
+            ctrl('k'), // Do nothing at end of buffer
+            ctrl('k'), // Do nothing at end of buffer
+        ],
+        after: "
+
+う
+おかき
+く",
+        cursor: (0, 4),
+    }
+);
+
+test_text_edit!(
+    delete_until_head_of_line_utf8,
+    delete_until_head_of_line_utf8_undo,
+    delete_until_head_of_line_utf8_redo {
+        before: "
+あい
+うえ
+おか
+きく
+
+け",
+        input: [
+            ctrl('j'), // Do nothing at head of buffer
+            ctrl('j'), // Do nothing at head of buffer
+            sp(RightKey),
+            ctrl('j'), // Delete at middle of line
+            sp(DownKey),
+            sp(EndKey),
+            ctrl('j'), // Delete at end of line
+            sp(DownKey),
+            sp(DownKey),
+            ctrl('j'), // Delete at head of line
+            sp(DownKey),
+            ctrl('j'), // Delete at empty line
+            ctrl('v'), // End of buffer
+            ctrl('j'), // Do nothing at end of buffer
+            ctrl('j'), // Do nothing at end of buffer
+        ],
+        after: "
+い
+
+おかきく
+け",
+        cursor: (0, 4),
+    }
+);
+
+test_text_edit!(
+    delete_utf8_word,
+    delete_utf8_word_undo,
+    delete_utf8_word_redo {
+        before: "
+あいう えおか きくけ
+こさし すせそ たちつ
+
+て",
+        input: [
+            ctrl('w'), // Do nothing at head of buffer
+            ctrl('w'), // Do nothing at head of buffer
+            sp(EndKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            ctrl('w'), // Delete 'def' (end of word)
+            sp(LeftKey),
+            sp(LeftKey),
+            ctrl('w'), // Delete 'ab' (middle of word)
+            sp(EndKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            ctrl('w'), // Delete 'g' (middle of word)
+            sp(DownKey),
+            sp(EndKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            sp(LeftKey),
+            ctrl('w'), // Delete 'mno '
+            ctrl('w'), // Delete 'jkl '
+            sp(DownKey),
+            ctrl('w'), // Do nothing at empty line
+            ctrl('w'), // Do nothing at empty line
+            ctrl('v'), // End of buffer
+            ctrl('w'), // Do nothing at end of buffer
+            ctrl('w'), // Do nothing at end of buffer
+        ],
+        after: "
+う  くけ
+たちつ
+
+て",
         cursor: (0, 4),
     }
 );
