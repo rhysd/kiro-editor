@@ -199,9 +199,9 @@ impl<'a, W: Write> Prompt<'a, W> {
         }
     }
 
-    fn refresh_screen(&mut self) -> Result<()> {
+    fn render_screen(&mut self) -> Result<()> {
         self.sb.update_from_buf(&self.buf);
-        self.screen.refresh(self.buf, &mut self.hl, &self.sb)?;
+        self.screen.render(self.buf, &mut self.hl, &self.sb)?;
         self.sb.redraw = false;
         Ok(())
     }
@@ -217,7 +217,7 @@ impl<'a, W: Write> Prompt<'a, W> {
         let mut canceled = false;
         let prompt = prompt.as_ref();
         self.screen.set_info_message(prompt.replacen("{}", "", 1));
-        self.refresh_screen()?;
+        self.render_screen()?;
 
         while let Some(seq) = input.next() {
             use KeySeq::*;
@@ -226,7 +226,7 @@ impl<'a, W: Write> Prompt<'a, W> {
                 self.screen.set_dirty_start(self.screen.rowoff);
                 self.sb.redraw = true;
                 self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-                self.refresh_screen()?;
+                self.render_screen()?;
                 continue;
             }
 
@@ -252,7 +252,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             action.on_seq(self, buf.as_str(), seq)?;
 
             self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-            self.refresh_screen()?;
+            self.render_screen()?;
         }
 
         let result = if canceled || self.empty_is_cancel && buf.is_empty() {

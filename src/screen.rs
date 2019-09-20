@@ -430,7 +430,7 @@ impl<W: Write> Screen<W> {
         }
     }
 
-    pub fn refresh(
+    pub fn render(
         &mut self,
         buf: &TextBuffer,
         hl: &mut Highlighting,

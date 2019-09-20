@@ -94,18 +94,24 @@ where
         self.status_bar.update_from_buf(&self.bufs[self.buf_idx]);
     }
 
-    fn refresh_screen(&mut self) -> Result<()> {
+    fn render_screen(&mut self) -> Result<()> {
         self.refresh_status_bar();
         self.screen
-            .refresh(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
+            .render(&self.bufs[self.buf_idx], &mut self.hl, &self.status_bar)?;
         self.status_bar.redraw = false;
         Ok(())
     }
 
-    fn reset_screen(&mut self) {
+    fn will_reset_scroll(&mut self) {
         self.screen.set_dirty_start(0);
         self.screen.rowoff = 0;
         self.screen.coloff = 0;
+    }
+
+    fn will_reset_screen(&mut self) {
+        self.screen.set_dirty_start(self.screen.rowoff);
+        self.screen.unset_message();
+        self.status_bar.redraw = true;
     }
 
     fn open_buffer(&mut self) -> Result<()> {
@@ -140,7 +146,7 @@ where
         // XXX: Should we put Highlighting instance in TextBuffer rather than Editor?
         // Then we don't need to recreate Highlighting instance for each buffer switch.
         self.hl = Highlighting::new(buf.lang(), buf.rows());
-        self.reset_screen()
+        self.will_reset_scroll();
     }
 
     fn next_buffer(&mut self) {
@@ -255,13 +261,6 @@ where
             .set_error_message(format!("Key '{}' not mapped", seq));
     }
 
-    fn redraw_screen(&mut self) -> Result<()> {
-        self.screen.set_dirty_start(self.screen.rowoff);
-        self.screen.unset_message();
-        self.status_bar.redraw = true;
-        self.refresh_screen()
-    }
-
     fn process_keypress(&mut self, s: InputSeq) -> Result<bool> {
         use KeySeq::*;
 
@@ -372,18 +371,18 @@ where
     }
 
     pub fn edit(&mut self) -> Result<()> {
-        self.refresh_screen()?; // First paint
+        self.render_screen()?; // First paint
 
         while let Some(seq) = self.input.next() {
             if self.screen.maybe_resize(&mut self.input)? {
-                self.redraw_screen()?;
+                self.will_reset_screen();
             }
 
             if self.process_keypress(seq?)? {
                 break;
             }
 
-            self.refresh_screen()?;
+            self.render_screen()?;
         }
 
         Ok(())
