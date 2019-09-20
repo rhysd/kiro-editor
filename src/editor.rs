@@ -102,11 +102,10 @@ where
         Ok(())
     }
 
-    fn reset_screen(&mut self) -> Result<()> {
+    fn reset_screen(&mut self) {
         self.screen.set_dirty_start(0);
         self.screen.rowoff = 0;
         self.screen.coloff = 0;
-        self.refresh_screen()
     }
 
     fn open_buffer(&mut self) -> Result<()> {
@@ -122,17 +121,16 @@ where
             self.hl = Highlighting::new(buf.lang(), buf.rows());
             self.bufs.push(buf);
             self.buf_idx = self.bufs.len() - 1;
-            self.reset_screen()
-        } else {
-            Ok(()) // Canceled
+            self.will_reset_scroll();
         }
+        Ok(())
     }
 
-    fn switch_buffer(&mut self, idx: usize) -> Result<()> {
+    fn switch_buffer(&mut self, idx: usize) {
         let len = self.bufs.len();
         if len == 1 {
             self.screen.set_info_message("No other buffer is opened");
-            return Ok(());
+            return;
         }
 
         debug_assert!(idx < len);
@@ -145,20 +143,20 @@ where
         self.reset_screen()
     }
 
-    fn next_buffer(&mut self) -> Result<()> {
+    fn next_buffer(&mut self) {
         self.switch_buffer(if self.buf_idx == self.bufs.len() - 1 {
             0
         } else {
             self.buf_idx + 1
-        })
+        });
     }
 
-    fn previous_buffer(&mut self) -> Result<()> {
+    fn previous_buffer(&mut self) {
         self.switch_buffer(if self.buf_idx == 0 {
             self.bufs.len() - 1
         } else {
             self.buf_idx - 1
-        })
+        });
     }
 
     fn prompt_new<S: AsRef<str>>(
@@ -282,7 +280,7 @@ where
                 Key(b'b') => self.buf_mut().move_cursor_by_word(CursorDir::Left),
                 Key(b'n') => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
                 Key(b'p') => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
-                Key(b'x') => self.previous_buffer()?,
+                Key(b'x') => self.previous_buffer(),
                 Key(b'<') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Up),
                 Key(b'>') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Down),
                 LeftKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
@@ -317,7 +315,7 @@ where
                 Key(b'm') => self.buf_mut().insert_line(),
                 Key(b'o') => self.open_buffer()?,
                 Key(b'?') => self.show_help()?,
-                Key(b'x') => self.next_buffer()?,
+                Key(b'x') => self.next_buffer(),
                 Key(b']') => self
                     .buf_mut()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),
