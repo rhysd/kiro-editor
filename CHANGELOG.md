@@ -1,3 +1,19 @@
+<a name="0.3.3"></a>
+# [0.3.3](https://github.com/rhysd/kiro-editor/releases/tag/0.3.3) - 21 Sep 2019
+
+- **New:** Undo/Redo was implemented. `Ctrl-U` for undo, `Ctrl-R` for redo
+- **Fix:** Matched region was not updated on `plain` file type while text search
+- **Fix:** Cursor position was not correct on appending string to current line
+- **Fix:** `Ctrl-D` or `DELETE` moves cursor at the end of last line
+- **Improve:** Remove redundant redraws on resetting/resizing screen
+- **Improve:** Add more tests
+  - All text manipulations are now tested
+  - Undo/Redo are tested
+  - Editing multi-byte characters is tested
+
+[Changes][0.3.3]
+
+
 <a name="0.3.2"></a>
 # [0.3.2](https://github.com/rhysd/kiro-editor/releases/tag/0.3.2) - 10 Sep 2019
 
@@ -85,6 +101,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.3]: https://github.com/rhysd/kiro-editor/compare/0.3.2...0.3.3
 [0.3.2]: https://github.com/rhysd/kiro-editor/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/rhysd/kiro-editor/compare/0.3.0...0.3.1
 [0.3.0]: https://github.com/rhysd/kiro-editor/compare/0.2.1...0.3.0
