@@ -1,3 +1,12 @@
+<a name="0.3.4"></a>
+# [0.3.4](https://github.com/rhysd/kiro-editor/releases/tag/0.3.4) - 24 Sep 2019
+
+- **Improve:** Removed redundant screen re-rendering while prompt input
+- **Fix:** Prompt message was wrong on file name input at saving buffer with `Ctrl-S`
+
+[Changes][0.3.4]
+
+
 <a name="0.3.3"></a>
 # [0.3.3](https://github.com/rhysd/kiro-editor/releases/tag/0.3.3) - 21 Sep 2019
 
@@ -101,6 +110,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.4]: https://github.com/rhysd/kiro-editor/compare/0.3.3...0.3.4
 [0.3.3]: https://github.com/rhysd/kiro-editor/compare/0.3.2...0.3.3
 [0.3.2]: https://github.com/rhysd/kiro-editor/compare/0.3.1...0.3.2
 [0.3.1]: https://github.com/rhysd/kiro-editor/compare/0.3.0...0.3.1
