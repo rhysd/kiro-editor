@@ -115,7 +115,7 @@ where
     }
 
     fn open_buffer(&mut self) -> Result<()> {
-        if let PromptResult::Input(input) = self.prompt_new(
+        if let PromptResult::Input(input) = self.prompt(
             "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
             false,
         )? {
@@ -165,11 +165,7 @@ where
         });
     }
 
-    fn prompt_new<S: AsRef<str>>(
-        &mut self,
-        prompt: S,
-        empty_is_cancel: bool,
-    ) -> Result<PromptResult> {
+    fn prompt<S: AsRef<str>>(&mut self, prompt: S, empty_is_cancel: bool) -> Result<PromptResult> {
         Prompt::new(
             &mut self.screen,
             &mut self.bufs[self.buf_idx],
@@ -183,10 +179,9 @@ where
     fn save(&mut self) -> Result<()> {
         let mut create = false;
         if !self.buf().has_file() {
-            if let PromptResult::Input(input) = self.prompt_new(
-                "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
-                true,
-            )? {
+            if let PromptResult::Input(input) =
+                self.prompt("Save as: {} (^G or ESC to cancel)", true)?
+            {
                 let prev_lang = self.buf().lang();
                 self.buf_mut().set_file(input);
                 self.hl.lang_changed(self.buf().lang());
