@@ -20,8 +20,8 @@ pub trait PromptAction {
         _prompt: &mut Prompt<'_, W>,
         _input: &str,
         _seq: InputSeq,
-    ) -> Result<()> {
-        Ok(())
+    ) -> Result<bool> {
+        Ok(false)
     }
 
     fn on_end<W: Write>(
@@ -84,7 +84,7 @@ impl PromptAction for TextSearch {
         prompt: &mut Prompt<'_, W>,
         input: &str,
         seq: InputSeq,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         use KeySeq::*;
 
         self.cleanup_match_highlight(prompt);
@@ -139,7 +139,7 @@ impl PromptAction for TextSearch {
             y = next_line(y, dir, row_len);
         }
 
-        Ok(())
+        Ok(true)
     }
 
     fn on_end<W: Write>(
@@ -231,6 +231,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             }
 
             let seq = seq?;
+            let prev_len = buf.len();
 
             match (&seq.key, seq.ctrl) {
                 (Unidentified, ..) => continue,
@@ -241,18 +242,18 @@ impl<'a, W: Write> Prompt<'a, W> {
                     canceled = true;
                     break;
                 }
-                (Key(b'\r'), ..) | (Key(b'm'), true) => {
-                    break;
-                }
+                (Key(b'\r'), ..) | (Key(b'm'), true) => break,
                 (Key(b), false) => buf.push(*b as char),
                 (Utf8Key(c), false) => buf.push(*c),
                 _ => {}
             }
 
-            action.on_seq(self, buf.as_str(), seq)?;
+            let should_render = action.on_seq(self, buf.as_str(), seq)?;
 
-            self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-            self.render_screen()?;
+            if should_render || prev_len != buf.len() {
+                self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
+                self.render_screen()?;
+            }
         }
 
         let result = if canceled || self.empty_is_cancel && buf.is_empty() {
