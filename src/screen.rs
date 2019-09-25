@@ -242,7 +242,9 @@ impl<W: Write> Screen<W> {
         let welcome = self.trim_line(&msg_buf);
         let padding = (self.num_cols - welcome.len()) / 2;
         if padding > 0 {
+            buf.write(self.term_color.sequence(Color::NonText))?;
             buf.write(b"~")?;
+            buf.write(self.term_color.sequence(Color::Reset))?;
             for _ in 0..padding - 1 {
                 buf.write(b" ")?;
             }
@@ -276,6 +278,7 @@ impl<W: Write> Screen<W> {
                 if rows.is_empty() && y == self.rows() / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
+                    buf.write(self.term_color.sequence(Color::NonText))?;
                     buf.write(b"~")?;
                 }
             } else {

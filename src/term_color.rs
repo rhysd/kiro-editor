@@ -14,6 +14,7 @@ pub enum Color {
     Cyan,
     RedBG,
     YellowBG,
+    NonText,
     Invert,
 }
 
@@ -102,6 +103,7 @@ impl TermColor {
                     rgb_color!(bg, 0xd7, 0x99, 0x21),
                 )
                 .as_bytes(),
+                NonText => rgb_color!(fg, 0x66, 0x5c, 0x54).as_bytes(),
                 Invert => b"\x1b[7m",
             },
             TermColor::Extended256 => match color {
@@ -116,6 +118,7 @@ impl TermColor {
                 Cyan => b"\x1b[38;5;108m",
                 RedBG => b"\x1b[48;5;124m",
                 YellowBG => b"\x1b[38;5;235m\x1b[48;5;214m",
+                NonText => b"\x1b[38;5;241m",
                 Invert => b"\x1b[7m",
             },
             TermColor::Only16 => match color {
@@ -130,6 +133,7 @@ impl TermColor {
                 Cyan => b"\x1b[96m",
                 RedBG => b"\x1b[41m",
                 YellowBG => b"\x1b[103m\x1b[30m",
+                NonText => b"\x1b[37m",
                 Invert => b"\x1b[7m",
             },
         }
