@@ -274,8 +274,9 @@ impl<W: Write> Screen<W> {
             // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
             write!(buf, "\x1b[{}H", y + 1)?;
 
+            let buf_is_empty = rows.is_empty() || rows.len() == 1 && rows[0].len() == 0;
             if file_row >= row_len {
-                if rows.is_empty() && y == self.rows() / 3 {
+                if buf_is_empty && y == self.rows() / 3 {
                     self.draw_welcome_message(&mut buf)?;
                 } else {
                     buf.write(self.term_color.sequence(Color::NonText))?;
