@@ -52,7 +52,7 @@ enum StatusMessageKind {
 
 struct StatusMessage {
     text: String,
-    timestamp: Option<SystemTime>,
+    timestamp: SystemTime,
     kind: StatusMessageKind,
 }
 
@@ -60,7 +60,7 @@ impl StatusMessage {
     fn new<S: Into<String>>(message: S, kind: StatusMessageKind) -> StatusMessage {
         StatusMessage {
             text: message.into(),
-            timestamp: None,
+            timestamp: SystemTime::now(),
             kind,
         }
     }
@@ -91,6 +91,14 @@ where
     Err(Error::UnknownWindowSize) // Give up
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum DrawMessage {
+    Open,
+    Close,
+    Update,
+    DoNothing,
+}
+
 pub struct Screen<W: Write> {
     output: W,
     // X coordinate in `render` text of rows
@@ -99,7 +107,7 @@ pub struct Screen<W: Write> {
     num_cols: usize,
     num_rows: usize,
     message: Option<StatusMessage>,
-    message_is_shown: bool,
+    draw_message: DrawMessage,
     // Dirty line which requires rendering update. After this line must be updated since
     // updating line may affect highlights of succeeding lines
     dirty_start: Option<usize>,
@@ -140,7 +148,7 @@ impl<W: Write> Screen<W> {
                 "Ctrl-? for help",
                 StatusMessageKind::Info,
             )),
-            message_is_shown: false,
+            draw_message: DrawMessage::Open,
             dirty_start: Some(0), // Render entire screen at first paint
             sigwinch: SigwinchWatcher::new()?,
             term_color: TermColor::from_env(),
@@ -197,43 +205,23 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn should_redraw_message_bar(&self) -> Result<bool> {
-        match &self.message {
-            Some(StatusMessage {
-                timestamp: Some(t), ..
-            }) => Ok(SystemTime::now().duration_since(*t)?.as_secs() > 5), // Message bar is shown
-            None => Ok(false), // No message
-            _ => Ok(true), // timestamp is None which means that message was set but not rendered yet
-        }
-    }
+    fn draw_message_bar<B: Write>(&self, mut buf: B, message: &StatusMessage) -> Result<()> {
+        // TODO: Handle multi-byte chars correctly
+        let text = &message.text[..cmp::min(message.text.len(), self.num_cols)];
 
-    fn draw_message_bar<B: Write>(&mut self, mut buf: B) -> Result<()> {
-        let message = if let Some(m) = &mut self.message {
-            m
-        } else {
-            return Ok(());
-        };
+        write!(buf, "\x1b[{}H", self.num_rows + 2)?;
 
-        if message.timestamp.is_some() {
-            // Don't erase message bar in this clause since message bar will be squashed soon
-            // Timestamp should be checked in should_redraw_message_bar().
-            self.message = None;
-        } else {
-            write!(buf, "\x1b[{}H", self.num_rows + 2)?;
-            // TODO: Handle multi-byte chars correctly
-            let msg = &message.text[..cmp::min(message.text.len(), self.num_cols)];
-            if message.kind == StatusMessageKind::Error {
-                buf.write(self.term_color.sequence(Color::RedBG))?;
-                buf.write(msg.as_bytes())?;
-                buf.write(self.term_color.sequence(Color::Reset))?;
-            } else {
-                buf.write(msg.as_bytes())?;
-            }
-            message.timestamp = Some(SystemTime::now());
-            buf.write(b"\x1b[K")?;
-            // Don't need to update last line since showing message reduces number of rows.
+        if message.kind == StatusMessageKind::Error {
+            buf.write(self.term_color.sequence(Color::RedBG))?;
         }
 
+        buf.write(text.as_bytes())?;
+
+        if message.kind != StatusMessageKind::Info {
+            buf.write(self.term_color.sequence(Color::Reset))?;
+        }
+
+        buf.write(b"\x1b[K")?;
         Ok(())
     }
 
@@ -324,17 +312,20 @@ impl<W: Write> Screen<W> {
         text_buf: &TextBuffer,
         hl: &Highlighting,
         status_bar: &StatusBar,
-    ) -> Result<Option<usize>> {
+    ) -> Result<()> {
         let cursor_row = text_buf.cy() - self.rowoff + 1;
         let cursor_col = self.rx - self.coloff + 1;
-        let redraw_message_bar = self.should_redraw_message_bar()?;
+        let draw_message = self.draw_message;
 
-        if self.dirty_start.is_none() && !status_bar.redraw && !redraw_message_bar {
+        if self.dirty_start.is_none()
+            && !status_bar.redraw
+            && draw_message == DrawMessage::DoNothing
+        {
             if self.cursor_moved {
                 write!(self.output, "\x1b[{};{}H", cursor_row, cursor_col)?;
                 self.output.flush()?;
             }
-            return Ok(None);
+            return Ok(());
         }
 
         // \x1b[: Escape sequence header
@@ -347,25 +338,19 @@ impl<W: Write> Screen<W> {
             self.draw_rows(&mut buf, s, text_buf.rows(), hl)?;
         }
 
-        // Message bar must be drawn at first since draw_message_bar() updates self.message.
-        // It affects draw_status_bar() behavior
-        if redraw_message_bar {
-            self.draw_message_bar(&mut buf)?;
+        // When message bar opens/closes, position of status bar is changed
+        if status_bar.redraw
+            || draw_message == DrawMessage::Open
+            || draw_message == DrawMessage::Close
+        {
+            self.draw_status_bar(&mut buf, status_bar)?;
         }
 
-        // Timestamp being set means message line was opened and will be shown until the time
-        let message_is_shown = match self.message {
-            Some(StatusMessage {
-                timestamp: Some(_), ..
-            }) => true,
-            _ => false,
-        };
-        // Previously message bar was not squashed but now it is squashed so it is being squashed now
-        let squashing_message_bar = self.message_is_shown && !message_is_shown;
-        let toggling_message_bar = self.message_is_shown != message_is_shown;
-        self.message_is_shown = message_is_shown;
-        if status_bar.redraw || toggling_message_bar {
-            self.draw_status_bar(&mut buf, status_bar)?;
+        // When closing message bar, nothing to do since status bar will overwrite old message bar
+        if draw_message == DrawMessage::Update || draw_message == DrawMessage::Open {
+            if let Some(message) = &self.message {
+                self.draw_message_bar(&mut buf, message)?;
+            }
         }
 
         // Move cursor even if cursor_moved is false since cursor is moved by draw_* methods
@@ -376,14 +361,7 @@ impl<W: Write> Screen<W> {
 
         self.write_flush(&buf)?;
 
-        // Squashing message bar reveals one more last line so the line should be rendered in next tick
-        let next_dirty_start = if squashing_message_bar {
-            Some(self.rowoff + self.rows() - 1)
-        } else {
-            None
-        };
-
-        Ok(next_dirty_start)
+        Ok(())
     }
 
     fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
@@ -434,6 +412,15 @@ impl<W: Write> Screen<W> {
         }
     }
 
+    fn update_message_bar(&mut self) -> Result<()> {
+        if let Some(m) = &self.message {
+            if SystemTime::now().duration_since(m.timestamp)?.as_secs() > 5 {
+                self.unset_message();
+            }
+        }
+        Ok(())
+    }
+
     pub fn render(
         &mut self,
         buf: &TextBuffer,
@@ -441,9 +428,13 @@ impl<W: Write> Screen<W> {
         status_bar: &StatusBar,
     ) -> Result<()> {
         self.do_scroll(buf.rows(), buf.cx(), buf.cy());
+        self.update_message_bar()?; // This must be updated here since it affects area of highlighting
         hl.update(buf.rows(), self.rowoff + self.rows());
-        self.dirty_start = self.redraw(buf, hl, status_bar)?;
+        self.redraw(buf, hl, status_bar)?;
+        // Clear state
+        self.dirty_start = None;
         self.cursor_moved = false;
+        self.draw_message = DrawMessage::DoNothing;
         Ok(())
     }
 
@@ -527,20 +518,34 @@ impl<W: Write> Screen<W> {
         Ok(true)
     }
 
+    fn set_message(&mut self, m: Option<StatusMessage>) {
+        self.draw_message = match (&self.message, &m) {
+            (Some(p), Some(n)) if p.text == n.text => DrawMessage::DoNothing,
+            (Some(_), Some(_)) => DrawMessage::Update,
+            (None, Some(_)) => DrawMessage::Open,
+            (Some(_), None) => DrawMessage::Close,
+            (None, None) => DrawMessage::DoNothing,
+        };
+        self.message = m;
+    }
+
     pub fn set_info_message<S: Into<String>>(&mut self, message: S) {
-        self.message = Some(StatusMessage::new(message, StatusMessageKind::Info));
+        self.set_message(Some(StatusMessage::new(message, StatusMessageKind::Info)));
     }
 
     pub fn set_error_message<S: Into<String>>(&mut self, message: S) {
-        self.message = Some(StatusMessage::new(message, StatusMessageKind::Error));
+        self.set_message(Some(StatusMessage::new(message, StatusMessageKind::Error)));
     }
 
     pub fn unset_message(&mut self) {
-        self.message = None;
+        self.set_message(None);
+        if self.draw_message == DrawMessage::Close {
+            self.set_dirty_start(self.num_rows);
+        }
     }
 
     pub fn rows(&self) -> usize {
-        if self.message_is_shown {
+        if self.message.is_some() {
             self.num_rows
         } else {
             self.num_rows + 1
