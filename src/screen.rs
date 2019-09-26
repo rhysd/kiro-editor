@@ -91,7 +91,7 @@ where
     Err(Error::UnknownWindowSize) // Give up
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum DrawMessage {
     Open,
     Close,
@@ -519,6 +519,8 @@ impl<W: Write> Screen<W> {
     }
 
     fn set_message(&mut self, m: Option<StatusMessage>) {
+        // XXX: This does not work if message is set multiple times within one tick
+        debug_assert_eq!(self.draw_message, DrawMessage::DoNothing);
         self.draw_message = match (&self.message, &m) {
             (Some(p), Some(n)) if p.text == n.text => DrawMessage::DoNothing,
             (Some(_), Some(_)) => DrawMessage::Update,
