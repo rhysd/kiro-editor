@@ -540,7 +540,7 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [termios]: https://crates.io/crates/termios
 [term_size]: https://crates.io/crates/term_size
 [unicode-width]: https://crates.io/crates/unicode-width
-[term]: https://crates.io/crates/unicode-width
+[term]: https://crates.io/crates/term
 [signal-hook]: https://crates.io/crates/signal-hook
 [getopts]: https://crates.io/crates/getopts
 [clap]: https://crates.io/crates/clap
