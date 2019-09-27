@@ -5,7 +5,7 @@ use crate::language::Language;
 use crate::prompt::{self, Prompt, PromptResult};
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
-use crate::text_buffer::{CursorDir, Lines, TextBuffer};
+use crate::text_buffer::{CursorDir, EditTextBuffer, Lines, TextBuffer};
 use std::io::Write;
 use std::path::Path;
 
@@ -86,6 +86,10 @@ where
 
     fn buf_mut(&mut self) -> &mut TextBuffer {
         &mut self.bufs[self.buf_idx]
+    }
+
+    fn edit_buf(&mut self) -> EditTextBuffer<'_> {
+        self.buf_mut().edit()
     }
 
     fn refresh_status_bar(&mut self) {
@@ -262,98 +266,102 @@ where
         let rowoff = self.screen.rowoff;
         let rows = self.screen.rows();
         let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
-        self.buf_mut().dirty_start = None;
 
         match &s {
             InputSeq {
                 key: Unidentified, ..
             } => return Ok(false),
             InputSeq { key, alt: true, .. } => match key {
-                Key(b'v') => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
-                Key(b'f') => self.buf_mut().move_cursor_by_word(CursorDir::Right),
-                Key(b'b') => self.buf_mut().move_cursor_by_word(CursorDir::Left),
-                Key(b'n') => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
-                Key(b'p') => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
+                Key(b'v') => self
+                    .edit_buf()
+                    .move_cursor_page(CursorDir::Up, rowoff, rows),
+                Key(b'f') => self.edit_buf().move_cursor_by_word(CursorDir::Right),
+                Key(b'b') => self.edit_buf().move_cursor_by_word(CursorDir::Left),
+                Key(b'n') => self.edit_buf().move_cursor_paragraph(CursorDir::Down),
+                Key(b'p') => self.edit_buf().move_cursor_paragraph(CursorDir::Up),
                 Key(b'x') => self.previous_buffer(),
-                Key(b'<') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Up),
-                Key(b'>') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Down),
-                LeftKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
-                RightKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
+                Key(b'<') => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Up),
+                Key(b'>') => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Down),
+                LeftKey => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Left),
+                RightKey => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Right),
                 _ => self.handle_not_mapped(s),
             },
             InputSeq {
                 key, ctrl: true, ..
             } => match key {
-                Key(b'p') => self.buf_mut().move_cursor_one(CursorDir::Up),
-                Key(b'b') => self.buf_mut().move_cursor_one(CursorDir::Left),
-                Key(b'n') => self.buf_mut().move_cursor_one(CursorDir::Down),
-                Key(b'f') => self.buf_mut().move_cursor_one(CursorDir::Right),
+                Key(b'p') => self.edit_buf().move_cursor_one(CursorDir::Up),
+                Key(b'b') => self.edit_buf().move_cursor_one(CursorDir::Left),
+                Key(b'n') => self.edit_buf().move_cursor_one(CursorDir::Down),
+                Key(b'f') => self.edit_buf().move_cursor_one(CursorDir::Right),
                 Key(b'v') => self
-                    .buf_mut()
+                    .edit_buf()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),
-                Key(b'a') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
-                Key(b'e') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
-                Key(b'd') => self.buf_mut().delete_right_char(),
+                Key(b'a') => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Left),
+                Key(b'e') => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Right),
+                Key(b'd') => self.edit_buf().delete_right_char(),
                 Key(b'g') => self.find()?,
-                Key(b'h') => self.buf_mut().delete_char(),
-                Key(b'k') => self.buf_mut().delete_until_end_of_line(),
-                Key(b'j') => self.buf_mut().delete_until_head_of_line(),
-                Key(b'w') => self.buf_mut().delete_word(),
+                Key(b'h') => self.edit_buf().delete_char(),
+                Key(b'k') => self.edit_buf().delete_until_end_of_line(),
+                Key(b'j') => self.edit_buf().delete_until_head_of_line(),
+                Key(b'w') => self.edit_buf().delete_word(),
                 Key(b'l') => {
                     self.screen.set_dirty_start(self.screen.rowoff); // Clear
                     self.screen.unset_message();
                     self.status_bar.redraw = true;
                 }
                 Key(b's') => self.save()?,
-                Key(b'i') => self.buf_mut().insert_tab(),
-                Key(b'm') => self.buf_mut().insert_line(),
+                Key(b'i') => self.edit_buf().insert_tab(),
+                Key(b'm') => self.edit_buf().insert_line(),
                 Key(b'o') => self.open_buffer()?,
                 Key(b'?') => self.show_help()?,
                 Key(b'x') => self.next_buffer(),
                 Key(b']') => self
-                    .buf_mut()
+                    .edit_buf()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),
                 Key(b'u') => {
-                    if !self.buf_mut().undo() {
+                    if !self.edit_buf().undo() {
                         self.screen.set_info_message("No older change");
                     }
                 }
                 Key(b'r') => {
-                    if !self.buf_mut().redo() {
+                    if !self.edit_buf().redo() {
                         self.screen.set_info_message("Buffer is already newest");
                     }
                 }
-                LeftKey => self.buf_mut().move_cursor_by_word(CursorDir::Left),
-                RightKey => self.buf_mut().move_cursor_by_word(CursorDir::Right),
-                DownKey => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
-                UpKey => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
+                LeftKey => self.edit_buf().move_cursor_by_word(CursorDir::Left),
+                RightKey => self.edit_buf().move_cursor_by_word(CursorDir::Right),
+                DownKey => self.edit_buf().move_cursor_paragraph(CursorDir::Down),
+                UpKey => self.edit_buf().move_cursor_paragraph(CursorDir::Up),
                 Key(b'q') => return self.handle_quit(),
                 _ => self.handle_not_mapped(s),
             },
             InputSeq { key, .. } => match key {
-                Key(0x1b) => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
-                Key(0x08) => self.buf_mut().delete_char(), // Backspace
-                Key(0x7f) => self.buf_mut().delete_char(), // Delete key is mapped to \x1b[3~
-                Key(b'\r') => self.buf_mut().insert_line(),
-                Key(b) if !b.is_ascii_control() => self.buf_mut().insert_char(*b as char),
-                Utf8Key(c) => self.buf_mut().insert_char(*c),
-                UpKey => self.buf_mut().move_cursor_one(CursorDir::Up),
-                LeftKey => self.buf_mut().move_cursor_one(CursorDir::Left),
-                DownKey => self.buf_mut().move_cursor_one(CursorDir::Down),
-                RightKey => self.buf_mut().move_cursor_one(CursorDir::Right),
-                PageUpKey => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
+                Key(0x1b) => self
+                    .edit_buf()
+                    .move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
+                Key(0x08) => self.edit_buf().delete_char(), // Backspace
+                Key(0x7f) => self.edit_buf().delete_char(), // Delete key is mapped to \x1b[3~
+                Key(b'\r') => self.edit_buf().insert_line(),
+                Key(b) if !b.is_ascii_control() => self.edit_buf().insert_char(*b as char),
+                Utf8Key(c) => self.edit_buf().insert_char(*c),
+                UpKey => self.edit_buf().move_cursor_one(CursorDir::Up),
+                LeftKey => self.edit_buf().move_cursor_one(CursorDir::Left),
+                DownKey => self.edit_buf().move_cursor_one(CursorDir::Down),
+                RightKey => self.edit_buf().move_cursor_one(CursorDir::Right),
+                PageUpKey => self
+                    .edit_buf()
+                    .move_cursor_page(CursorDir::Up, rowoff, rows),
                 PageDownKey => self
-                    .buf_mut()
+                    .edit_buf()
                     .move_cursor_page(CursorDir::Down, rowoff, rows),
-                HomeKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
-                EndKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
-                DeleteKey => self.buf_mut().delete_right_char(),
+                HomeKey => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Left),
+                EndKey => self.edit_buf().move_cursor_to_buffer_edge(CursorDir::Right),
+                DeleteKey => self.edit_buf().delete_right_char(),
                 Cursor(_, _) => unreachable!(),
                 _ => self.handle_not_mapped(s),
             },
         }
 
-        self.buf_mut().finish_edit();
         if let Some(line) = self.buf().dirty_start {
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);

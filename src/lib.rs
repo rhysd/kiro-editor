@@ -22,6 +22,7 @@ mod signal;
 mod status_bar;
 mod term_color;
 mod text_buffer;
+mod render_context;
 
 #[cfg(test)]
 mod ui_test;
