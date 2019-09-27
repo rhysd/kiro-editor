@@ -99,6 +99,27 @@ enum DrawMessage {
     DoNothing,
 }
 
+impl DrawMessage {
+    fn fold(self, rhs: Self) -> Self {
+        // Folding new state into current state. For example, when current state is Open and new state
+        // is Close, applying Open then Close means DoNothing.
+        use DrawMessage::*;
+        match (self, rhs) {
+            (Open, Open) => unreachable!(),
+            (Open, Close) => DoNothing,
+            (Open, Update) => Open,
+            (Close, Open) => Update,
+            (Close, Close) => unreachable!(),
+            (Close, Update) => unreachable!(),
+            (Update, Open) => unreachable!(),
+            (Update, Close) => Close,
+            (Update, Update) => Update,
+            (lhs, DoNothing) => lhs,
+            (DoNothing, rhs) => rhs,
+        }
+    }
+}
+
 pub struct Screen<W: Write> {
     output: W,
     // X coordinate in `render` text of rows
@@ -418,6 +439,9 @@ impl<W: Write> Screen<W> {
                 self.unset_message();
             }
         }
+        if self.draw_message == DrawMessage::Close {
+            self.set_dirty_start(self.num_rows); // Closing message bar reveals one more line
+        }
         Ok(())
     }
 
@@ -519,15 +543,15 @@ impl<W: Write> Screen<W> {
     }
 
     fn set_message(&mut self, m: Option<StatusMessage>) {
-        // XXX: This does not work if message is set multiple times within one tick
-        debug_assert_eq!(self.draw_message, DrawMessage::DoNothing);
-        self.draw_message = match (&self.message, &m) {
+        let op = match (&self.message, &m) {
             (Some(p), Some(n)) if p.text == n.text => DrawMessage::DoNothing,
             (Some(_), Some(_)) => DrawMessage::Update,
             (None, Some(_)) => DrawMessage::Open,
             (Some(_), None) => DrawMessage::Close,
             (None, None) => DrawMessage::DoNothing,
         };
+        // Folding is necessary to consider that message is set multiple times within one tick
+        self.draw_message = self.draw_message.fold(op);
         self.message = m;
     }
 
@@ -541,9 +565,6 @@ impl<W: Write> Screen<W> {
 
     pub fn unset_message(&mut self) {
         self.set_message(None);
-        if self.draw_message == DrawMessage::Close {
-            self.set_dirty_start(self.num_rows);
-        }
     }
 
     pub fn rows(&self) -> usize {
