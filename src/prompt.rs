@@ -12,7 +12,8 @@ pub enum PromptResult {
     Input(String),
 }
 
-pub trait PromptAction {
+// Sized is necessary to move self
+pub trait PromptAction: Sized {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self;
 
     fn on_seq<W: Write>(
@@ -25,7 +26,7 @@ pub trait PromptAction {
     }
 
     fn on_end<W: Write>(
-        &mut self,
+        self, // Note: Consumes self
         _prompt: &mut Prompt<'_, W>,
         result: PromptResult,
     ) -> Result<PromptResult> {
@@ -143,7 +144,7 @@ impl PromptAction for TextSearch {
     }
 
     fn on_end<W: Write>(
-        &mut self,
+        self,
         prompt: &mut Prompt<'_, W>,
         result: PromptResult,
     ) -> Result<PromptResult> {
