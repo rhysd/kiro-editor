@@ -16,6 +16,7 @@ pub enum PromptResult {
 pub trait PromptAction: Sized {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self;
 
+    // Returns bool which represents whether screen redraw is necessary
     fn on_seq<W: Write>(
         &mut self,
         _prompt: &mut Prompt<'_, W>,
@@ -54,6 +55,7 @@ pub struct TextSearch {
     saved_rowoff: usize,
     dir: FindDir,
     last_match: Option<usize>,
+    line: usize,
 }
 
 impl TextSearch {
@@ -66,6 +68,58 @@ impl TextSearch {
             prompt.screen.set_dirty_start(matched_line);
         }
     }
+
+    fn next_line<W: Write>(&mut self, prompt: &Prompt<'_, W>) {
+        // Wrapping text search at top/bottom of text buffer
+        let len = prompt.buf.rows().len();
+        self.line = match self.dir {
+            FindDir::Forward if self.line == len - 1 => 0,
+            FindDir::Forward => self.line + 1,
+            FindDir::Back if self.line == 0 => len - 1,
+            FindDir::Back => self.line - 1,
+        };
+    }
+
+    fn handle_seq(&mut self, seq: InputSeq) {
+        use KeySeq::*;
+        match (seq.key, seq.ctrl) {
+            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true) | (Key(b'n'), true) => {
+                self.dir = FindDir::Forward;
+            }
+            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true) | (Key(b'p'), true) => {
+                self.dir = FindDir::Back;
+            }
+            _ => {
+                self.last_match = None;
+            }
+        }
+    }
+
+    fn find_in_line<W: Write>(&mut self, input: &str, prompt: &mut Prompt<'_, W>) -> bool {
+        let row = &prompt.buf.rows()[self.line];
+        let idx = if let Some(byte_idx) = row.buffer().find(input) {
+            row.char_idx_of(byte_idx)
+        } else {
+            return false;
+        };
+
+        prompt.buf.set_cursor(idx, self.line);
+
+        let rx = prompt.buf.rows()[self.line].rx_from_cx(prompt.buf.cx());
+        // Cause do_scroll() to scroll upwards to half a screen above the matching line at
+        // next screen redraw
+        prompt.screen.rowoff = self.line.saturating_sub(prompt.screen.rows() / 2);
+        prompt.screen.coloff = 0;
+        self.last_match = Some(self.line);
+        // Set match highlight on the found line
+        prompt
+            .hl
+            .set_match(self.line, rx, rx + input.chars().count());
+        // XXX: It updates entire highlights
+        prompt.hl.needs_update = true;
+        prompt.screen.set_dirty_start(prompt.screen.rowoff);
+        true
+    }
 }
 
 impl PromptAction for TextSearch {
@@ -75,6 +129,7 @@ impl PromptAction for TextSearch {
             saved_cy: prompt.buf.cy(),
             saved_coloff: prompt.screen.coloff,
             saved_rowoff: prompt.screen.rowoff,
+            line: prompt.buf.cy(),
             dir: FindDir::Forward,
             last_match: None,
         }
@@ -86,58 +141,23 @@ impl PromptAction for TextSearch {
         input: &str,
         seq: InputSeq,
     ) -> Result<bool> {
-        use KeySeq::*;
-
         self.cleanup_match_highlight(prompt);
+        self.handle_seq(seq);
 
-        match (seq.key, seq.ctrl) {
-            (RightKey, ..) | (DownKey, ..) | (Key(b'f'), true) | (Key(b'n'), true) => {
-                self.dir = FindDir::Forward
-            }
-            (LeftKey, ..) | (UpKey, ..) | (Key(b'b'), true) | (Key(b'p'), true) => {
-                self.dir = FindDir::Back
-            }
-            _ => self.last_match = None,
+        if input.is_empty() {
+            return Ok(false);
         }
 
-        fn next_line(y: usize, dir: FindDir, len: usize) -> usize {
-            // Wrapping text search at top/bottom of text buffer
-            match dir {
-                FindDir::Forward if y == len - 1 => 0,
-                FindDir::Forward => y + 1,
-                FindDir::Back if y == 0 => len - 1,
-                FindDir::Back => y - 1,
-            }
+        if self.last_match.is_some() {
+            self.next_line(prompt); // Avoid matching to current position
         }
-
-        let row_len = prompt.buf.rows().len();
-        let dir = self.dir;
-        let mut y = self
-            .last_match
-            .map(|y| next_line(y, dir, row_len)) // Start from next line on moving to next match
-            .unwrap_or_else(|| prompt.buf.cy());
 
         // TODO: Use more efficient string search algorithm such as Aho-Corasick
-        for _ in 0..row_len {
-            let row = &prompt.buf.rows()[y];
-            if let Some(byte_idx) = row.buffer().find(input) {
-                let idx = row.char_idx_of(byte_idx);
-                prompt.buf.set_cursor(idx, y);
-
-                let rx = prompt.buf.rows()[y].rx_from_cx(prompt.buf.cx());
-                // Cause do_scroll() to scroll upwards to half a screen above the matching line at
-                // next screen redraw
-                prompt.screen.rowoff = y.saturating_sub(prompt.screen.rows() / 2);
-                prompt.screen.coloff = 0;
-                self.last_match = Some(y);
-                // Set match highlight on the found line
-                prompt.hl.set_match(y, rx, rx + input.chars().count());
-                // XXX: It updates entire highlights
-                prompt.hl.needs_update = true;
-                prompt.screen.set_dirty_start(prompt.screen.rowoff);
+        for _ in 0..prompt.buf.rows().len() {
+            if self.find_in_line(input, prompt) {
                 break;
             }
-            y = next_line(y, dir, row_len);
+            self.next_line(prompt);
         }
 
         Ok(true)
