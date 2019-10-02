@@ -295,6 +295,7 @@ impl<'a, W: Write> Prompt<'a, W> {
                     break;
                 }
                 (Key(b'\r'), ..) | (Key(b'm'), true) => break,
+                (Key(b'u'), true) => buf.clear(),
                 (Key(b), false) => buf.push(*b as char),
                 (Utf8Key(c), false) => buf.push(*c),
                 _ => {}
