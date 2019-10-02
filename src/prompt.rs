@@ -195,6 +195,26 @@ impl PromptAction for TextSearch {
     }
 }
 
+struct PromptTemplate<'a> {
+    prefix: &'a str,
+    suffix: &'a str,
+}
+
+impl<'a> PromptTemplate<'a> {
+    fn build(&self, input: &str) -> String {
+        let cap = self.prefix.len() + self.suffix.len() + input.len();
+        let mut buf = String::with_capacity(cap);
+        buf.push_str(self.prefix);
+        buf.push_str(input);
+        buf.push_str(self.suffix);
+        buf
+    }
+
+    fn cursor_col(&self, input: &str) -> usize {
+        self.prefix.chars().count() + input.chars().count() + 1 // Just after the input
+    }
+}
+
 pub struct Prompt<'a, W: Write> {
     screen: &'a mut Screen<W>,
     buf: &'a mut TextBuffer,
@@ -220,9 +240,15 @@ impl<'a, W: Write> Prompt<'a, W> {
         }
     }
 
-    fn render_screen(&mut self) -> Result<()> {
+    fn render_screen(&mut self, input: &str, template: &PromptTemplate<'_>) -> Result<()> {
+        self.screen.set_info_message(template.build(input));
         self.sb.update_from_buf(&self.buf);
         self.screen.render(self.buf, &mut self.hl, &self.sb)?;
+
+        let row = self.screen.rows() + 2;
+        let col = template.cursor_col(input);
+        self.screen.force_set_cursor(row, col)?;
+
         self.sb.redraw = false;
         Ok(())
     }
@@ -236,9 +262,15 @@ impl<'a, W: Write> Prompt<'a, W> {
         let mut action = A::new(self);
         let mut buf = String::new();
         let mut canceled = false;
-        let prompt = prompt.as_ref();
-        self.screen.set_info_message(prompt.replacen("{}", "", 1));
-        self.render_screen()?;
+
+        let template = {
+            let mut it = prompt.as_ref().split("{}");
+            let prefix = it.next().unwrap();
+            let suffix = it.next().unwrap();
+            PromptTemplate { prefix, suffix }
+        };
+
+        self.render_screen("", &template)?;
 
         while let Some(seq) = input.next() {
             use KeySeq::*;
@@ -246,8 +278,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             if self.screen.maybe_resize(&mut input)? {
                 self.screen.set_dirty_start(self.screen.rowoff);
                 self.sb.redraw = true;
-                self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-                self.render_screen()?;
+                self.render_screen(&buf, &template)?;
                 continue;
             }
 
@@ -272,8 +303,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             let should_render = action.on_seq(self, buf.as_str(), seq)?;
 
             if should_render || prev_len != buf.len() {
-                self.screen.set_info_message(prompt.replacen("{}", &buf, 1));
-                self.render_screen()?;
+                self.render_screen(&buf, &template)?;
             }
         }
 

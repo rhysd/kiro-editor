@@ -582,6 +582,12 @@ impl<W: Write> Screen<W> {
     pub fn message_text(&self) -> &'_ str {
         self.message.as_ref().map(|m| m.text.as_str()).unwrap_or("")
     }
+
+    pub fn force_set_cursor(&mut self, row: usize, col: usize) -> Result<()> {
+        write!(self.output, "\x1b[{};{}H", row, col)?;
+        self.output.flush()?;
+        Ok(())
+    }
 }
 
 impl<W: Write> Drop for Screen<W> {
