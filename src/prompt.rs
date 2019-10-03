@@ -13,7 +13,7 @@ pub enum PromptResult {
 }
 
 // Sized is necessary to move self
-pub trait PromptAction: Sized {
+pub trait Action: Sized {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self;
 
     // Returns bool which represents whether screen redraw is necessary
@@ -36,7 +36,7 @@ pub trait PromptAction: Sized {
 }
 
 pub struct NoAction;
-impl PromptAction for NoAction {
+impl Action for NoAction {
     fn new<W: Write>(_prompt: &mut Prompt<'_, W>) -> Self {
         Self
     }
@@ -47,6 +47,8 @@ enum FindDir {
     Back,
     Forward,
 }
+
+// TODO: To enable regex search, text search should not be line-wise.
 
 pub struct TextSearch {
     saved_cx: usize,
@@ -122,7 +124,7 @@ impl TextSearch {
     }
 }
 
-impl PromptAction for TextSearch {
+impl Action for TextSearch {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self {
         Self {
             saved_cx: prompt.buf.cx(),
@@ -255,7 +257,7 @@ impl<'a, W: Write> Prompt<'a, W> {
 
     pub fn run<A, S, I>(&mut self, prompt: S, mut input: I) -> Result<PromptResult>
     where
-        A: PromptAction,
+        A: Action,
         S: AsRef<str>,
         I: Iterator<Item = Result<InputSeq>>,
     {

@@ -40,7 +40,7 @@ impl Row {
         }
     }
 
-    fn byte_idx_of(&self, char_idx: usize) -> usize {
+    pub fn byte_idx_of(&self, char_idx: usize) -> usize {
         let len = self.indices.len();
         if len == 0 {
             char_idx

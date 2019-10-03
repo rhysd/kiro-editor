@@ -115,7 +115,7 @@ where
     }
 
     fn open_buffer(&mut self) -> Result<()> {
-        if let PromptResult::Input(input) = self.prompt(
+        if let PromptResult::Input(input) = self.prompt::<prompt::NoAction>(
             "Open: {} (Empty name for new text buffer, ^G or ESC to cancel)",
             false,
         )? {
@@ -165,7 +165,11 @@ where
         });
     }
 
-    fn prompt<S: AsRef<str>>(&mut self, prompt: S, empty_is_cancel: bool) -> Result<PromptResult> {
+    fn prompt<A: prompt::Action>(
+        &mut self,
+        prompt: &str,
+        empty_is_cancel: bool,
+    ) -> Result<PromptResult> {
         Prompt::new(
             &mut self.screen,
             &mut self.bufs[self.buf_idx],
@@ -173,15 +177,14 @@ where
             &mut self.status_bar,
             empty_is_cancel,
         )
-        .run::<prompt::NoAction, _, _>(prompt, &mut self.input)
+        .run::<A, _, _>(prompt, &mut self.input)
     }
 
     fn save(&mut self) -> Result<()> {
         let mut create = false;
         if !self.buf().has_file() {
-            if let PromptResult::Input(input) =
-                self.prompt("Save as: {} (^G or ESC to cancel)", true)?
-            {
+            let template = "Save as: {} (^G or ESC to cancel)";
+            if let PromptResult::Input(input) = self.prompt::<prompt::NoAction>(template, true)? {
                 let prev_lang = self.buf().lang();
                 self.buf_mut().set_file(input);
                 self.hl.lang_changed(self.buf().lang());
@@ -207,15 +210,8 @@ where
     }
 
     fn find(&mut self) -> Result<()> {
-        let prompt = "Search: {} (^F or RIGHT to forward, ^B or LEFT to back, ^G or ESC to cancel)";
-        Prompt::new(
-            &mut self.screen,
-            &mut self.bufs[self.buf_idx],
-            &mut self.hl,
-            &mut self.status_bar,
-            true,
-        )
-        .run::<prompt::TextSearch, _, _>(prompt, &mut self.input)?;
+        let template = "Search: {} (^F or ^N or RIGHT to forward, ^B or ^P or LEFT to back, ^G or ESC to cancel)";
+        self.prompt::<prompt::TextSearch>(template, true)?;
         Ok(())
     }
 
