@@ -1,9 +1,11 @@
 use crate::error::Result;
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
+use crate::row::Row;
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
+use std::cmp::Ordering;
 use std::io::Write;
 
 #[derive(PartialEq)]
@@ -48,7 +50,109 @@ enum FindDir {
     Forward,
 }
 
-// TODO: To enable regex search, text search should not be line-wise.
+struct SearchBuffer {
+    text: Box<str>,
+    line_starts: Box<[usize]>,
+}
+
+impl SearchBuffer {
+    pub fn new(rows: &[Row]) -> Self {
+        let cap = rows.iter().fold(0, |acc, row| acc + row.buffer().len() + 1);
+        let mut text = String::with_capacity(cap);
+
+        let mut pos = 0;
+        let mut line_starts = Vec::with_capacity(rows.len());
+        for row in rows {
+            line_starts.push(pos);
+            text.push_str(row.buffer());
+            text.push('\n');
+            pos += row.buffer().len() + 1;
+        }
+
+        Self {
+            text: text.into_boxed_str(),
+            line_starts: line_starts.into_boxed_slice(),
+        }
+    }
+
+    pub fn next_char(&self, offset: usize) -> usize {
+        if let Some((idx, _)) = self.text[offset..].char_indices().skip(1).next() {
+            offset + idx
+        } else {
+            0 // Wrapped
+        }
+    }
+
+    pub fn prev_char(&self, offset: usize) -> usize {
+        self.text[..offset]
+            .char_indices()
+            .rev()
+            .next()
+            .map(|(idx, _)| idx)
+            .unwrap_or_else(|| self.text.len())
+    }
+
+    fn bsearch_nearest_line(&self, l: usize, r: usize, want_offset: usize) -> usize {
+        debug_assert!(l <= r);
+        if r - l <= 1 {
+            return l; // Fallback to the nearest
+        }
+        let idx = (l + r) / 2;
+        let offset = self.line_starts[idx];
+        match want_offset.cmp(&offset) {
+            Ordering::Less => self.bsearch_nearest_line(l, idx, want_offset),
+            Ordering::Equal => idx,
+            Ordering::Greater => self.bsearch_nearest_line(idx, r, want_offset),
+        }
+    }
+
+    fn nearest_line(&self, byte_offset: usize) -> usize {
+        self.bsearch_nearest_line(0, self.line_starts.len(), byte_offset)
+    }
+
+    pub fn offset_to_pos(&self, byte_offset: usize, rows: &[Row]) -> (usize, usize) {
+        let y = self.nearest_line(byte_offset);
+        let y_offset = self.line_starts[y];
+        let x_offset = byte_offset - y_offset;
+        (rows[y].char_idx_of(x_offset), y)
+    }
+
+    pub fn pos_to_offset(&self, pos: (usize, usize), rows: &[Row]) -> usize {
+        let y = pos.1;
+        let x = rows[y].byte_idx_of(pos.0);
+        self.line_starts[y] + x
+    }
+
+    pub fn find_at(&self, query: &str, off: usize) -> Option<usize> {
+        // TODO: Use more efficient string search algorithm such as Aho-Corasick
+        if let Some(idx) = self.text[off..].find(query) {
+            return Some(off + idx);
+        }
+        if let Some(idx) = self.text.find(query) {
+            // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
+            if idx < off {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    pub fn rfind_at(&self, query: &str, off: usize) -> Option<usize> {
+        // TODO: Use more efficient string search algorithm such as Aho-Corasick
+        if let Some(idx) = self.text[..off].rfind(query) {
+            return Some(idx);
+        }
+        if let Some(idx) = self.text.rfind(query) {
+            // Considering the case where matched region contains cursor position, we must check last index
+            let last_idx = idx + query.len();
+            // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
+            if off < last_idx {
+                return Some(idx);
+            }
+        }
+        None
+    }
+}
 
 pub struct TextSearch {
     saved_cx: usize,
@@ -56,30 +160,20 @@ pub struct TextSearch {
     saved_coloff: usize,
     saved_rowoff: usize,
     dir: FindDir,
-    last_match: Option<usize>,
-    line: usize,
+    matched: bool,
+    search: SearchBuffer,
+    current_offset: usize,
 }
 
 impl TextSearch {
     fn cleanup_match_highlight<W: Write>(&self, prompt: &mut Prompt<'_, W>) {
-        if self.last_match.is_none() {
+        if !self.matched {
             return;
         }
         if let Some(matched_line) = prompt.hl.clear_previous_match() {
             prompt.hl.needs_update = true;
             prompt.screen.set_dirty_start(matched_line);
         }
-    }
-
-    fn next_line<W: Write>(&mut self, prompt: &Prompt<'_, W>) {
-        // Wrapping text search at top/bottom of text buffer
-        let len = prompt.buf.rows().len();
-        self.line = match self.dir {
-            FindDir::Forward if self.line == len - 1 => 0,
-            FindDir::Forward => self.line + 1,
-            FindDir::Back if self.line == 0 => len - 1,
-            FindDir::Back => self.line - 1,
-        };
     }
 
     fn handle_seq(&mut self, seq: InputSeq) {
@@ -92,48 +186,61 @@ impl TextSearch {
                 self.dir = FindDir::Back;
             }
             _ => {
-                self.last_match = None;
+                self.matched = false; // Clear since new input might change input
             }
         }
     }
 
-    fn find_in_line<W: Write>(&mut self, input: &str, prompt: &mut Prompt<'_, W>) -> bool {
-        let row = &prompt.buf.rows()[self.line];
-        let idx = if let Some(byte_idx) = row.buffer().find(input) {
-            row.char_idx_of(byte_idx)
-        } else {
-            return false;
+    fn reject_match_to_current(&mut self) {
+        self.current_offset = match self.dir {
+            FindDir::Forward => self.search.next_char(self.current_offset),
+            FindDir::Back => self.search.prev_char(self.current_offset),
         };
+    }
 
-        prompt.buf.set_cursor(idx, self.line);
+    fn find<W: Write>(&mut self, input: &str, prompt: &mut Prompt<'_, W>) {
+        let found = match self.dir {
+            FindDir::Forward => self.search.find_at(input, self.current_offset),
+            FindDir::Back => self.search.rfind_at(input, self.current_offset),
+        };
+        if let Some(offset) = found {
+            self.current_offset = offset;
+        } else {
+            return;
+        }
 
-        let rx = prompt.buf.rows()[self.line].rx_from_cx(prompt.buf.cx());
+        let (x, y) = self
+            .search
+            .offset_to_pos(self.current_offset, prompt.buf.rows());
+        prompt.buf.set_cursor(x, y);
+
+        let rx = prompt.buf.rows()[y].rx_from_cx(x);
         // Cause do_scroll() to scroll upwards to half a screen above the matching line at
         // next screen redraw
-        prompt.screen.rowoff = self.line.saturating_sub(prompt.screen.rows() / 2);
+        prompt.screen.rowoff = y.saturating_sub(prompt.screen.rows() / 2);
         prompt.screen.coloff = 0;
-        self.last_match = Some(self.line);
         // Set match highlight on the found line
-        prompt
-            .hl
-            .set_match(self.line, rx, rx + input.chars().count());
+        prompt.hl.set_match(y, rx, rx + input.chars().count());
         // XXX: It updates entire highlights
         prompt.hl.needs_update = true;
         prompt.screen.set_dirty_start(prompt.screen.rowoff);
-        true
+
+        self.matched = true;
     }
 }
 
 impl Action for TextSearch {
     fn new<W: Write>(prompt: &mut Prompt<'_, W>) -> Self {
+        let search = SearchBuffer::new(prompt.buf.rows());
         Self {
             saved_cx: prompt.buf.cx(),
             saved_cy: prompt.buf.cy(),
             saved_coloff: prompt.screen.coloff,
             saved_rowoff: prompt.screen.rowoff,
-            line: prompt.buf.cy(),
             dir: FindDir::Forward,
-            last_match: None,
+            matched: false,
+            current_offset: search.pos_to_offset(prompt.buf.cursor(), prompt.buf.rows()),
+            search,
         }
     }
 
@@ -150,18 +257,11 @@ impl Action for TextSearch {
             return Ok(false);
         }
 
-        if self.last_match.is_some() {
-            self.next_line(prompt); // Avoid matching to current position
+        if self.matched {
+            // When already matched, it means moving cursor to next/previous match
+            self.reject_match_to_current();
         }
-
-        // TODO: Use more efficient string search algorithm such as Aho-Corasick
-        for _ in 0..prompt.buf.rows().len() {
-            if self.find_in_line(input, prompt) {
-                break;
-            }
-            self.next_line(prompt);
-        }
-
+        self.find(input, prompt);
         Ok(true)
     }
 
@@ -176,7 +276,7 @@ impl Action for TextSearch {
         let result = match &result {
             Canceled => Canceled,
             Input(i) if i.is_empty() => Canceled,
-            Input(_) if self.last_match.is_some() => {
+            Input(_) if self.matched => {
                 prompt.screen.set_info_message("Found");
                 result
             }
@@ -266,7 +366,7 @@ impl<'a, W: Write> Prompt<'a, W> {
         let mut canceled = false;
 
         let template = {
-            let mut it = prompt.as_ref().split("{}");
+            let mut it = prompt.as_ref().splitn(2, "{}");
             let prefix = it.next().unwrap();
             let suffix = it.next().unwrap();
             PromptTemplate { prefix, suffix }
