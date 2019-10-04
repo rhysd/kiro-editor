@@ -76,7 +76,7 @@ impl SearchBuffer {
     }
 
     pub fn next_char(&self, offset: usize) -> usize {
-        if let Some((idx, _)) = self.text[offset..].char_indices().skip(1).next() {
+        if let Some((idx, _)) = self.text[offset..].char_indices().nth(1) {
             offset + idx
         } else {
             0 // Wrapped
