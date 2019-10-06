@@ -91,17 +91,24 @@ impl TextSearch {
     fn reject_match_to_current(&mut self) {
         // Reject current cursor position to be matched to search pattern by moving offset to next
         self.current_offset = match self.dir {
-            FindDir::Forward => self.next_char(self.current_offset),
-            FindDir::Back => self.prev_char(self.current_offset),
+            FindDir::Forward => {
+                if let Some((idx, _)) = self.text[self.current_offset..].char_indices().nth(1) {
+                    self.current_offset + idx
+                } else {
+                    0 // Wrapped
+                }
+            }
+            FindDir::Back => self.text[..self.current_offset]
+                .char_indices()
+                .rev()
+                .next()
+                .map(|(idx, _)| idx)
+                .unwrap_or_else(|| self.text.len()),
         };
     }
 
     fn search<W: Write>(&mut self, input: &str, prompt: &mut Prompt<'_, W>) {
-        let found = match self.dir {
-            FindDir::Forward => self.find_at(input, self.current_offset),
-            FindDir::Back => self.rfind_at(input, self.current_offset),
-        };
-        if let Some(offset) = found {
+        if let Some(offset) = self.find_at(input, self.current_offset) {
             self.current_offset = offset;
         } else {
             return;
@@ -122,23 +129,6 @@ impl TextSearch {
         prompt.screen.set_dirty_start(prompt.screen.rowoff);
 
         self.matched = true;
-    }
-
-    fn next_char(&self, offset: usize) -> usize {
-        if let Some((idx, _)) = self.text[offset..].char_indices().nth(1) {
-            offset + idx
-        } else {
-            0 // Wrapped
-        }
-    }
-
-    fn prev_char(&self, offset: usize) -> usize {
-        self.text[..offset]
-            .char_indices()
-            .rev()
-            .next()
-            .map(|(idx, _)| idx)
-            .unwrap_or_else(|| self.text.len())
     }
 
     fn nearest_line(&self, byte_offset: usize) -> usize {
@@ -173,30 +163,32 @@ impl TextSearch {
     }
 
     fn find_at(&self, query: &str, off: usize) -> Option<usize> {
-        // TODO: Use more efficient string search algorithm such as Aho-Corasick
-        if let Some(idx) = self.text[off..].find(query) {
-            return Some(off + idx);
-        }
-        if let Some(idx) = self.text.find(query) {
-            // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
-            if idx < off {
-                return Some(idx);
+        match self.dir {
+            FindDir::Forward => {
+                // TODO: Use more efficient string search algorithm such as Aho-Corasick
+                if let Some(idx) = self.text[off..].find(query) {
+                    return Some(off + idx);
+                }
+                if let Some(idx) = self.text.find(query) {
+                    // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
+                    if idx < off {
+                        return Some(idx);
+                    }
+                }
             }
-        }
-        None
-    }
-
-    fn rfind_at(&self, query: &str, off: usize) -> Option<usize> {
-        // TODO: Use more efficient string search algorithm such as Aho-Corasick
-        if let Some(idx) = self.text[..off].rfind(query) {
-            return Some(idx);
-        }
-        if let Some(idx) = self.text.rfind(query) {
-            // Considering the case where matched region contains cursor position, we must check last index
-            let last_idx = idx + query.len();
-            // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
-            if off < last_idx {
-                return Some(idx);
+            FindDir::Back => {
+                // TODO: Use more efficient string search algorithm such as Aho-Corasick
+                if let Some(idx) = self.text[..off].rfind(query) {
+                    return Some(idx);
+                }
+                if let Some(idx) = self.text.rfind(query) {
+                    // Considering the case where matched region contains cursor position, we must check last index
+                    let last_idx = idx + query.len();
+                    // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
+                    if off < last_idx {
+                        return Some(idx);
+                    }
+                }
             }
         }
         None
