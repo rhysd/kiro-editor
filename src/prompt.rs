@@ -51,10 +51,7 @@ enum FindDir {
 }
 
 pub struct TextSearch {
-    saved_cx: usize,
-    saved_cy: usize,
-    saved_coloff: usize,
-    saved_rowoff: usize,
+    saved: ((usize, usize), (usize, usize)),
     dir: FindDir,
     matched: bool,
     text: Box<str>,
@@ -211,10 +208,10 @@ impl Action for TextSearch {
         }
 
         let mut new = Self {
-            saved_cx: prompt.buf.cx(),
-            saved_cy: prompt.buf.cy(),
-            saved_coloff: prompt.screen.coloff,
-            saved_rowoff: prompt.screen.rowoff,
+            saved: (
+                prompt.buf.cursor(),
+                (prompt.screen.rowoff, prompt.screen.coloff),
+            ),
             dir: FindDir::Forward,
             matched: false,
             text: text.into_boxed_str(),
@@ -270,9 +267,10 @@ impl Action for TextSearch {
         };
 
         if result == Canceled {
-            prompt.buf.set_cursor(self.saved_cx, self.saved_cy);
-            prompt.screen.coloff = self.saved_coloff;
-            prompt.screen.rowoff = self.saved_rowoff;
+            let ((cx, cy), (rowoff, coloff)) = self.saved;
+            prompt.buf.set_cursor(cx, cy);
+            prompt.screen.rowoff = rowoff;
+            prompt.screen.coloff = coloff;
             prompt.screen.set_dirty_start(prompt.screen.rowoff); // Redraw all lines
         }
 
