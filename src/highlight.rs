@@ -17,6 +17,7 @@ pub enum Highlight {
     Statement,
     Boolean,
     SpecialVar,
+    Search,
     Match,
 }
 
@@ -36,6 +37,7 @@ impl Highlight {
             Statement => Red,
             Boolean => Purple,
             SpecialVar => Cyan,
+            Search => OrangeBG,
             Match => YellowBG,
         }
     }
@@ -735,9 +737,9 @@ impl<'a> Highlighter<'a> {
     }
 }
 
-struct Region {
-    start: (usize, usize),
-    end: (usize, usize),
+pub struct Region {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
 }
 
 impl Region {
@@ -758,7 +760,7 @@ pub struct Highlighting {
     // One item per render text byte
     pub lines: Vec<Vec<Highlight>>, // TODO: One item per one character
     previous_bottom_of_screen: usize,
-    matched: Option<Region>,
+    matched: Vec<(Highlight, Region)>,
     syntax: &'static SyntaxHighlight,
 }
 
@@ -768,7 +770,7 @@ impl Default for Highlighting {
             needs_update: false,
             lines: vec![],
             previous_bottom_of_screen: 0,
-            matched: None,
+            matched: vec![],
             syntax: &PLAIN_SYNTAX,
         }
     }
@@ -787,7 +789,7 @@ impl Highlighting {
                 })
                 .collect(),
             previous_bottom_of_screen: 0,
-            matched: None,
+            matched: vec![],
             syntax: SyntaxHighlight::for_lang(lang),
         }
     }
@@ -800,11 +802,12 @@ impl Highlighting {
         self.needs_update = true;
     }
 
-    fn highlight_match(&mut self, highlight: Highlight) {
-        if let Some(m) = &self.matched {
-            for y in m.start.1..=m.end.1 {
+    fn highlight_match(&mut self, overwrite: Option<Highlight>) {
+        for (highlight, region) in self.matched.iter() {
+            let highlight = overwrite.unwrap_or(*highlight);
+            for y in region.start.1..=region.end.1 {
                 for (x, hl) in self.lines[y].iter_mut().enumerate() {
-                    if m.contains((x, y)) {
+                    if region.contains((x, y)) {
                         *hl = highlight;
                     }
                 }
@@ -827,29 +830,27 @@ impl Highlighting {
             highlighter.highlight_line(&mut self.lines[y], row);
         }
 
-        self.highlight_match(Highlight::Match); // Overwrite matched region
+        // Overwrite matched region
+        //
+        // TODO: Move logic to highlighter rather than overwriting highlights after.
+        // Give self.matched to Highlighter::new() and it checks each cell should be highlighted as match
+        self.highlight_match(None);
 
         self.needs_update = false;
         self.previous_bottom_of_screen = bottom_of_screen;
     }
 
-    pub fn set_match(&mut self, y: usize, start: usize, end: usize) {
-        if start >= end {
-            return;
-        }
+    pub fn set_matches(&mut self, matches: Vec<(Highlight, Region)>) {
         self.clear_previous_match();
-        let start = (start, y);
-        let end = (end, y);
-        self.matched = Some(Region { start, end }); // XXX: Currently only one-line match is supported
+        self.matched = matches;
     }
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
-        if let Some(y) = self.matched.as_ref().map(|r| r.start.1) {
-            self.highlight_match(Highlight::Normal); // Back to normal color. It is efficient on plain file type
-            self.matched = None;
-            Some(y)
-        } else {
-            None
+        let dirty_start = self.matched.iter().map(|(_, r)| r.start.1).min();
+        if dirty_start.is_some() {
+            self.highlight_match(Some(Highlight::Normal)); // Back to normal color. It is efficient on plain file type
+            self.matched.clear();
         }
+        dirty_start
     }
 }
