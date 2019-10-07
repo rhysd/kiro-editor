@@ -848,7 +848,12 @@ impl Highlighting {
     pub fn clear_previous_match(&mut self) -> Option<usize> {
         let dirty_start = self.matched.iter().map(|(_, r)| r.start.1).min();
         if dirty_start.is_some() {
-            self.highlight_match(Some(Highlight::Normal)); // Back to normal color. It is efficient on plain file type
+            if self.syntax.lang == Language::Plain {
+                // Back to normal color. It is necessary on plain file type since it skips highlighting.
+                // Otherwise, this process is unnecessary because next highlighting will overwrite match
+                // highlights.
+                self.highlight_match(Some(Highlight::Normal));
+            }
             self.matched.clear();
         }
         dirty_start
