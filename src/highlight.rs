@@ -17,6 +17,7 @@ pub enum Highlight {
     Statement,
     Boolean,
     SpecialVar,
+    Search,
     Match,
 }
 
@@ -36,6 +37,7 @@ impl Highlight {
             Statement => Red,
             Boolean => Purple,
             SpecialVar => Cyan,
+            Search => OrangeBG,
             Match => YellowBG,
         }
     }
@@ -409,7 +411,7 @@ enum NumLit {
     Bin,
 }
 
-enum ParseNext {
+enum ParseStep {
     Ahead(usize),
     Break,
 }
@@ -447,7 +449,7 @@ impl<'a> Highlighter<'a> {
         input: &str,
         hl: Highlight,
         len: usize,
-    ) -> ParseNext {
+    ) -> ParseStep {
         debug_assert!(len > 0);
         debug_assert!(!input.is_empty());
         debug_assert!(!out.is_empty());
@@ -457,14 +459,14 @@ impl<'a> Highlighter<'a> {
         }
         self.prev_hl = hl;
         self.prev_char = input.chars().nth(len - 1).unwrap();
-        ParseNext::Ahead(len)
+        ParseStep::Ahead(len)
     }
 
-    fn eat_one(&mut self, out: &mut [Highlight], c: char, hl: Highlight) -> ParseNext {
+    fn eat_one(&mut self, out: &mut [Highlight], c: char, hl: Highlight) -> ParseStep {
         out[0] = hl;
         self.prev_hl = hl;
         self.prev_char = c;
-        ParseNext::Ahead(1)
+        ParseStep::Ahead(1)
     }
 
     fn highlight_block_comment(
@@ -474,7 +476,7 @@ impl<'a> Highlighter<'a> {
         c: char,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         if self.prev_quote.is_some() {
             return None;
         }
@@ -502,19 +504,19 @@ impl<'a> Highlighter<'a> {
         leader: &str,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         if self.prev_quote.is_none() && input.starts_with(leader) {
             // Highlight as comment until end of line
             for hl in out.iter_mut() {
                 *hl = Highlight::Comment;
             }
-            Some(ParseNext::Break)
+            Some(ParseStep::Break)
         } else {
             None
         }
     }
 
-    fn highlight_string(&mut self, c: char, out: &mut [Highlight]) -> Option<ParseNext> {
+    fn highlight_string(&mut self, c: char, out: &mut [Highlight]) -> Option<ParseStep> {
         if let Some(q) = self.prev_quote {
             // In string literal. XXX: "\\" is not highlighted correctly
             if self.prev_char != '\\' && q == c {
@@ -529,7 +531,7 @@ impl<'a> Highlighter<'a> {
         }
     }
 
-    fn highlight_ident(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+    fn highlight_ident(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseStep> {
         fn lex_ident(mut input: &str) -> Option<&str> {
             for (i, c) in input.char_indices() {
                 if is_sep(c) {
@@ -586,7 +588,7 @@ impl<'a> Highlighter<'a> {
         c: char,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         let prefix: &[_] = match num {
             NumLit::Hex => b"0x",
             NumLit::Bin => b"0b",
@@ -626,7 +628,7 @@ impl<'a> Highlighter<'a> {
         is_bound: bool,
         c: char,
         out: &mut [Highlight],
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         let prev_is_number = self.num == NumLit::Digit && self.prev_hl == Highlight::Number;
         if is_bound {
             if c.is_ascii_digit() || prev_is_number && c == '.' {
@@ -640,7 +642,7 @@ impl<'a> Highlighter<'a> {
         None
     }
 
-    fn highlight_char(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+    fn highlight_char(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseStep> {
         if self.syntax.number_delim == Some('\'') && self.prev_hl == Highlight::Number {
             return None; // Consider number literal delimiter in C++ (e.g. `123'456'789`)
         }
@@ -655,15 +657,15 @@ impl<'a> Highlighter<'a> {
         len.map(|len| self.eat_n(out, input, Highlight::Char, len))
     }
 
-    fn highlight_one(&mut self, c: char, out: &mut [Highlight], input: &str) -> ParseNext {
+    fn highlight_one(&mut self, c: char, out: &mut [Highlight], input: &str) -> ParseStep {
         if self.after_def_keyword && !c.is_ascii_whitespace() && is_sep(c) {
             self.after_def_keyword = false;
         }
 
         macro_rules! try_highlight {
             ($call:expr) => {
-                if let Some(next) = $call {
-                    return next;
+                if let Some(step) = $call {
+                    return step;
                 }
             };
         }
@@ -723,21 +725,21 @@ impl<'a> Highlighter<'a> {
             let input = &row[idx..];
             let out = &mut out[x..];
             match self.highlight_one(c, out, input) {
-                ParseNext::Ahead(len) if len >= 2 => {
+                ParseStep::Ahead(len) if len >= 2 => {
                     // while statement always consume one character at top. Eat input chars considering that.
                     iter.nth(len.saturating_sub(2));
                 }
-                ParseNext::Ahead(len) if len == 1 => { /* Go next */ }
-                ParseNext::Ahead(_) => unreachable!(),
-                ParseNext::Break => break,
+                ParseStep::Ahead(len) if len == 1 => { /* Go next */ }
+                ParseStep::Ahead(_) => unreachable!(),
+                ParseStep::Break => break,
             }
         }
     }
 }
 
-struct Region {
-    start: (usize, usize),
-    end: (usize, usize),
+pub struct Region {
+    pub start: (usize, usize),
+    pub end: (usize, usize),
 }
 
 impl Region {
@@ -758,7 +760,7 @@ pub struct Highlighting {
     // One item per render text byte
     pub lines: Vec<Vec<Highlight>>, // TODO: One item per one character
     previous_bottom_of_screen: usize,
-    matched: Option<Region>,
+    matched: Vec<(Highlight, Region)>,
     syntax: &'static SyntaxHighlight,
 }
 
@@ -768,7 +770,7 @@ impl Default for Highlighting {
             needs_update: false,
             lines: vec![],
             previous_bottom_of_screen: 0,
-            matched: None,
+            matched: vec![],
             syntax: &PLAIN_SYNTAX,
         }
     }
@@ -787,7 +789,7 @@ impl Highlighting {
                 })
                 .collect(),
             previous_bottom_of_screen: 0,
-            matched: None,
+            matched: vec![],
             syntax: SyntaxHighlight::for_lang(lang),
         }
     }
@@ -800,11 +802,12 @@ impl Highlighting {
         self.needs_update = true;
     }
 
-    fn highlight_match(&mut self, highlight: Highlight) {
-        if let Some(m) = &self.matched {
-            for y in m.start.1..=m.end.1 {
+    fn highlight_match(&mut self, overwrite: Option<Highlight>) {
+        for (highlight, region) in self.matched.iter() {
+            let highlight = overwrite.unwrap_or(*highlight);
+            for y in region.start.1..=region.end.1 {
                 for (x, hl) in self.lines[y].iter_mut().enumerate() {
-                    if m.contains((x, y)) {
+                    if region.contains((x, y)) {
                         *hl = highlight;
                     }
                 }
@@ -827,29 +830,32 @@ impl Highlighting {
             highlighter.highlight_line(&mut self.lines[y], row);
         }
 
-        self.highlight_match(Highlight::Match); // Overwrite matched region
+        // Overwrite matched region
+        //
+        // TODO: Move logic to highlighter rather than overwriting highlights after.
+        // Give self.matched to Highlighter::new() and it checks each cell should be highlighted as match
+        self.highlight_match(None);
 
         self.needs_update = false;
         self.previous_bottom_of_screen = bottom_of_screen;
     }
 
-    pub fn set_match(&mut self, y: usize, start: usize, end: usize) {
-        if start >= end {
-            return;
-        }
+    pub fn set_matches(&mut self, matches: Vec<(Highlight, Region)>) {
         self.clear_previous_match();
-        let start = (start, y);
-        let end = (end, y);
-        self.matched = Some(Region { start, end }); // XXX: Currently only one-line match is supported
+        self.matched = matches;
     }
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
-        if let Some(y) = self.matched.as_ref().map(|r| r.start.1) {
-            self.highlight_match(Highlight::Normal); // Back to normal color. It is efficient on plain file type
-            self.matched = None;
-            Some(y)
-        } else {
-            None
+        let dirty_start = self.matched.iter().map(|(_, r)| r.start.1).min();
+        if dirty_start.is_some() {
+            if self.syntax.lang == Language::Plain {
+                // Back to normal color. It is necessary on plain file type since it skips highlighting.
+                // Otherwise, this process is unnecessary because next highlighting will overwrite match
+                // highlights.
+                self.highlight_match(Some(Highlight::Normal));
+            }
+            self.matched.clear();
         }
+        dirty_start
     }
 }

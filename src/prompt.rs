@@ -1,11 +1,11 @@
 use crate::error::Result;
-use crate::highlight::Highlighting;
+use crate::highlight::{Highlight, Highlighting, Region};
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::screen::Screen;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
-use std::cmp::Ordering;
+use std::cmp::{self, Ordering};
 use std::io::Write;
 
 #[derive(PartialEq)]
@@ -86,15 +86,14 @@ impl TextSearch {
     }
 
     fn reject_match_to_current(&mut self) {
-        // Reject current cursor position to be matched to search pattern by moving offset to next
+        // Reject current cursor position to be matched to search pattern by moving offset
+        // forward/back by one character
         self.current_offset = match self.dir {
-            FindDir::Forward => {
-                if let Some((idx, _)) = self.text[self.current_offset..].char_indices().nth(1) {
-                    self.current_offset + idx
-                } else {
-                    0 // Wrapped
-                }
-            }
+            FindDir::Forward => self.text[self.current_offset..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| self.current_offset + i)
+                .unwrap_or(0),
             FindDir::Back => self.text[..self.current_offset]
                 .char_indices()
                 .rev()
@@ -104,6 +103,43 @@ impl TextSearch {
         };
     }
 
+    fn calculate_matches<W: Write>(
+        &self,
+        query: &str,
+        current_match: Region,
+        screen: &Screen<W>,
+        rows: &[Row],
+    ) -> Vec<(Highlight, Region)> {
+        // Match at current cursor position
+        let mut matches = vec![(Highlight::Search, current_match)];
+
+        let screen_start = screen.rowoff;
+        let screen_end = cmp::min(screen_start + screen.rows() + 1, rows.len());
+        let start_offset = self.pos_to_offset((0, screen_start), rows);
+        // Note: screen_end is exclusive so it is next line to the last line of screen
+        let end_offset = if screen_end == rows.len() {
+            self.text.len()
+        } else {
+            self.pos_to_offset((0, screen_end), rows)
+        };
+
+        // Scan screen again to get all 'other' matches than current match
+        for offset in self.text[start_offset..end_offset]
+            .match_indices(query)
+            .map(|(idx, _)| start_offset + idx)
+        {
+            if offset == self.current_offset {
+                continue; // Exclude current match since it is already included in matches
+            }
+            matches.push((
+                Highlight::Match,
+                self.offset_to_region(offset, query.len(), rows),
+            ));
+        }
+
+        matches
+    }
+
     fn search<W: Write>(&mut self, input: &str, prompt: &mut Prompt<'_, W>) {
         if let Some(offset) = self.find_at(input, self.current_offset) {
             self.current_offset = offset;
@@ -111,17 +147,22 @@ impl TextSearch {
             return;
         }
 
-        let (x, y) = self.offset_to_pos(self.current_offset, prompt.buf.rows());
+        let current_match =
+            self.offset_to_region(self.current_offset, input.len(), prompt.buf.rows());
+        let (x, y) = current_match.start;
         prompt.buf.set_cursor(x, y);
 
-        let rx = prompt.buf.rows()[y].rx_from_cx(x);
         // Cause do_scroll() to scroll upwards to half a screen above the matching line at
         // next screen redraw
         prompt.screen.rowoff = y.saturating_sub(prompt.screen.rows() / 2);
         prompt.screen.coloff = 0;
-        // Set match highlight on the found line
-        prompt.hl.set_match(y, rx, rx + input.chars().count());
-        // XXX: It updates entire highlights
+
+        // Set all match highlights in screen
+        let matches =
+            self.calculate_matches(input, current_match, &prompt.screen, prompt.buf.rows());
+        prompt.hl.set_matches(matches);
+
+        // Update highlights since matched word was updated
         prompt.hl.needs_update = true;
         prompt.screen.set_dirty_start(prompt.screen.rowoff);
 
@@ -157,6 +198,12 @@ impl TextSearch {
         let y = pos.1;
         let x = rows[y].byte_idx_of(pos.0);
         self.line_starts[y] + x
+    }
+
+    fn offset_to_region(&self, byte_offset: usize, len: usize, rows: &[Row]) -> Region {
+        let start = self.offset_to_pos(byte_offset, rows);
+        let end = self.offset_to_pos(byte_offset + len, rows);
+        Region { start, end }
     }
 
     fn find_at(&self, query: &str, off: usize) -> Option<usize> {
