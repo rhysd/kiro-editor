@@ -411,7 +411,7 @@ enum NumLit {
     Bin,
 }
 
-enum ParseNext {
+enum ParseStep {
     Ahead(usize),
     Break,
 }
@@ -449,7 +449,7 @@ impl<'a> Highlighter<'a> {
         input: &str,
         hl: Highlight,
         len: usize,
-    ) -> ParseNext {
+    ) -> ParseStep {
         debug_assert!(len > 0);
         debug_assert!(!input.is_empty());
         debug_assert!(!out.is_empty());
@@ -459,14 +459,14 @@ impl<'a> Highlighter<'a> {
         }
         self.prev_hl = hl;
         self.prev_char = input.chars().nth(len - 1).unwrap();
-        ParseNext::Ahead(len)
+        ParseStep::Ahead(len)
     }
 
-    fn eat_one(&mut self, out: &mut [Highlight], c: char, hl: Highlight) -> ParseNext {
+    fn eat_one(&mut self, out: &mut [Highlight], c: char, hl: Highlight) -> ParseStep {
         out[0] = hl;
         self.prev_hl = hl;
         self.prev_char = c;
-        ParseNext::Ahead(1)
+        ParseStep::Ahead(1)
     }
 
     fn highlight_block_comment(
@@ -476,7 +476,7 @@ impl<'a> Highlighter<'a> {
         c: char,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         if self.prev_quote.is_some() {
             return None;
         }
@@ -504,19 +504,19 @@ impl<'a> Highlighter<'a> {
         leader: &str,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         if self.prev_quote.is_none() && input.starts_with(leader) {
             // Highlight as comment until end of line
             for hl in out.iter_mut() {
                 *hl = Highlight::Comment;
             }
-            Some(ParseNext::Break)
+            Some(ParseStep::Break)
         } else {
             None
         }
     }
 
-    fn highlight_string(&mut self, c: char, out: &mut [Highlight]) -> Option<ParseNext> {
+    fn highlight_string(&mut self, c: char, out: &mut [Highlight]) -> Option<ParseStep> {
         if let Some(q) = self.prev_quote {
             // In string literal. XXX: "\\" is not highlighted correctly
             if self.prev_char != '\\' && q == c {
@@ -531,7 +531,7 @@ impl<'a> Highlighter<'a> {
         }
     }
 
-    fn highlight_ident(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+    fn highlight_ident(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseStep> {
         fn lex_ident(mut input: &str) -> Option<&str> {
             for (i, c) in input.char_indices() {
                 if is_sep(c) {
@@ -588,7 +588,7 @@ impl<'a> Highlighter<'a> {
         c: char,
         out: &mut [Highlight],
         input: &str,
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         let prefix: &[_] = match num {
             NumLit::Hex => b"0x",
             NumLit::Bin => b"0b",
@@ -628,7 +628,7 @@ impl<'a> Highlighter<'a> {
         is_bound: bool,
         c: char,
         out: &mut [Highlight],
-    ) -> Option<ParseNext> {
+    ) -> Option<ParseStep> {
         let prev_is_number = self.num == NumLit::Digit && self.prev_hl == Highlight::Number;
         if is_bound {
             if c.is_ascii_digit() || prev_is_number && c == '.' {
@@ -642,7 +642,7 @@ impl<'a> Highlighter<'a> {
         None
     }
 
-    fn highlight_char(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseNext> {
+    fn highlight_char(&mut self, out: &mut [Highlight], input: &str) -> Option<ParseStep> {
         if self.syntax.number_delim == Some('\'') && self.prev_hl == Highlight::Number {
             return None; // Consider number literal delimiter in C++ (e.g. `123'456'789`)
         }
@@ -657,15 +657,15 @@ impl<'a> Highlighter<'a> {
         len.map(|len| self.eat_n(out, input, Highlight::Char, len))
     }
 
-    fn highlight_one(&mut self, c: char, out: &mut [Highlight], input: &str) -> ParseNext {
+    fn highlight_one(&mut self, c: char, out: &mut [Highlight], input: &str) -> ParseStep {
         if self.after_def_keyword && !c.is_ascii_whitespace() && is_sep(c) {
             self.after_def_keyword = false;
         }
 
         macro_rules! try_highlight {
             ($call:expr) => {
-                if let Some(next) = $call {
-                    return next;
+                if let Some(step) = $call {
+                    return step;
                 }
             };
         }
@@ -725,13 +725,13 @@ impl<'a> Highlighter<'a> {
             let input = &row[idx..];
             let out = &mut out[x..];
             match self.highlight_one(c, out, input) {
-                ParseNext::Ahead(len) if len >= 2 => {
+                ParseStep::Ahead(len) if len >= 2 => {
                     // while statement always consume one character at top. Eat input chars considering that.
                     iter.nth(len.saturating_sub(2));
                 }
-                ParseNext::Ahead(len) if len == 1 => { /* Go next */ }
-                ParseNext::Ahead(_) => unreachable!(),
-                ParseNext::Break => break,
+                ParseStep::Ahead(len) if len == 1 => { /* Go next */ }
+                ParseStep::Ahead(_) => unreachable!(),
+                ParseStep::Break => break,
             }
         }
     }
