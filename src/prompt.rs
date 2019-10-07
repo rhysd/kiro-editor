@@ -113,11 +113,15 @@ impl TextSearch {
         // Match at current cursor position
         let mut matches = vec![(Highlight::Search, current_match)];
 
-        // Note: screen_end is exclusive so it is next line to the last line of screen
         let screen_start = screen.rowoff;
         let screen_end = cmp::min(screen_start + screen.rows() + 1, rows.len());
         let start_offset = self.pos_to_offset((0, screen_start), rows);
-        let end_offset = self.pos_to_offset((0, screen_end), rows);
+        // Note: screen_end is exclusive so it is next line to the last line of screen
+        let end_offset = if screen_end == rows.len() {
+            self.text.len()
+        } else {
+            self.pos_to_offset((0, screen_end), rows)
+        };
 
         // Scan screen again to get all 'other' matches than current match
         for offset in self.text[start_offset..end_offset]
