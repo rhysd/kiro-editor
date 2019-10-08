@@ -737,12 +737,13 @@ impl<'a> Highlighter<'a> {
     }
 }
 
-pub struct Region {
+pub struct RegionHighlight {
+    pub hl: Highlight,
     pub start: (usize, usize),
     pub end: (usize, usize),
 }
 
-impl Region {
+impl RegionHighlight {
     fn contains(&self, (x, y): (usize, usize)) -> bool {
         let ((sx, sy), (ex, ey)) = (self.start, self.end);
         if y < sy || ey < y {
@@ -760,7 +761,7 @@ pub struct Highlighting {
     // One item per render text byte
     pub lines: Vec<Vec<Highlight>>, // TODO: One item per one character
     previous_bottom_of_screen: usize,
-    matched: Vec<(Highlight, Region)>,
+    matched: Vec<RegionHighlight>,
     syntax: &'static SyntaxHighlight,
 }
 
@@ -803,8 +804,8 @@ impl Highlighting {
     }
 
     fn highlight_match(&mut self, overwrite: Option<Highlight>) {
-        for (highlight, region) in self.matched.iter() {
-            let highlight = overwrite.unwrap_or(*highlight);
+        for region in self.matched.iter() {
+            let highlight = overwrite.unwrap_or(region.hl);
             for y in region.start.1..=region.end.1 {
                 for (x, hl) in self.lines[y].iter_mut().enumerate() {
                     if region.contains((x, y)) {
@@ -840,13 +841,13 @@ impl Highlighting {
         self.previous_bottom_of_screen = bottom_of_screen;
     }
 
-    pub fn set_matches(&mut self, matches: Vec<(Highlight, Region)>) {
+    pub fn set_matches(&mut self, matches: Vec<RegionHighlight>) {
         self.clear_previous_match();
         self.matched = matches;
     }
 
     pub fn clear_previous_match(&mut self) -> Option<usize> {
-        let dirty_start = self.matched.iter().map(|(_, r)| r.start.1).min();
+        let dirty_start = self.matched.iter().map(|r| r.start.1).min();
         if dirty_start.is_some() {
             if self.syntax.lang == Language::Plain {
                 // Back to normal color. It is necessary on plain file type since it skips highlighting.

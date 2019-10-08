@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::highlight::{Highlight, Highlighting, Region};
+use crate::highlight::{Highlight, Highlighting, RegionHighlight};
 use crate::input::{InputSeq, KeySeq};
 use crate::row::Row;
 use crate::screen::Screen;
@@ -106,12 +106,12 @@ impl TextSearch {
     fn calculate_matches<W: Write>(
         &self,
         query: &str,
-        current_match: Region,
+        current_match: RegionHighlight,
         screen: &Screen<W>,
         rows: &[Row],
-    ) -> Vec<(Highlight, Region)> {
+    ) -> Vec<RegionHighlight> {
         // Match at current cursor position
-        let mut matches = vec![(Highlight::Search, current_match)];
+        let mut matches = vec![current_match];
 
         let screen_start = screen.rowoff;
         let screen_end = cmp::min(screen_start + screen.rows() + 1, rows.len());
@@ -131,10 +131,11 @@ impl TextSearch {
             if offset == self.current_offset {
                 continue; // Exclude current match since it is already included in matches
             }
-            matches.push((
-                Highlight::Match,
-                self.offset_to_region(offset, query.len(), rows),
-            ));
+            matches.push(RegionHighlight {
+                hl: Highlight::Match,
+                start: self.offset_to_pos(offset, rows),
+                end: self.offset_to_pos(offset + query.len(), rows),
+            });
         }
 
         matches
@@ -147,8 +148,11 @@ impl TextSearch {
             return;
         }
 
-        let current_match =
-            self.offset_to_region(self.current_offset, input.len(), prompt.buf.rows());
+        let current_match = RegionHighlight {
+            hl: Highlight::Search,
+            start: self.offset_to_pos(self.current_offset, prompt.buf.rows()),
+            end: self.offset_to_pos(self.current_offset + input.len(), prompt.buf.rows()),
+        };
         let (x, y) = current_match.start;
         prompt.buf.set_cursor(x, y);
 
@@ -198,12 +202,6 @@ impl TextSearch {
         let y = pos.1;
         let x = rows[y].byte_idx_of(pos.0);
         self.line_starts[y] + x
-    }
-
-    fn offset_to_region(&self, byte_offset: usize, len: usize, rows: &[Row]) -> Region {
-        let start = self.offset_to_pos(byte_offset, rows);
-        let end = self.offset_to_pos(byte_offset + len, rows);
-        Region { start, end }
     }
 
     fn find_at(&self, query: &str, off: usize) -> Option<usize> {
