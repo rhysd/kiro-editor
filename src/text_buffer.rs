@@ -2,7 +2,7 @@ use crate::edit_diff::{EditDiff, UndoRedo};
 use crate::error::Result;
 use crate::history::History;
 use crate::language::{Indent, Language};
-use crate::row::Row;
+use crate::span::Span;
 use std::cmp;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
@@ -41,7 +41,7 @@ pub enum CursorDir {
     Down,
 }
 
-pub struct Lines<'a>(slice::Iter<'a, Row>);
+pub struct Lines<'a>(slice::Iter<'a, Span>);
 
 impl<'a> Iterator for Lines<'a> {
     type Item = &'a str;
@@ -63,7 +63,7 @@ pub struct TextBuffer {
     // File editor is opening
     file: Option<FilePath>,
     // Lines of text buffer
-    row: Vec<Row>,
+    row: Vec<Span>,
     // Flag set to true when buffer is modified after loading a file
     modified: bool,
     // Language which current buffer belongs to
@@ -83,7 +83,7 @@ impl TextBuffer {
             cx: 0,
             cy: 0,
             file: None,
-            row: vec![Row::empty()], // Ensure that every text ends with newline
+            row: vec![Span::empty()], // Ensure that every text ends with newline
             modified: false,
             lang: Language::Plain,
             history: History::default(),
@@ -97,7 +97,7 @@ impl TextBuffer {
             cx: 0,
             cy: 0,
             file: None,
-            row: lines.map(Row::new).collect(),
+            row: lines.map(Span::new).collect(),
             modified: false,
             lang: Language::Plain,
             history: History::default(),
@@ -120,7 +120,7 @@ impl TextBuffer {
 
         let row = io::BufReader::new(File::open(path)?)
             .lines()
-            .map(|r| Ok(Row::new(r?)))
+            .map(|r| Ok(Span::new(r?)))
             .collect::<Result<_>>()?;
 
         Ok(Self {
@@ -329,7 +329,7 @@ impl TextBuffer {
         };
 
         // Snap cursor to end of line when moving up/down from longer line
-        let len = self.row.get(self.cy).map(Row::len).unwrap_or(0);
+        let len = self.row.get(self.cy).map(Span::len).unwrap_or(0);
         if self.cx > len {
             self.cx = len;
         }
@@ -370,7 +370,7 @@ impl TextBuffer {
         }
 
         impl CharKind {
-            fn new_at(rows: &[Row], x: usize, y: usize) -> Self {
+            fn new_at(rows: &[Span], x: usize, y: usize) -> Self {
                 rows.get(y)
                     .and_then(|r| r.char_at_checked(x))
                     .map(|c| {
@@ -435,7 +435,7 @@ impl TextBuffer {
         }
     }
 
-    pub fn rows(&self) -> &[Row] {
+    pub fn rows(&self) -> &[Span] {
         &self.row
     }
 

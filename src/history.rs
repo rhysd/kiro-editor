@@ -1,5 +1,5 @@
 use crate::edit_diff::{EditDiff, UndoRedo};
-use crate::row::Row;
+use crate::span::Span;
 use std::cmp;
 use std::collections::VecDeque;
 use std::mem;
@@ -45,7 +45,7 @@ impl History {
     fn apply_diffs<'a, I: Iterator<Item = &'a EditDiff>>(
         diffs: I,
         which: UndoRedo,
-        rows: &mut Vec<Row>,
+        rows: &mut Vec<Span>,
     ) -> (usize, usize, usize) {
         diffs.fold((0, 0, usize::max_value()), |(_, _, dirty_start), diff| {
             let (x, y) = diff.apply(rows, which);
@@ -53,7 +53,7 @@ impl History {
         })
     }
 
-    pub fn undo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
+    pub fn undo(&mut self, rows: &mut Vec<Span>) -> Option<(usize, usize, usize)> {
         self.finish_ongoing_edit();
         if self.index == 0 {
             return None;
@@ -63,7 +63,7 @@ impl History {
         Some(Self::apply_diffs(i, UndoRedo::Undo, rows))
     }
 
-    pub fn redo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
+    pub fn redo(&mut self, rows: &mut Vec<Span>) -> Option<(usize, usize, usize)> {
         self.finish_ongoing_edit();
         if self.index == self.entries.len() {
             return None;

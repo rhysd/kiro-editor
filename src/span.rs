@@ -4,7 +4,7 @@ use unicode_width::UnicodeWidthChar;
 const TAB_STOP: usize = 8;
 
 #[derive(Default)]
-pub struct Row {
+pub struct Span {
     buf: String,
     render: String,
     // Cache of byte indices of characters in `buf`. This will be empty when `buf` only contains
@@ -12,17 +12,17 @@ pub struct Row {
     indices: Vec<usize>,
 }
 
-impl Row {
-    pub fn empty() -> Row {
-        Row {
+impl Span {
+    pub fn empty() -> Span {
+        Span {
             buf: "".to_string(),
             render: "".to_string(),
             indices: Vec::with_capacity(0),
         }
     }
 
-    pub fn new<S: Into<String>>(line: S) -> Row {
-        let mut row = Row {
+    pub fn new<S: Into<String>>(line: S) -> Span {
+        let mut row = Span {
             buf: line.into(),
             render: "".to_string(),
             indices: Vec::with_capacity(0),
@@ -180,7 +180,7 @@ impl Row {
     }
 }
 
-impl ops::Index<ops::Range<usize>> for Row {
+impl ops::Index<ops::Range<usize>> for Span {
     type Output = str;
 
     fn index(&self, r: ops::Range<usize>) -> &Self::Output {
@@ -190,7 +190,7 @@ impl ops::Index<ops::Range<usize>> for Row {
     }
 }
 
-impl ops::Index<ops::RangeFrom<usize>> for Row {
+impl ops::Index<ops::RangeFrom<usize>> for Span {
     type Output = str;
 
     fn index(&self, r: ops::RangeFrom<usize>) -> &Self::Output {
@@ -199,7 +199,7 @@ impl ops::Index<ops::RangeFrom<usize>> for Row {
     }
 }
 
-impl ops::Index<ops::RangeTo<usize>> for Row {
+impl ops::Index<ops::RangeTo<usize>> for Span {
     type Output = str;
 
     fn index(&self, r: ops::RangeTo<usize>) -> &Self::Output {
@@ -208,7 +208,7 @@ impl ops::Index<ops::RangeTo<usize>> for Row {
     }
 }
 
-impl ops::Index<ops::RangeInclusive<usize>> for Row {
+impl ops::Index<ops::RangeInclusive<usize>> for Span {
     type Output = str;
 
     fn index(&self, r: ops::RangeInclusive<usize>) -> &Self::Output {
@@ -218,7 +218,7 @@ impl ops::Index<ops::RangeInclusive<usize>> for Row {
     }
 }
 
-impl ops::Index<ops::RangeToInclusive<usize>> for Row {
+impl ops::Index<ops::RangeToInclusive<usize>> for Span {
     type Output = str;
 
     fn index(&self, r: ops::RangeToInclusive<usize>) -> &Self::Output {

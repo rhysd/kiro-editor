@@ -1,8 +1,8 @@
 use crate::error::{Error, Result};
 use crate::highlight::Highlighting;
 use crate::input::{InputSeq, KeySeq};
-use crate::row::Row;
 use crate::signal::SigwinchWatcher;
+use crate::span::Span;
 use crate::status_bar::StatusBar;
 use crate::term_color::{Color, TermColor};
 use crate::text_buffer::TextBuffer;
@@ -266,7 +266,7 @@ impl<W: Write> Screen<W> {
         &self,
         mut buf: B,
         dirty_start: usize,
-        rows: &[Row],
+        rows: &[Span],
         hl: &Highlighting,
     ) -> Result<()> {
         let row_len = rows.len();
@@ -385,7 +385,7 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn next_coloff(&self, want_stop: usize, row: &Row) -> usize {
+    fn next_coloff(&self, want_stop: usize, row: &Span) -> usize {
         let mut coloff = 0;
         for c in row.render_text().chars() {
             coloff += c.width_cjk().unwrap_or(1);
@@ -397,7 +397,7 @@ impl<W: Write> Screen<W> {
         coloff
     }
 
-    fn do_scroll(&mut self, rows: &[Row], cx: usize, cy: usize) {
+    fn do_scroll(&mut self, rows: &[Span], cx: usize, cy: usize) {
         let prev_rowoff = self.rowoff;
         let prev_coloff = self.coloff;
 

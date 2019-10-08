@@ -1,8 +1,8 @@
 use crate::error::Result;
 use crate::highlight::{Highlight, Highlighting, RegionHighlight};
 use crate::input::{InputSeq, KeySeq};
-use crate::row::Row;
 use crate::screen::Screen;
+use crate::span::Span;
 use crate::status_bar::StatusBar;
 use crate::text_buffer::TextBuffer;
 use std::cmp::{self, Ordering};
@@ -108,7 +108,7 @@ impl TextSearch {
         query: &str,
         current_match: RegionHighlight,
         screen: &Screen<W>,
-        rows: &[Row],
+        rows: &[Span],
     ) -> Vec<RegionHighlight> {
         // Match at current cursor position
         let mut matches = vec![current_match];
@@ -191,14 +191,14 @@ impl TextSearch {
         bsearch_nearest_line(&self.line_starts, 0, self.line_starts.len(), byte_offset)
     }
 
-    fn offset_to_pos(&self, byte_offset: usize, rows: &[Row]) -> (usize, usize) {
+    fn offset_to_pos(&self, byte_offset: usize, rows: &[Span]) -> (usize, usize) {
         let y = self.nearest_line(byte_offset);
         let y_offset = self.line_starts[y];
         let x_offset = byte_offset - y_offset;
         (rows[y].char_idx_of(x_offset), y)
     }
 
-    fn pos_to_offset(&self, pos: (usize, usize), rows: &[Row]) -> usize {
+    fn pos_to_offset(&self, pos: (usize, usize), rows: &[Span]) -> usize {
         let y = pos.1;
         let x = rows[y].byte_idx_of(pos.0);
         self.line_starts[y] + x

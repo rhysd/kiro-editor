@@ -1,7 +1,7 @@
 use std::iter;
 
 use crate::language::Language;
-use crate::row::Row;
+use crate::span::Span;
 use crate::term_color::Color;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -708,7 +708,7 @@ impl<'a> Highlighter<'a> {
         self.eat_one(out, c, Highlight::Normal)
     }
 
-    fn highlight_line(&mut self, out: &mut [Highlight], row: &str) {
+    fn highlight_line(&mut self, out: &mut [Highlight], line_text: &str) {
         if self.syntax.lang == Language::Plain {
             // On 'plain' syntax, skip highlighting since nothing is highlighted.
             return;
@@ -720,9 +720,9 @@ impl<'a> Highlighter<'a> {
         self.num = NumLit::Digit;
         self.after_def_keyword = false;
 
-        let mut iter = row.char_indices().enumerate();
+        let mut iter = line_text.char_indices().enumerate();
         while let Some((x, (idx, c))) = iter.next() {
-            let input = &row[idx..];
+            let input = &line_text[idx..];
             let out = &mut out[x..];
             match self.highlight_one(c, out, input) {
                 ParseStep::Ahead(len) if len >= 2 => {
@@ -778,7 +778,7 @@ impl Default for Highlighting {
 }
 
 impl Highlighting {
-    pub fn new(lang: Language, rows: &[Row]) -> Highlighting {
+    pub fn new(lang: Language, rows: &[Span]) -> Highlighting {
         Highlighting {
             needs_update: true,
             lines: rows
@@ -816,7 +816,7 @@ impl Highlighting {
         }
     }
 
-    pub fn update(&mut self, rows: &[Row], bottom_of_screen: usize) {
+    pub fn update(&mut self, rows: &[Span], bottom_of_screen: usize) {
         if !self.needs_update && bottom_of_screen <= self.previous_bottom_of_screen {
             return;
         }

@@ -16,7 +16,7 @@ mod history;
 mod input;
 mod language;
 mod prompt;
-mod row;
+mod span;
 mod screen;
 mod signal;
 mod status_bar;

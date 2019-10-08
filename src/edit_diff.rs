@@ -1,4 +1,4 @@
-use crate::row::Row;
+use crate::span::Span;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UndoRedo {
@@ -20,7 +20,7 @@ pub enum EditDiff {
 }
 
 impl EditDiff {
-    pub fn apply(&self, rows: &mut Vec<Row>, which: UndoRedo) -> (usize, usize) {
+    pub fn apply(&self, rows: &mut Vec<Span>, which: UndoRedo) -> (usize, usize) {
         // Returns cursor's next position (x, y)
         use UndoRedo::*;
         match *self {
@@ -94,7 +94,7 @@ impl EditDiff {
             },
             EditDiff::Newline => match which {
                 Redo => {
-                    rows.push(Row::empty());
+                    rows.push(Span::empty());
                     (0, rows.len() - 1)
                 }
                 Undo => {
@@ -105,7 +105,7 @@ impl EditDiff {
             },
             EditDiff::InsertLine(y, ref s) => match which {
                 Redo => {
-                    rows.insert(y, Row::new(s));
+                    rows.insert(y, Span::new(s));
                     (0, y)
                 }
                 Undo => {
@@ -124,9 +124,9 @@ impl EditDiff {
                 }
                 Undo => {
                     if y == rows.len() {
-                        rows.push(Row::new(s));
+                        rows.push(Span::new(s));
                     } else {
-                        rows.insert(y, Row::new(s));
+                        rows.insert(y, Span::new(s));
                     }
                     (0, y)
                 }
