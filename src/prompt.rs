@@ -206,34 +206,13 @@ impl TextSearch {
 
     fn find_at(&self, query: &str, off: usize) -> Option<usize> {
         match self.dir {
-            FindDir::Forward => {
-                // TODO: Use more efficient string search algorithm such as Aho-Corasick
-                if let Some(idx) = self.text[off..].find(query) {
-                    return Some(off + idx);
-                }
-                if let Some(idx) = self.text.find(query) {
-                    // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
-                    if idx < off {
-                        return Some(idx);
-                    }
-                }
-            }
-            FindDir::Back => {
-                // TODO: Use more efficient string search algorithm such as Aho-Corasick
-                if let Some(idx) = self.text[..off].rfind(query) {
-                    return Some(idx);
-                }
-                if let Some(idx) = self.text.rfind(query) {
-                    // Considering the case where matched region contains cursor position, we must check last index
-                    let last_idx = idx + query.len();
-                    // TODO: This takes O(2 * n) where n is length of text. Worst case is when there is no match.
-                    if off < last_idx {
-                        return Some(idx);
-                    }
-                }
-            }
+            FindDir::Forward => self.text[off..]
+                .find(query)
+                .or_else(|| self.text[..off].find(query)),
+            FindDir::Back => self.text[..off]
+                .rfind(query)
+                .or_else(|| self.text[off..].rfind(query)),
         }
-        None
     }
 }
 
