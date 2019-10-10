@@ -216,12 +216,12 @@ where
     }
 
     fn show_help(&mut self) -> Result<()> {
-        self.screen.draw_help()?;
+        self.screen.render_help()?;
 
         // Consume any key
         while let Some(seq) = self.input.next() {
             if self.screen.maybe_resize(&mut self.input)? {
-                self.screen.draw_help()?;
+                self.screen.render_help()?;
                 self.status_bar.redraw = true;
             }
             if seq?.key != KeySeq::Unidentified {
@@ -229,7 +229,7 @@ where
             }
         }
 
-        // Redraw screen
+        // Redraw screen after closing help
         self.screen.set_dirty_start(self.screen.rowoff);
         Ok(())
     }
@@ -361,8 +361,18 @@ where
         Ok(false)
     }
 
+    fn first_paint(&mut self) -> Result<()> {
+        if self.buf().is_scratch() {
+            self.screen.render_welcome(&self.status_bar)?;
+            self.status_bar.redraw = false;
+        } else {
+            self.render_screen()?;
+        }
+        Ok(())
+    }
+
     pub fn edit(&mut self) -> Result<()> {
-        self.render_screen()?; // First paint
+        self.first_paint()?;
 
         while let Some(seq) = self.input.next() {
             if self.screen.maybe_resize(&mut self.input)? {

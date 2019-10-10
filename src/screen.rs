@@ -246,19 +246,47 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn draw_welcome_message<B: Write>(&self, mut buf: B) -> Result<()> {
-        let msg_buf = format!("Kiro editor -- version {}", VERSION);
-        let welcome = self.trim_line(&msg_buf);
-        let padding = (self.num_cols - welcome.len()) / 2;
-        if padding > 0 {
-            buf.write(self.term_color.sequence(Color::NonText))?;
-            buf.write(b"~")?;
-            buf.write(self.term_color.sequence(Color::Reset))?;
-            for _ in 0..padding - 1 {
-                buf.write(b" ")?;
+    pub fn render_welcome(&mut self, status_bar: &StatusBar) -> Result<()> {
+        self.write_flush(b"\x1b[?25l")?; // Hide cursor
+
+        let mut buf = Vec::with_capacity((self.rows() + 2 + self.num_cols) * 3);
+        buf.write(self.term_color.sequence(Color::Reset))?;
+
+        for y in 0..self.rows() {
+            write!(buf, "\x1b[{}H", y + 1)?;
+
+            if y == self.rows() / 3 {
+                let msg_buf = format!("Kiro editor -- version {}", VERSION);
+                let welcome = self.trim_line(&msg_buf);
+                let padding = (self.num_cols - welcome.len()) / 2;
+                if padding > 0 {
+                    buf.write(self.term_color.sequence(Color::NonText))?;
+                    buf.write(b"~")?;
+                    buf.write(self.term_color.sequence(Color::Reset))?;
+                    for _ in 0..padding - 1 {
+                        buf.write(b" ")?;
+                    }
+                }
+                buf.write(welcome.as_bytes())?;
+            } else {
+                buf.write(self.term_color.sequence(Color::NonText))?;
+                buf.write(b"~")?;
             }
+
+            buf.write(b"\x1b[K")?;
         }
-        buf.write(welcome.as_bytes())?;
+
+        buf.write(self.term_color.sequence(Color::Reset))?;
+        self.draw_status_bar(&mut buf, status_bar)?;
+        if let Some(message) = &self.message {
+            self.draw_message_bar(&mut buf, message)?;
+        }
+
+        write!(buf, "\x1b[H")?; // Set cursor to left-top
+        buf.write(b"\x1b[?25h")?; // Show cursor
+        self.write_flush(&buf)?;
+
+        self.after_render();
         Ok(())
     }
 
@@ -283,14 +311,9 @@ impl<W: Write> Screen<W> {
             // H: Command to move cursor. Here \x1b[H is the same as \x1b[1;1H
             write!(buf, "\x1b[{}H", y + 1)?;
 
-            let buf_is_empty = rows.is_empty() || rows.len() == 1 && rows[0].len() == 0;
             if file_row >= row_len {
-                if buf_is_empty && y == self.rows() / 3 {
-                    self.draw_welcome_message(&mut buf)?;
-                } else {
-                    buf.write(self.term_color.sequence(Color::NonText))?;
-                    buf.write(b"~")?;
-                }
+                buf.write(self.term_color.sequence(Color::NonText))?;
+                buf.write(b"~")?;
             } else {
                 let row = &rows[file_row];
 
@@ -445,6 +468,13 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
+    fn after_render(&mut self) {
+        // Clear state
+        self.dirty_start = None;
+        self.cursor_moved = false;
+        self.draw_message = DrawMessage::DoNothing;
+    }
+
     pub fn render(
         &mut self,
         buf: &TextBuffer,
@@ -455,14 +485,11 @@ impl<W: Write> Screen<W> {
         self.update_message_bar()?; // This must be updated here since it affects area of highlighting
         hl.update(buf.rows(), self.rowoff + self.rows());
         self.redraw(buf, hl, status_bar)?;
-        // Clear state
-        self.dirty_start = None;
-        self.cursor_moved = false;
-        self.draw_message = DrawMessage::DoNothing;
+        self.after_render();
         Ok(())
     }
 
-    pub fn draw_help(&mut self) -> Result<()> {
+    pub fn render_help(&mut self) -> Result<()> {
         let help: Vec<_> = HELP
             .split('\n')
             .skip_while(|s| !s.contains(':'))

@@ -534,4 +534,8 @@ impl TextBuffer {
         let state = self.history.redo(&mut self.row);
         self.after_undoredo(state)
     }
+
+    pub fn is_scratch(&self) -> bool {
+        self.file.is_none() && self.row.len() == 1 && self.row[0].len() == 0
+    }
 }
