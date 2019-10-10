@@ -208,10 +208,11 @@ impl TextSearch {
         match self.dir {
             FindDir::Forward => self.text[off..]
                 .find(query)
+                .map(|idx| idx + off)
                 .or_else(|| self.text[..off].find(query)),
             FindDir::Back => self.text[..off]
                 .rfind(query)
-                .or_else(|| self.text[off..].rfind(query)),
+                .or_else(|| self.text[off..].rfind(query).map(|idx| idx + off)),
         }
     }
 }
