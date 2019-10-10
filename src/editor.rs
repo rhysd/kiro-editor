@@ -359,32 +359,37 @@ where
         Ok(false)
     }
 
-    fn first_paint(&mut self) -> Result<()> {
+    fn step(&mut self) -> Result<bool> {
+        let seq = if let Some(seq) = self.input.next() {
+            seq?
+        } else {
+            return Ok(false);
+        };
+
+        if self.screen.maybe_resize(&mut self.input)? {
+            self.will_reset_screen();
+        }
+
+        if self.process_keypress(seq)? {
+            return Ok(false);
+        }
+
+        self.render_screen()?;
+        Ok(true)
+    }
+
+    pub fn first_paint(&mut self) -> Result<Edit<'_, I, W>> {
         if self.buf().is_scratch() {
             self.screen.render_welcome(&self.status_bar)?;
             self.status_bar.redraw = false;
         } else {
             self.render_screen()?;
         }
-        Ok(())
+        Ok(Edit { editor: self })
     }
 
     pub fn edit(&mut self) -> Result<()> {
-        self.first_paint()?;
-
-        while let Some(seq) = self.input.next() {
-            if self.screen.maybe_resize(&mut self.input)? {
-                self.will_reset_screen();
-            }
-
-            if self.process_keypress(seq?)? {
-                break;
-            }
-
-            self.render_screen()?;
-        }
-
-        Ok(())
+        self.first_paint()?.collect()
     }
 
     pub fn lines(&self) -> Lines<'_> {
@@ -397,5 +402,27 @@ where
 
     pub fn lang(&self) -> Language {
         self.buf().lang()
+    }
+}
+
+pub struct Edit<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> {
+    editor: &'a mut Editor<I, W>,
+}
+
+impl<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> Edit<'a, I, W> {
+    pub fn editor(&self) -> &'_ Editor<I, W> {
+        self.editor
+    }
+}
+
+impl<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> Iterator for Edit<'a, I, W> {
+    type Item = Result<()>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.editor.step() {
+            Ok(true) => Some(Ok(())),
+            Ok(false) => None,
+            Err(err) => Some(Err(err)),
+        }
     }
 }
