@@ -258,7 +258,6 @@ where
         let rowoff = self.screen.rowoff;
         let rows = self.screen.rows();
         let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
-        self.buf_mut().dirty_start = None;
 
         match &s {
             InputSeq {
@@ -349,8 +348,7 @@ where
             },
         }
 
-        self.buf_mut().finish_edit();
-        if let Some(line) = self.buf().dirty_start {
+        if let Some(line) = self.buf_mut().finish_edit() {
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);
         }

@@ -6,6 +6,7 @@ use crate::row::Row;
 use std::cmp;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::slice;
 
@@ -74,7 +75,7 @@ pub struct TextBuffer {
     inserted_undo: bool,
     // Flag to require screen update
     // TODO: Merge with Screen's dirty_start field by using RenderContext struct
-    pub dirty_start: Option<usize>,
+    dirty_start: Option<usize>,
 }
 
 impl TextBuffer {
@@ -167,8 +168,9 @@ impl TextBuffer {
     // This method must be called after handling one key input.
     // TODO: This should be replaced with Drop when separating logic to edit text buffer from TextBuffer
     // by introducing RenderContext.
-    pub fn finish_edit(&mut self) {
+    pub fn finish_edit(&mut self) -> Option<usize> {
         self.inserted_undo = false;
+        mem::replace(&mut self.dirty_start, None)
     }
 
     pub fn insert_char(&mut self, ch: char) {
