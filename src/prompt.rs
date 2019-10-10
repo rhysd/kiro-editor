@@ -242,7 +242,13 @@ impl Action for TextSearch {
             line_starts: line_starts.into_boxed_slice(),
             current_offset: 0, // Set later
         };
-        new.current_offset = new.pos_to_offset(prompt.buf.cursor(), rows);
+
+        let cursor = if prompt.buf.cy() < rows.len() {
+            prompt.buf.cursor()
+        } else {
+            (0, 0) // When cursor is out of text (after line of text buffer)
+        };
+        new.current_offset = new.pos_to_offset(cursor, rows);
 
         new
     }
@@ -305,9 +311,19 @@ impl Action for TextSearch {
 struct PromptTemplate<'a> {
     prefix: &'a str,
     suffix: &'a str,
+    prefix_chars: usize,
 }
 
 impl<'a> PromptTemplate<'a> {
+    fn new(prefix: &'a str, suffix: &'a str) -> Self {
+        let prefix_chars = prefix.chars().count();
+        Self {
+            prefix,
+            suffix,
+            prefix_chars,
+        }
+    }
+
     fn build(&self, input: &str) -> String {
         let cap = self.prefix.len() + self.suffix.len() + input.len();
         let mut buf = String::with_capacity(cap);
@@ -318,7 +334,7 @@ impl<'a> PromptTemplate<'a> {
     }
 
     fn cursor_col(&self, input: &str) -> usize {
-        self.prefix.chars().count() + input.chars().count() + 1 // Just after the input
+        self.prefix_chars + input.chars().count() + 1 // Just after the input
     }
 }
 
@@ -374,7 +390,7 @@ impl<'a, W: Write> Prompt<'a, W> {
             let mut it = prompt.as_ref().splitn(2, "{}");
             let prefix = it.next().unwrap();
             let suffix = it.next().unwrap();
-            PromptTemplate { prefix, suffix }
+            PromptTemplate::new(prefix, suffix)
         };
 
         self.render_screen("", &template)?;
