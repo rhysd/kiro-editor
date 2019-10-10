@@ -9,6 +9,12 @@ use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::io::Write;
 use std::path::Path;
 
+#[derive(PartialEq)]
+enum EditStep {
+    Continue,
+    Quit,
+}
+
 pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
     input: I,       // Escape sequences stream represented as Iterator
     quitting: bool, // After first Ctrl-Q
@@ -234,16 +240,16 @@ where
         Ok(())
     }
 
-    fn handle_quit(&mut self) -> Result<bool> {
+    fn handle_quit(&mut self) -> Result<EditStep> {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
-            Ok(true)
+            Ok(EditStep::Quit)
         } else {
             self.quitting = true;
             self.screen.set_error_message(
                 "At least one file has unsaved changes! Press ^Q again to quit or ^S to save",
             );
-            Ok(false)
+            Ok(EditStep::Continue)
         }
     }
 
@@ -252,7 +258,7 @@ where
             .set_error_message(format!("Key '{}' not mapped", seq));
     }
 
-    fn process_keypress(&mut self, s: InputSeq) -> Result<bool> {
+    fn process_keypress(&mut self, s: InputSeq) -> Result<EditStep> {
         use KeySeq::*;
 
         let rowoff = self.screen.rowoff;
@@ -262,7 +268,7 @@ where
         match &s {
             InputSeq {
                 key: Unidentified, ..
-            } => return Ok(false),
+            } => return Ok(EditStep::Continue),
             InputSeq { key, alt: true, .. } => match key {
                 Key(b'v') => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
                 Key(b'f') => self.buf_mut().move_cursor_by_word(CursorDir::Right),
@@ -356,26 +362,27 @@ where
             self.screen.cursor_moved = true;
         }
         self.quitting = false;
-        Ok(false)
+        Ok(EditStep::Continue)
     }
 
-    fn step(&mut self) -> Result<bool> {
+    fn step(&mut self) -> Result<EditStep> {
         let seq = if let Some(seq) = self.input.next() {
             seq?
         } else {
-            return Ok(false);
+            return Ok(EditStep::Quit);
         };
 
         if self.screen.maybe_resize(&mut self.input)? {
             self.will_reset_screen();
         }
 
-        if self.process_keypress(seq)? {
-            return Ok(false);
+        let step = self.process_keypress(seq)?;
+
+        if step == EditStep::Continue {
+            self.render_screen()?;
         }
 
-        self.render_screen()?;
-        Ok(true)
+        Ok(step)
     }
 
     pub fn first_paint(&mut self) -> Result<Edit<'_, I, W>> {
@@ -405,23 +412,35 @@ where
     }
 }
 
-pub struct Edit<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> {
+pub struct Edit<'a, I, W>
+where
+    I: Iterator<Item = Result<InputSeq>>,
+    W: Write,
+{
     editor: &'a mut Editor<I, W>,
 }
 
-impl<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> Edit<'a, I, W> {
+impl<'a, I, W> Edit<'a, I, W>
+where
+    I: Iterator<Item = Result<InputSeq>>,
+    W: Write,
+{
     pub fn editor(&self) -> &'_ Editor<I, W> {
         self.editor
     }
 }
 
-impl<'a, I: Iterator<Item = Result<InputSeq>>, W: Write> Iterator for Edit<'a, I, W> {
+impl<'a, I, W> Iterator for Edit<'a, I, W>
+where
+    I: Iterator<Item = Result<InputSeq>>,
+    W: Write,
+{
     type Item = Result<()>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.editor.step() {
-            Ok(true) => Some(Ok(())),
-            Ok(false) => None,
+            Ok(EditStep::Continue) => Some(Ok(())),
+            Ok(EditStep::Quit) => None,
             Err(err) => Some(Err(err)),
         }
     }
