@@ -6,7 +6,6 @@ use crate::row::Row;
 use std::cmp;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::slice;
 
@@ -170,7 +169,9 @@ impl TextBuffer {
     // by introducing RenderContext.
     pub fn finish_edit(&mut self) -> Option<usize> {
         self.inserted_undo = false;
-        mem::replace(&mut self.dirty_start, None)
+        let dirty_start = self.dirty_start;
+        self.dirty_start = None;
+        dirty_start
     }
 
     pub fn insert_char(&mut self, ch: char) {

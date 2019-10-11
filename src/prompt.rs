@@ -420,6 +420,19 @@ impl<'a, W: Write> Prompt<'a, W> {
                 }
                 (Key(b'\r'), ..) | (Key(b'm'), true) => break,
                 (Key(b'u'), true) => buf.clear(),
+                (Key(b'w'), true) => {
+                    while let Some(current) = buf.pop() {
+                        if let Some(next) = buf.chars().last() {
+                            let next_is_not_char =
+                                next.is_ascii_punctuation() || next.is_ascii_whitespace();
+                            let current_is_char =
+                                !current.is_ascii_punctuation() && !current.is_ascii_whitespace();
+                            if current_is_char && next_is_not_char {
+                                break;
+                            }
+                        }
+                    }
+                }
                 (Key(b), false) => buf.push(*b as char),
                 (Utf8Key(c), false) => buf.push(*c),
                 _ => {}
