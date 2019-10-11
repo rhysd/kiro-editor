@@ -111,7 +111,7 @@ impl TextSearch {
         rows: &[Row],
     ) -> Vec<RegionHighlight> {
         // Match at current cursor position
-        let mut matches = vec![current_match];
+        let mut matches = vec![];
 
         let screen_start = screen.rowoff;
         let screen_end = cmp::min(screen_start + screen.rows() + 1, rows.len());
@@ -137,6 +137,10 @@ impl TextSearch {
                 end: self.offset_to_pos(offset + query.len(), rows),
             });
         }
+
+        // Current match must be pushed at last. Otherwise, when other match is overlapped on current
+        // match, the other match will overwrite highlight of current match.
+        matches.push(current_match);
 
         matches
     }
