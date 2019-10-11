@@ -78,7 +78,8 @@ impl Row {
     }
 
     fn update_render(&mut self) {
-        self.render = String::with_capacity(self.buf.len());
+        self.render.clear();
+        self.render.reserve(self.buf.len());
         let mut index = 0;
         let mut num_chars = 0;
 
@@ -98,18 +99,17 @@ impl Row {
             num_chars += 1;
         }
 
-        self.indices = if num_chars == self.buf.len() {
-            // If number of chars is the same as byte length, this line includes no multi-byte char
-            Vec::with_capacity(0)
+        if num_chars == self.buf.len() {
+            // If number of chars is the same as byte length, this line includes no multi-byte char.
+            // Vector with zero capacity is guaranteed not to allocate heap memory.
+            self.indices = Vec::with_capacity(0)
         } else {
-            let mut v = Vec::with_capacity(num_chars);
-            let mut idx = 0;
-            for c in self.buf.chars() {
-                v.push(idx);
-                idx += c.len_utf8();
+            self.indices.clear();
+            self.indices.reserve(num_chars);
+            for (idx, _) in self.buf.char_indices() {
+                self.indices.push(idx);
             }
-            v
-        };
+        }
     }
 
     pub fn rx_from_cx(&self, cx: usize) -> usize {
