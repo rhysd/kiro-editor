@@ -423,7 +423,7 @@ impl<'a, W: Write> Prompt<'a, W> {
                     break;
                 }
                 (Key(b'\r'), ..) | (Key(b'm'), true) => break,
-                (Key(b'u'), true) => buf.clear(),
+                (Key(b'j'), true) => buf.clear(),
                 (Key(b'w'), true) => {
                     while let Some(current) = buf.pop() {
                         if let Some(next) = buf.chars().last() {
