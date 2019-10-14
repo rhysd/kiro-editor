@@ -452,7 +452,7 @@ let dummy_input = DummyInput(vec![ InputSeq::ctrl(b'q') ]);
 
 And by implementing a small struct which simply discards output, we can ignore the output. It does
 not need to draw screen in terminal window. And it does not rely on global state (terminal raw mode)
-so that tests can run paralelly. As the result tests can run faster and terminal window doesn't mess up.
+so that tests can run in parallel. As the result tests can run faster and terminal window doesn't mess up.
 
 ```rust
 struct Discard;
