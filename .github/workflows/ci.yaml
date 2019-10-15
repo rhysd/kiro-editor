@@ -2,14 +2,30 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  test:
-    name: Test
+  test-linux:
+    name: Test on Linux
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
     - name: Install Rust via Rustup
       run: rustup update stable && rustup default stable
     - run: cargo test
+
+  test-macos:
+    name: Test on macOS
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust via Rustup
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh
+        sh install.sh -y
+        source ~/.cargo/env
+        rustup default stable
+    - name: Run cargo test
+      run: |
+        source ~/.cargo/env
+        cargo test
 
   lint:
     name: Rustfmt and Clippy
