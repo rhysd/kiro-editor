@@ -5,31 +5,11 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    env:
-      DISPLAY: ':99.0'
     steps:
     - uses: actions/checkout@v1
     - name: Install Rust via Rustup
       run: rustup update stable && rustup default stable
-    - name: Build tests
-      run: cargo test --no-run
-    - name: Start xvfb server
-      run: |
-        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
-        sleep 3
-        echo $DISPLAY
-    - name: Isntall xterm
-      run: sudo apt install -y xterm
-    - name: Run cargo test in xterm
-      run: |
-        status=$(mktemp)
-        output=$(mktemp)
-        xterm -ls -geometry 80x24 -e "cargo test --color always -- --logfile ${output}; echo $? > ${status}"
-        cat $output
-        exit_status=$(cat $status)
-        echo "'cargo test' exited with $exit_status"
-        exit "$exit_status"
-      # run: gnome-terminal -x cargo test
+    - run: cargo test
 
   lint:
     name: Rustfmt and Clippy
