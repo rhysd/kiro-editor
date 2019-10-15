@@ -1,7 +1,7 @@
 Kiro
 ====
 [![crates.io][crates-io-badge]][crates-io]
-[![Build Status][build-badge]][travis-ci]
+[![Build Status][build-badge]][ci]
 
 [Kiro][] is a tiny UTF-8 text editor on terminal written in Rust. Kiro was started as a Rust port of
 awesome minimal text editor [kilo][] and has grown with various extensions & improvements.
@@ -533,8 +533,8 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [byote]: https://viewsourcecode.org/snaptoken/kilo/
 [gruvbox]: https://github.com/morhetz/gruvbox
 [cargo]: https://github.com/rust-lang/cargo
-[build-badge]: https://travis-ci.org/rhysd/kiro-editor.svg?branch=master
-[travis-ci]: https://travis-ci.org/rhysd/kiro-editor
+[build-badge]: https://github.com/rhysd/kiro-editor/workflows/CI/badge.svg
+[ci]: https://github.com/rhysd/kiro-editor/actions
 [crates-io]: https://crates.io/crates/kiro-editor
 [crates-io-badge]: https://img.shields.io/crates/v/kiro-editor.svg
 [termios]: https://crates.io/crates/termios
