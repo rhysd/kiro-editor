@@ -36,7 +36,6 @@ jemallocator = "0.3"
 
 [badges]
 maintenance = { status = "actively-developed" }
-travis-ci = { repository = "rhysd/kiro-editor" }
 
 [dev-dependencies.cargo-husky]
 version = "1"

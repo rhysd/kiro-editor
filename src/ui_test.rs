@@ -55,7 +55,7 @@ fn utf8(c: char) -> InputSeq {
 #[test]
 fn test_empty_buffer() {
     let input = DummyInputs(vec![InputSeq::ctrl(Key(b'q'))]);
-    let mut editor = Editor::new(input, Discard, None).unwrap();
+    let mut editor = Editor::new(input, Discard, Some((80, 24))).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -69,7 +69,7 @@ fn test_empty_buffer() {
 #[test]
 fn test_write_to_empty_buffer() {
     let input = DummyInputs(vec![key('a'), key('b'), key('c'), ctrl('q'), ctrl('q')]);
-    let mut editor = Editor::new(input, Discard, None).unwrap();
+    let mut editor = Editor::new(input, Discard, Some((80, 24))).unwrap();
     editor.edit().unwrap();
 
     let lines = editor.lines().collect::<Vec<_>>();
@@ -94,7 +94,7 @@ fn test_move_cursor_down() {
         ctrl('q'),
         ctrl('q'),
     ]);
-    let mut editor = Editor::new(input, Discard, None).unwrap();
+    let mut editor = Editor::new(input, Discard, Some((80, 24))).unwrap();
     editor.edit().unwrap();
 
     assert!(editor.screen().rows() > 0);
@@ -109,7 +109,7 @@ fn test_open_file() {
     let input = DummyInputs(vec![ctrl('q')]);
 
     let this_file = file!();
-    let mut editor = Editor::open(input, Discard, None, &[this_file]).unwrap();
+    let mut editor = Editor::open(input, Discard, Some((80, 24)), &[this_file]).unwrap();
     editor.edit().unwrap();
 
     let f = BufReader::new(File::open(this_file).unwrap());
@@ -124,7 +124,7 @@ fn test_open_file() {
 fn test_message_bar_squashed() {
     let input = DummyInputs(vec![ctrl('l'), sp(Unidentified), ctrl('q')]);
     let mut buf = Vec::new();
-    let mut editor = Editor::new(input, &mut buf, None).unwrap();
+    let mut editor = Editor::new(input, &mut buf, Some((80, 24))).unwrap();
     editor.edit().unwrap();
 
     let msg = editor.screen().message_text();
