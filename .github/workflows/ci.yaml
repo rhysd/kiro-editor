@@ -24,9 +24,11 @@ jobs:
       run: |
         status=$(mktemp)
         output=$(mktemp)
-        xterm -ls -geometry 80x24 -e "cargo test > ${output}; echo $? > ${status}"
+        xterm -ls -geometry 80x24 -e "cargo test --color always -- --logfile ${output}; echo $? > ${status}"
         cat $output
-        exit "$(cat $status)"
+        exit_status=$(cat $status)
+        echo "'cargo test' exited with $exit_status"
+        exit "$exit_status"
       # run: gnome-terminal -x cargo test
 
   lint:
