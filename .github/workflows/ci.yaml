@@ -19,7 +19,12 @@ jobs:
     - name: Isntall xterm
       run: sudo apt install -y xterm
     - name: Run cargo test in xterm
-      run: xterm -ls -geometry 80x24 -e cargo test
+      run: |
+        status=$(mktemp)
+        output=$(mktemp)
+        xterm -ls -geometry 80x24 -e "cargo test > ${output}; echo $? > ${status}"
+        cat $output
+        exit "$(cat $status)"
       # run: gnome-terminal -x cargo test
 
   lint:
