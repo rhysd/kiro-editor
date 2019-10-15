@@ -5,10 +5,17 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      DISPLAY: ':99.0'
     steps:
     - uses: actions/checkout@v1
     - name: Install Rust via Rustup
       run: rustup update stable && rustup default stable
+    - name: Start xvfb server
+      run: |
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        sleep 3
+        echo $DISPLAY
     - name: Isntall xterm
       run: sudo apt install -y xterm
     - name: Run cargo test in xterm
