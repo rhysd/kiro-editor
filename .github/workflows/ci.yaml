@@ -1,0 +1,26 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust via Rustup
+      run: rustup update stable && rustup default stable
+    - name: Isntall xterm
+      run: sudo apt install -y xterm
+    - name: Run cargo test in xterm
+      run: xterm -ls -geometry 80x24 -e cargo test
+      # run: gnome-terminal -x cargo test
+
+  lint:
+    name: Rustfmt and Clippy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Toolchain via Rustup
+      run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+    - run: cargo fmt -- --check
+    - run: cargo clippy
