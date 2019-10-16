@@ -23,9 +23,6 @@ mod status_bar;
 mod term_color;
 mod text_buffer;
 
-#[cfg(test)]
-mod ui_test;
-
 pub use editor::Editor;
 pub use error::{Error, Result};
 pub use input::StdinRawMode;
