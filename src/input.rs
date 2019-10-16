@@ -67,7 +67,7 @@ impl DerefMut for StdinRawMode {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum KeySeq {
     Unidentified,
     Utf8Key(char),
@@ -107,7 +107,7 @@ impl fmt::Display for KeySeq {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct InputSeq {
     pub key: KeySeq,
     pub ctrl: bool,

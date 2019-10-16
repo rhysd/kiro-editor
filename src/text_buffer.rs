@@ -56,6 +56,8 @@ impl<'a> Iterator for Lines<'a> {
     }
 }
 
+impl<'a> ExactSizeIterator for Lines<'a> {}
+
 pub struct TextBuffer {
     // (x, y) coordinate in internal text buffer of rows
     cx: usize,

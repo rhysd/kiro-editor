@@ -502,7 +502,7 @@ impl<W: Write> Screen<W> {
         } else {
             0
         };
-        let help_max_width = help.iter().map(|l| l.len()).max().unwrap();;
+        let help_max_width = help.iter().map(|l| l.len()).max().unwrap();
         let left_margin = if help_max_width < self.num_cols {
             (self.num_cols - help_max_width) / 2
         } else {

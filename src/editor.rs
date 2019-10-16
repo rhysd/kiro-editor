@@ -9,10 +9,18 @@ use crate::text_buffer::{CursorDir, Lines, TextBuffer};
 use std::io::Write;
 use std::path::Path;
 
-#[derive(PartialEq)]
 enum EditStep {
-    Continue,
+    Continue(InputSeq),
     Quit,
+}
+
+impl EditStep {
+    fn continues(&self) -> bool {
+        match self {
+            EditStep::Continue(_) => true,
+            EditStep::Quit => false,
+        }
+    }
 }
 
 pub struct Editor<I: Iterator<Item = Result<InputSeq>>, W: Write> {
@@ -240,7 +248,7 @@ where
         Ok(())
     }
 
-    fn handle_quit(&mut self) -> Result<EditStep> {
+    fn handle_quit(&mut self, s: InputSeq) -> Result<EditStep> {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
             Ok(EditStep::Quit)
@@ -249,11 +257,11 @@ where
             self.screen.set_error_message(
                 "At least one file has unsaved changes! Press ^Q again to quit or ^S to save",
             );
-            Ok(EditStep::Continue)
+            Ok(EditStep::Continue(s))
         }
     }
 
-    fn handle_not_mapped(&mut self, seq: InputSeq) {
+    fn handle_not_mapped(&mut self, seq: &InputSeq) {
         self.screen
             .set_error_message(format!("Key '{}' not mapped", seq));
     }
@@ -268,7 +276,7 @@ where
         match &s {
             InputSeq {
                 key: Unidentified, ..
-            } => return Ok(EditStep::Continue),
+            } => return Ok(EditStep::Continue(s)),
             InputSeq { key, alt: true, .. } => match key {
                 Key(b'v') => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows),
                 Key(b'f') => self.buf_mut().move_cursor_by_word(CursorDir::Right),
@@ -280,7 +288,7 @@ where
                 Key(b'>') => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Down),
                 LeftKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Left),
                 RightKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
-                _ => self.handle_not_mapped(s),
+                _ => self.handle_not_mapped(&s),
             },
             InputSeq {
                 key, ctrl: true, ..
@@ -328,8 +336,8 @@ where
                 RightKey => self.buf_mut().move_cursor_by_word(CursorDir::Right),
                 DownKey => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
                 UpKey => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
-                Key(b'q') => return self.handle_quit(),
-                _ => self.handle_not_mapped(s),
+                Key(b'q') => return self.handle_quit(s),
+                _ => self.handle_not_mapped(&s),
             },
             InputSeq { key, .. } => match key {
                 Key(0x1b) => self.buf_mut().move_cursor_page(CursorDir::Up, rowoff, rows), // Clash with Ctrl-[
@@ -350,7 +358,7 @@ where
                 EndKey => self.buf_mut().move_cursor_to_buffer_edge(CursorDir::Right),
                 DeleteKey => self.buf_mut().delete_right_char(),
                 Cursor(_, _) => unreachable!(),
-                _ => self.handle_not_mapped(s),
+                _ => self.handle_not_mapped(&s),
             },
         }
 
@@ -362,7 +370,7 @@ where
             self.screen.cursor_moved = true;
         }
         self.quitting = false;
-        Ok(EditStep::Continue)
+        Ok(EditStep::Continue(s))
     }
 
     fn step(&mut self) -> Result<EditStep> {
@@ -378,7 +386,7 @@ where
 
         let step = self.process_keypress(seq)?;
 
-        if step == EditStep::Continue {
+        if step.continues() {
             self.render_screen()?;
         }
 
@@ -396,7 +404,8 @@ where
     }
 
     pub fn edit(&mut self) -> Result<()> {
-        self.first_paint()?.collect()
+        // Map Iterator<Result<T>> to Iterator<Result<()>> for .collect()
+        self.first_paint()?.map(|r| r.map(|_| ())).collect()
     }
 
     pub fn lines(&self) -> Lines<'_> {
@@ -435,11 +444,11 @@ where
     I: Iterator<Item = Result<InputSeq>>,
     W: Write,
 {
-    type Item = Result<()>;
+    type Item = Result<InputSeq>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.editor.step() {
-            Ok(EditStep::Continue) => Some(Ok(())),
+            Ok(EditStep::Continue(seq)) => Some(Ok(seq)),
             Ok(EditStep::Quit) => None,
             Err(err) => Some(Err(err)),
         }
@@ -532,6 +541,29 @@ mod tests {
             "{}",
             msg
         );
+    }
+
+    #[test]
+    fn edit_step_by_step() {
+        let keys = vec![key('a'), key('b'), key('c'), ctrl('q'), ctrl('q')];
+        let input = DummyInputs(keys.clone());
+        let mut editor = Editor::new(input, Discard, Some((80, 24))).unwrap();
+        let mut editing = editor.first_paint().unwrap();
+
+        let mut keys = keys.iter();
+        let mut xs = [1, 2, 3, 3].iter();
+        while let Some(res) = editing.next() {
+            let key = res.unwrap();
+            let (x, y) = editing.editor().buf().cursor();
+            assert_eq!(y, 0);
+            assert_eq!(*xs.next().unwrap(), x);
+            assert_eq!(keys.next().unwrap(), &key);
+        }
+
+        let mut lines = editor.lines();
+        assert_eq!(lines.len(), 1);
+        let line = lines.next().unwrap();
+        assert_eq!(line, "abc");
     }
 
     #[test]
