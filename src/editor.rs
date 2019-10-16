@@ -61,7 +61,7 @@ where
         Self::with_buf(TextBuffer::empty(), input, output, window_size)
     }
 
-    pub fn with_lines<'a, L: Iterator<Item = &'a str>>(
+    pub fn with_lines<S: AsRef<str>, L: Iterator<Item = S>>(
         lines: L,
         input: I,
         output: W,
@@ -457,7 +457,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use crate::editor::Editor;
     use crate::error::Result;
     use crate::input::{InputSeq, KeySeq};
