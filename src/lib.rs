@@ -25,7 +25,7 @@ mod text_buffer;
 
 pub use editor::Editor;
 pub use error::{Error, Result};
-pub use input::StdinRawMode;
+pub use input::{InputSeq, KeySeq, StdinRawMode};
 pub use language::Language;
 pub use screen::{Screen, HELP, VERSION};
 pub use text_buffer::{Lines, TextBuffer};

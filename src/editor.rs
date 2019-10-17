@@ -61,7 +61,7 @@ where
         Self::with_buf(TextBuffer::empty(), input, output, window_size)
     }
 
-    pub fn with_lines<'a, L: Iterator<Item = &'a str>>(
+    pub fn with_lines<S: AsRef<str>, L: Iterator<Item = S>>(
         lines: L,
         input: I,
         output: W,
@@ -419,6 +419,12 @@ where
     pub fn lang(&self) -> Language {
         self.buf().lang()
     }
+
+    pub fn set_lang(&mut self, lang: Language) {
+        let buf = self.buf_mut();
+        buf.set_lang(lang);
+        self.hl = Highlighting::new(lang, buf.rows());
+    }
 }
 
 pub struct Edit<'a, I, W>
@@ -457,7 +463,6 @@ where
 
 #[cfg(test)]
 mod tests {
-
     use crate::editor::Editor;
     use crate::error::Result;
     use crate::input::{InputSeq, KeySeq};

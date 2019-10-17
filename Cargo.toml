@@ -21,6 +21,9 @@ no-dev-version = true
 path = "src/main.rs"
 name = "kiro"
 
+[profile.bench]
+lto = true
+
 [profile.release]
 debug = 1
 lto = true
@@ -36,6 +39,9 @@ jemallocator = "0.3"
 
 [badges]
 maintenance = { status = "actively-developed" }
+
+[dev-dependencies]
+rand = "0.7"
 
 [dev-dependencies.cargo-husky]
 version = "1"

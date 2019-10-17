@@ -94,12 +94,12 @@ impl TextBuffer {
         }
     }
 
-    pub fn with_lines<'a, I: Iterator<Item = &'a str>>(lines: I) -> Self {
+    pub fn with_lines<S: AsRef<str>, I: Iterator<Item = S>>(lines: I) -> Self {
         Self {
             cx: 0,
             cy: 0,
             file: None,
-            row: lines.map(Row::new).collect(),
+            row: lines.map(|s| Row::new(s.as_ref())).collect(),
             modified: false,
             lang: Language::Plain,
             history: History::default(),
@@ -483,6 +483,10 @@ impl TextBuffer {
 
     pub fn set_unnamed(&mut self) {
         self.file = None;
+    }
+
+    pub fn set_lang(&mut self, lang: Language) {
+        self.lang = lang;
     }
 
     pub fn save(&mut self) -> std::result::Result<String, String> {
