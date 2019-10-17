@@ -251,11 +251,15 @@ impl InputSequences {
     fn decode_utf8(&mut self, b: u8) -> Result<InputSeq> {
         use KeySeq::*;
 
-        let mut buf = Vec::with_capacity(4);
-        buf.push(b);
+        // TODO: Use arrayvec crate
+        let mut buf = [0; 4];
+        buf[0] = b;
+        let mut len = 1;
+
         loop {
             if let Some(b) = self.read_byte()? {
-                buf.push(b);
+                buf[len] = b;
+                len += 1;
             } else {
                 return Ok(InputSeq::new(Unidentified));
             }
@@ -264,7 +268,7 @@ impl InputSequences {
                 return Ok(InputSeq::new(Utf8Key(s.chars().next().unwrap())));
             }
 
-            if buf.len() == 4 {
+            if len == 4 {
                 return Ok(InputSeq::new(Unidentified));
             }
         }
