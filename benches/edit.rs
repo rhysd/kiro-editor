@@ -2,15 +2,14 @@
 
 extern crate test;
 
-use kiro_editor::{Editor, InputSeq, KeySeq, Result, StdinRawMode};
+use kiro_editor::{Editor, InputSeq, KeySeq, Language, Result, StdinRawMode};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::fs::File;
 use std::io;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 use test::Bencher;
-
-fn gen_printable_ascii_char<R: Rng>(rng: &mut R) -> u8 {
-    rng.gen_range(0x20, 0x7f)
-}
 
 fn generate_random_text(max_chars: usize) -> Vec<String> {
     let max_chars_in_line = 200;
@@ -31,10 +30,8 @@ fn generate_random_text(max_chars: usize) -> Vec<String> {
             continue;
         }
 
-        lines
-            .last_mut()
-            .unwrap()
-            .push(gen_printable_ascii_char(&mut rng) as char);
+        let b: u8 = rng.gen_range(0x20, 0x7f);
+        lines.last_mut().unwrap().push(b as char); // Generate ascii printable char
         rest -= 1;
     }
 }
@@ -76,7 +73,7 @@ impl RandomInput {
         }
     }
 
-    fn gen_random_key(&mut self, normal_keys: &[u8], special_keys: &[KeySeq]) -> KeySeq {
+    fn gen_random_key_from(&mut self, normal_keys: &[u8], special_keys: &[KeySeq]) -> KeySeq {
         let len_normal_keys = normal_keys.len();
         let len_special_keys = special_keys.len();
         if self.rng.gen_range(0, len_normal_keys + len_special_keys) < len_normal_keys {
@@ -87,25 +84,33 @@ impl RandomInput {
         }
     }
 
+    fn gen_normal_ascii_input(&mut self) -> KeySeq {
+        let b = match self.rng.gen_range(0x1f, 0x80) {
+            0x1f => b'\r',
+            b => b,
+        };
+        KeySeq::Key(b)
+    }
+
     fn random_key(&mut self) -> InputSeq {
         match self.rng.gen_range(0, 100) {
-            0..=9 => InputSeq {
-                key: self.gen_random_key(VALID_CTRL_KEYS, VALID_CTRL_SPECIAL_KEYS),
+            0..=4 => InputSeq {
+                key: self.gen_random_key_from(VALID_CTRL_KEYS, VALID_CTRL_SPECIAL_KEYS),
                 ctrl: true,
                 alt: false,
             },
-            10..=19 => InputSeq {
-                key: self.gen_random_key(VALID_ALT_KEYS, VALID_ALT_SPECIAL_KEYS),
+            5..=9 => InputSeq {
+                key: self.gen_random_key_from(VALID_ALT_KEYS, VALID_ALT_SPECIAL_KEYS),
                 ctrl: false,
                 alt: true,
             },
-            20..=29 => InputSeq {
+            10..=14 => InputSeq {
                 key: VALID_SPECIAL_KEYS[self.rng.gen_range(0, VALID_SPECIAL_KEYS.len())].clone(),
                 ctrl: false,
                 alt: false,
             },
             _ => InputSeq {
-                key: KeySeq::Key(gen_printable_ascii_char(&mut self.rng)),
+                key: self.gen_normal_ascii_input(),
                 ctrl: false,
                 alt: false,
             },
@@ -127,13 +132,27 @@ impl Iterator for RandomInput {
 }
 
 #[bench]
-fn bench_1000_operations_to_10000_chars_text(b: &mut Bencher) {
+fn bench_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
     b.iter(|| {
         let _stdin = StdinRawMode::new().unwrap();
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
+        editor.edit().unwrap();
+    });
+}
+
+#[bench]
+fn bench_1000_operations_to_editor_rs(b: &mut Bencher) {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
+    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+    let input = RandomInput::new(1000);
+    b.iter(|| {
+        let _stdin = StdinRawMode::new().unwrap();
+        let mut editor =
+            Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
+        editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });
 }

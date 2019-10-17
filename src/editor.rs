@@ -419,6 +419,12 @@ where
     pub fn lang(&self) -> Language {
         self.buf().lang()
     }
+
+    pub fn set_lang(&mut self, lang: Language) {
+        let buf = self.buf_mut();
+        buf.set_lang(lang);
+        self.hl = Highlighting::new(lang, buf.rows());
+    }
 }
 
 pub struct Edit<'a, I, W>

@@ -485,6 +485,10 @@ impl TextBuffer {
         self.file = None;
     }
 
+    pub fn set_lang(&mut self, lang: Language) {
+        self.lang = lang;
+    }
+
     pub fn save(&mut self) -> std::result::Result<String, String> {
         let file = if let Some(file) = &self.file {
             file
