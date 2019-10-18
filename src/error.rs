@@ -9,6 +9,7 @@ pub enum Error {
     SystemTimeError(SystemTimeError),
     TooSmallWindow(usize, usize),
     UnknownWindowSize,
+    InvalidUtf8Input(Vec<u8>),
 }
 
 impl fmt::Display for Error {
@@ -23,6 +24,13 @@ impl fmt::Display for Error {
                 w, h
             ),
             UnknownWindowSize => write!(f, "Could not detect terminal window size"),
+            InvalidUtf8Input(seq) => {
+                write!(f, "Cannot handle non-UTF8 multi-byte input sequence: ")?;
+                for byte in seq.iter() {
+                    write!(f, "\\x{:x}", byte)?;
+                }
+                Ok(())
+            }
         }
     }
 }

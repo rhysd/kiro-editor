@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{Error, Result};
 use std::fmt;
 use std::io::{self, Read};
 use std::ops::{Deref, DerefMut};
@@ -249,8 +249,6 @@ impl InputSequences {
     }
 
     fn decode_utf8(&mut self, b: u8) -> Result<InputSeq> {
-        use KeySeq::*;
-
         // TODO: Use arrayvec crate
         let mut buf = [0; 4];
         buf[0] = b;
@@ -261,15 +259,15 @@ impl InputSequences {
                 buf[len] = b;
                 len += 1;
             } else {
-                return Ok(InputSeq::new(Unidentified));
+                return Err(Error::InvalidUtf8Input(buf[..len].to_vec()));
             }
 
             if let Ok(s) = str::from_utf8(&buf) {
-                return Ok(InputSeq::new(Utf8Key(s.chars().next().unwrap())));
+                return Ok(InputSeq::new(KeySeq::Utf8Key(s.chars().next().unwrap())));
             }
 
             if len == 4 {
-                return Ok(InputSeq::new(Unidentified));
+                return Err(Error::InvalidUtf8Input(buf.to_vec()));
             }
         }
     }
