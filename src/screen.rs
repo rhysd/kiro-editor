@@ -91,6 +91,10 @@ where
     Err(Error::UnknownWindowSize) // Give up
 }
 
+fn too_small_window(width: usize, height: usize) -> bool {
+    width < 1 || height < 3
+}
+
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum DrawMessage {
     Open,
@@ -151,7 +155,7 @@ impl<W: Write> Screen<W> {
             get_window_size(input, &mut output)?
         };
 
-        if w == 0 || h < 3 {
+        if too_small_window(w, h) {
             return Err(Error::TooSmallWindow(w, h));
         }
 
@@ -563,9 +567,14 @@ impl<W: Write> Screen<W> {
         }
 
         let (w, h) = get_window_size(input, &mut self.output)?;
+        if too_small_window(w, h) {
+            return Err(Error::TooSmallWindow(w, h));
+        }
+
         self.num_rows = h.saturating_sub(2);
         self.num_cols = w;
         self.dirty_start = Some(0);
+
         Ok(true)
     }
 
