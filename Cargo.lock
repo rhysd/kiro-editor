@@ -210,7 +210,7 @@ dependencies = [
 
 [[package]]
 name = "kiro-editor"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "cargo-husky 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "getopts 0.2.21 (registry+https://github.com/rust-lang/crates.io-index)",
