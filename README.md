@@ -32,6 +32,8 @@ section below for more details):
 - Modular implementation for each logics such as parsing key inputs, rendering screen, calculating
   highlight, modifying text buffer (kilo implements everything in one `kilo.c` with several global
   variables)
+- Incremental text search is fixed and improved (kiro only highlights current match and only hits
+  once per line).
 
 [Kiro][] aims to support kinds of xterm terminals on Unix-like systems. For example Terminal.app,
 iTerm2.app, Gnome-Terminal, (hopefully) Windows Terminal on WSL.
@@ -521,6 +523,19 @@ text editor on terminal works.
 - Mouse support
 - Completion, go to definition and look up using language servers
 
+
+### Development
+
+```sh
+# Create release build
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run benchmark
+cargo +nightly bench -- --logfile out.txt && cat out.txt
+```
 
 
 ## License
