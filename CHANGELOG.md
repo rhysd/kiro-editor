@@ -1,3 +1,34 @@
+<a name="0.3.5"></a>
+# [0.3.5](https://github.com/rhysd/kiro-editor/releases/tag/0.3.5) - 19 Oct 2019
+
+- **Improve:** Text search was much improved!
+  - Search word which reveals twice or more in a line are all correctly matched. Previous
+    implementation (and kilo) only matches to first searched word in one line
+  - Current match is now at middle of screen, not at top
+  - Other matches than current are also highlighted like famous text editors
+  - Ctrl-J and Ctrl-W are supported in text search prompt
+  - Cursor moves to prompt line so that it makes easier to show now inputting characters for text
+    search
+- **Fix:** Welcome message is not shown on empty buffer. Now welcome screen is rendered only at start
+  up if the buffer is unnamed
+- **Improve:** Colorscheme is optimized
+  - Color of `~` after end of buffer is improved
+  - Colors of current match and other matches while text search was updated. They are now easier to
+    distinguish
+- **Improve:** Reduce heap allocation on parsing UTF-8 char in input byte sequence
+- **Fix:** Raise an error properly on invalid multi-byte sequence and too small window resizing
+- **Fix:** Cursor position was not correct on inserting a tab character
+- **Fix:** Editor crashes when trying to search text at the end of buffer
+- **Improve:** Reduce reallocation on updating rendered text in row
+- **Improve:** Add `first_paint()` method to `kiro_editor::Editor` which returns an iterator to run the
+  editor
+- **Improve:** [Benchmarks](https://github.com/rhysd/kiro-editor/tree/master/benches) were introduced to
+  avoid performance regression
+- **Improve:** [Use GitHub Actions](https://github.com/rhysd/kiro-editor/actions?workflow=CI) for CI
+
+[Changes][0.3.5]
+
+
 <a name="0.3.4"></a>
 # [0.3.4](https://github.com/rhysd/kiro-editor/releases/tag/0.3.4) - 24 Sep 2019
 
@@ -110,6 +141,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[0.3.5]: https://github.com/rhysd/kiro-editor/compare/0.3.4...0.3.5
 [0.3.4]: https://github.com/rhysd/kiro-editor/compare/0.3.3...0.3.4
 [0.3.3]: https://github.com/rhysd/kiro-editor/compare/0.3.2...0.3.3
 [0.3.2]: https://github.com/rhysd/kiro-editor/compare/0.3.1...0.3.2
