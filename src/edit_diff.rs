@@ -73,7 +73,7 @@ impl EditDiff {
             EditDiff::Insert(x, y, ref s) => match which {
                 Redo => {
                     rows[y].insert_str(x, s);
-                    (x, y)
+                    (x + s.chars().count(), y)
                 }
                 Undo => {
                     rows[y].remove(x, s.chars().count());
