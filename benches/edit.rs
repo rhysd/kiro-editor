@@ -135,8 +135,8 @@ impl Iterator for RandomInput {
 fn bench_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
+    let _stdin = StdinRawMode::new().unwrap();
     b.iter(|| {
-        let _stdin = StdinRawMode::new().unwrap();
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.edit().unwrap();
@@ -148,8 +148,8 @@ fn bench_1000_operations_to_editor_rs(b: &mut Bencher) {
     let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
     let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
     let input = RandomInput::new(1000);
+    let _stdin = StdinRawMode::new().unwrap();
     b.iter(|| {
-        let _stdin = StdinRawMode::new().unwrap();
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.set_lang(Language::Rust);
