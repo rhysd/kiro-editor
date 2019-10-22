@@ -275,7 +275,7 @@ rare case, I believe.
 ### Text Editing  as Sequence of Diffs
 
 In Kiro editor, every text edit is represented as diff of text. So text editing means applying diffs to
-current text buffer. Undo is represented as unapplying diffs. Redo is represented as apllying diffs
+current text buffer. Undo is represented as unapplying diffs. Redo is represented as applying diffs
 again.
 
 One undo is represented as multiple diffs, not one diff. This is because users usually don't want to
