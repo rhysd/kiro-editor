@@ -209,6 +209,7 @@ impl<W: Write> Screen<W> {
 
         let rest_len = self.num_cols - left.len();
         if rest_len == 0 {
+            buf.write(self.term_color.sequence(Color::Reset))?;
             return Ok(());
         }
 
@@ -217,6 +218,7 @@ impl<W: Write> Screen<W> {
             for _ in 0..rest_len {
                 buf.write(b" ")?;
             }
+            buf.write(self.term_color.sequence(Color::Reset))?;
             return Ok(());
         }
 
@@ -225,7 +227,6 @@ impl<W: Write> Screen<W> {
         }
         buf.write(right.as_bytes())?;
 
-        // Default argument of 'm' command is 0 so it resets attributes
         buf.write(self.term_color.sequence(Color::Reset))?;
         Ok(())
     }
