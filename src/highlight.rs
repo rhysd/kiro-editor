@@ -390,6 +390,44 @@ const CPP_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     ],
 };
 
+const PYTHON_SYNTAX: SyntaxHighlight = SyntaxHighlight {
+    lang: Language::Python,
+    number: true,
+    hex_number: true,
+    bin_number: true,
+    number_delim: Some('_'),
+    string_quotes: &['"', '\''], // TODO: Multi-line strings '''...'''
+    character: false,
+    line_comment: Some("#"),
+    block_comment: None,
+    keywords: &[
+        "and", "as", "assert", "async", "await", "class", "def", "del", "from", "global", "import",
+        "in", "is", "lambda", "nonlocal", "not", "or", "with",
+    ],
+    control_statements: &[
+        "break", "continue", "elif", "else", "except", "finally", "for", "if", "pass", "raise",
+        "return", "try", "while", "yield",
+    ],
+    builtin_types: &[
+        "int",
+        "float",
+        "complex",
+        "list",
+        "tuple",
+        "range",
+        "str",
+        "bytes",
+        "bytearray",
+        "memoryview",
+        "set",
+        "frozenset",
+        "dict",
+    ],
+    boolean_constants: &["True", "False"],
+    special_vars: &["self", "None"],
+    definition_keywords: &["def", "class", "global", "nonlocal"],
+};
+
 impl SyntaxHighlight {
     fn for_lang(lang: Language) -> &'static SyntaxHighlight {
         use Language::*;
@@ -400,6 +438,7 @@ impl SyntaxHighlight {
             JavaScript => &JAVASCRIPT_SYNTAX,
             Go => &GO_SYNTAX,
             Cpp => &CPP_SYNTAX,
+            Python => &PYTHON_SYNTAX,
         }
     }
 }
