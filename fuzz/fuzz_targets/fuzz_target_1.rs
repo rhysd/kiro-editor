@@ -6,6 +6,8 @@ use kiro_editor::{Editor, InputSeq, KeySeq, Result};
 use std::io::{self, Write};
 use std::str;
 
+// TODO: Fuzz stdin input
+
 // TODO: Do not quit immediately. Instead, try each edit operations once.
 struct ImmediatelyQuit;
 

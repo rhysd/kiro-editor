@@ -526,6 +526,8 @@ text editor on terminal works.
 
 ### Development
 
+Benchmarks are done by [cargo bench][cargo-bench] and fuzzing is done by [cargo fuzz][cargo-fuzz] and [libFuzzer][libfuzzer].
+
 ```sh
 # Create release build
 cargo build --release
@@ -535,9 +537,6 @@ cargo test
 
 # Run benchmarks
 cargo +nightly bench -- --logfile out.txt && cat out.txt
-
-# List fuzzing targets
-cargo +nightly fuzz list
 
 # Run fuzzing
 cargo +nightly fuzz run fuzz_target_1
@@ -565,3 +564,6 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [signal-hook]: https://crates.io/crates/signal-hook
 [getopts]: https://crates.io/crates/getopts
 [clap]: https://crates.io/crates/clap
+[cargo-behch]: https://doc.rust-lang.org/cargo/commands/cargo-bench.html
+[cargo-fuzz]: https://github.com/rust-fuzz/cargo-fuzz
+[libfuzzer]: https://llvm.org/docs/LibFuzzer.html
