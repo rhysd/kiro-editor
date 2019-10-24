@@ -16,16 +16,14 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v1
+    - name: Add cargo to $PATH
+      run: echo ::add-path::$HOME/.cargo/bin
     - name: Install Rust via Rustup
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh
         sh install.sh -y
-        source ~/.cargo/env
         rustup default stable
-    - name: Run cargo test
-      run: |
-        source ~/.cargo/env
-        cargo test
+    - run: cargo test
 
   lint:
     name: Rustfmt and Clippy
