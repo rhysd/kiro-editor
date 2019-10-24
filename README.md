@@ -533,8 +533,14 @@ cargo build --release
 # Run tests
 cargo test
 
-# Run benchmark
+# Run benchmarks
 cargo +nightly bench -- --logfile out.txt && cat out.txt
+
+# List fuzzing targets
+cargo +nightly fuzz list
+
+# Run fuzzing
+cargo +nightly fuzz run fuzz_target_1
 ```
 
 
