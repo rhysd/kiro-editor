@@ -539,7 +539,7 @@ cargo test
 cargo +nightly bench -- --logfile out.txt && cat out.txt
 
 # Run fuzzing
-cargo +nightly fuzz run fuzz_target_1
+cargo +nightly fuzz run input_text
 ```
 
 
