@@ -259,7 +259,7 @@ impl InputSequences {
                 buf[len] = b;
                 len += 1;
             } else {
-                return Err(Error::InvalidUtf8Input(buf[..len].to_vec()));
+                return Err(Error::NotUtf8Input(buf[..len].to_vec()));
             }
 
             if let Ok(s) = str::from_utf8(&buf) {
@@ -267,7 +267,7 @@ impl InputSequences {
             }
 
             if len == 4 {
-                return Err(Error::InvalidUtf8Input(buf.to_vec()));
+                return Err(Error::NotUtf8Input(buf.to_vec()));
             }
         }
     }
@@ -275,6 +275,7 @@ impl InputSequences {
     fn decode(&mut self, b: u8) -> Result<InputSeq> {
         use KeySeq::*;
         match b {
+            // C0 control characters (0x00..0x1f)
             // (Maybe) Escape sequence. Ctrl-{ is not available due to this
             0x1b => self.decode_escape_sequence(),
             // Ctrl-SPACE and Ctrl-?. 0x40, 0x3f, 0x60, 0x5f are not available
@@ -284,9 +285,15 @@ impl InputSequences {
             // 0x00~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
             // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
             0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b0110_0000))),
+            // Printable ASCII characters (0x20..0x7f)
             // Ascii key inputs
             0x20..=0x7f => Ok(InputSeq::new(Key(b))),
-            0x80..=0xff => self.decode_utf8(b),
+            // C1 control characters https://en.wikipedia.org/wiki/C0_and_C1_control_codes#C1_controls
+            // XXX: Kiro ignores them since I have no idea how to handle them on terminal. Perhaps
+            // SSA and ESA can be handled as selecting region.
+            0x80..=0x9f => Ok(InputSeq::new(KeySeq::Unidentified)),
+            // Other UTF-8 characters
+            0xa0..=0xff => self.decode_utf8(b),
         }
     }
 
