@@ -2,7 +2,7 @@
 use libfuzzer_sys::fuzz_target;
 extern crate kiro_editor;
 
-use kiro_editor::{Editor, InputSeq, KeySeq, Result};
+use kiro_editor::{Editor, Error, InputSeq, KeySeq, Result};
 use std::io::{self, Write};
 use std::str;
 
@@ -37,8 +37,11 @@ impl Write for Discard {
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(s) = str::from_utf8(data) {
-        let mut editor =
-            Editor::with_lines(s.lines(), ImmediatelyQuit, Discard, Some((80, 24))).unwrap();
-        editor.edit().unwrap();
+        // Editor may cause an error when the text contains invalid characters
+        match Editor::with_lines(s.lines(), ImmediatelyQuit, Discard, Some((80, 24))) {
+            Ok(mut editor) => editor.edit().unwrap(), // Editor must quit successfully
+            Err(Error::ControlCharInText(_)) => { /* Do nothing since it is a possible error */ }
+            Err(err) => assert!(false, "{:?}", err), // Unexpected error
+        }
     }
 });
