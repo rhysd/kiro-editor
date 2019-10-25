@@ -105,7 +105,7 @@ impl EditDiff {
             },
             EditDiff::InsertLine(y, ref s) => match which {
                 Redo => {
-                    rows.insert(y, Row::new(s));
+                    rows.insert(y, Row::new(s).unwrap());
                     (0, y)
                 }
                 Undo => {
@@ -124,9 +124,9 @@ impl EditDiff {
                 }
                 Undo => {
                     if y == rows.len() {
-                        rows.push(Row::new(s));
+                        rows.push(Row::new(s).unwrap());
                     } else {
-                        rows.insert(y, Row::new(s));
+                        rows.insert(y, Row::new(s).unwrap());
                     }
                     (0, y)
                 }

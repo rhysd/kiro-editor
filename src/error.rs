@@ -10,6 +10,7 @@ pub enum Error {
     TooSmallWindow(usize, usize),
     UnknownWindowSize,
     InvalidUtf8Input(Vec<u8>),
+    ControlCharInText(char),
 }
 
 impl fmt::Display for Error {
@@ -31,6 +32,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
+            ControlCharInText(c) => write!(f, "Invalid character for text is included: {:?}", c),
         }
     }
 }

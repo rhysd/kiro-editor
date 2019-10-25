@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use std::ops;
 use unicode_width::UnicodeWidthChar;
 
@@ -21,14 +22,14 @@ impl Row {
         }
     }
 
-    pub fn new<S: Into<String>>(line: S) -> Row {
+    pub fn new<S: Into<String>>(line: S) -> Result<Row> {
         let mut row = Row {
             buf: line.into(),
             render: "".to_string(),
             indices: Vec::with_capacity(0),
         };
-        row.update_render();
-        row
+        row.update_render()?;
+        Ok(row)
     }
 
     // Returns number of characters
@@ -77,7 +78,7 @@ impl Row {
         self[at..].chars().next()
     }
 
-    fn update_render(&mut self) {
+    fn update_render(&mut self) -> Result<()> {
         self.render.clear();
         self.render.reserve(self.buf.len());
         let mut index = 0;
@@ -92,9 +93,12 @@ impl Row {
                         break;
                     }
                 }
-            } else {
+            } else if let Some(width) = c.width_cjk() {
+                index += width;
                 self.render.push(c);
-                index += c.width_cjk().unwrap();
+            } else {
+                // Control sequences are valid for UTF-8 but they should not appear in text.
+                return Err(Error::ControlCharInText(c));
             }
             num_chars += 1;
         }
@@ -110,6 +114,8 @@ impl Row {
                 self.indices.push(idx);
             }
         }
+
+        Ok(())
     }
 
     pub fn rx_from_cx(&self, cx: usize) -> usize {
@@ -130,7 +136,7 @@ impl Row {
             self.buf.insert(self.byte_idx_of(at), c);
         }
         // TODO: More efficient update for self.render
-        self.update_render();
+        self.update_render().unwrap();
     }
 
     pub fn insert_str<S: AsRef<str>>(&mut self, at: usize, s: S) {
@@ -139,13 +145,13 @@ impl Row {
         } else {
             self.buf.insert_str(self.byte_idx_of(at), s.as_ref());
         }
-        self.update_render();
+        self.update_render().unwrap();
     }
 
     pub fn delete_char(&mut self, at: usize) {
         if at < self.len() {
             self.buf.remove(self.byte_idx_of(at));
-            self.update_render();
+            self.update_render().unwrap();
         }
     }
 
@@ -155,19 +161,19 @@ impl Row {
             return;
         }
         self.buf.push_str(s);
-        self.update_render();
+        self.update_render().unwrap();
     }
 
     pub fn truncate(&mut self, at: usize) {
         if at < self.len() {
             self.buf.truncate(self.byte_idx_of(at));
-            self.update_render();
+            self.update_render().unwrap();
         }
     }
 
     pub fn remove_char(&mut self, at: usize) {
         self.buf.remove(self.byte_idx_of(at));
-        self.update_render();
+        self.update_render().unwrap();
     }
 
     pub fn remove(&mut self, start: usize, end: usize) {
@@ -175,7 +181,7 @@ impl Row {
             let start_idx = self.byte_idx_of(start);
             let end_idx = self.byte_idx_of(end);
             self.buf.drain(start_idx..end_idx);
-            self.update_render();
+            self.update_render().unwrap();
         }
     }
 }

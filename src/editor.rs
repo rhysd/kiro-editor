@@ -67,7 +67,7 @@ where
         output: W,
         window_size: Option<(usize, usize)>,
     ) -> Result<Editor<I, W>> {
-        Self::with_buf(TextBuffer::with_lines(lines), input, output, window_size)
+        Self::with_buf(TextBuffer::with_lines(lines)?, input, output, window_size)
     }
 
     pub fn open<P: AsRef<Path>>(

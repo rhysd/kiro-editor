@@ -94,18 +94,18 @@ impl TextBuffer {
         }
     }
 
-    pub fn with_lines<S: AsRef<str>, I: Iterator<Item = S>>(lines: I) -> Self {
-        Self {
+    pub fn with_lines<S: AsRef<str>, I: Iterator<Item = S>>(lines: I) -> Result<Self> {
+        Ok(Self {
             cx: 0,
             cy: 0,
             file: None,
-            row: lines.map(|s| Row::new(s.as_ref())).collect(),
+            row: lines.map(|s| Row::new(s.as_ref())).collect::<Result<_>>()?,
             modified: false,
             lang: Language::Plain,
             history: History::default(),
             inserted_undo: false,
             dirty_start: Some(0), // Ensure to render first screen
-        }
+        })
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -122,7 +122,7 @@ impl TextBuffer {
 
         let row = io::BufReader::new(File::open(path)?)
             .lines()
-            .map(|r| Ok(Row::new(r?)))
+            .map(|r| Row::new(r?))
             .collect::<Result<_>>()?;
 
         Ok(Self {
