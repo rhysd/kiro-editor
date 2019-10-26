@@ -271,7 +271,7 @@ where
 
         let rowoff = self.screen.rowoff;
         let rows = self.screen.rows();
-        let (prev_cx, prev_cy) = (self.buf().cx(), self.buf().cy());
+        let prev_cursor = self.buf().cursor();
 
         match &s {
             InputSeq {
@@ -366,7 +366,7 @@ where
             self.hl.needs_update = true;
             self.screen.set_dirty_start(line);
         }
-        if self.buf().cx() != prev_cx || self.buf().cy() != prev_cy {
+        if self.buf().cursor() != prev_cursor {
             self.screen.cursor_moved = true;
         }
         self.quitting = false;

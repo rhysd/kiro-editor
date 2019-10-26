@@ -248,8 +248,9 @@ impl Action for TextSearch {
             current_offset: 0, // Set later
         };
 
-        let cursor = if prompt.buf.cy() < rows.len() {
-            prompt.buf.cursor()
+        let cursor = prompt.buf.cursor();
+        let cursor = if cursor.1 < rows.len() {
+            cursor
         } else {
             (0, 0) // When cursor is out of text (after line of text buffer)
         };

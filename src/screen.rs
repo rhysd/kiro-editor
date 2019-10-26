@@ -425,7 +425,7 @@ impl<W: Write> Screen<W> {
         coloff
     }
 
-    fn do_scroll(&mut self, rows: &[Row], cx: usize, cy: usize) {
+    fn do_scroll(&mut self, rows: &[Row], (cx, cy): (usize, usize)) {
         let prev_rowoff = self.rowoff;
         let prev_coloff = self.coloff;
 
@@ -486,7 +486,7 @@ impl<W: Write> Screen<W> {
         hl: &mut Highlighting,
         status_bar: &StatusBar,
     ) -> Result<()> {
-        self.do_scroll(buf.rows(), buf.cx(), buf.cy());
+        self.do_scroll(buf.rows(), buf.cursor());
         self.update_message_bar()?; // This must be updated here since it affects area of highlighting
         hl.update(buf.rows(), self.rowoff + self.rows());
         self.redraw(buf, hl, status_bar)?;

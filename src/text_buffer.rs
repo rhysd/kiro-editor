@@ -463,10 +463,6 @@ impl TextBuffer {
         self.lang
     }
 
-    pub fn cx(&self) -> usize {
-        self.cx
-    }
-
     pub fn cy(&self) -> usize {
         self.cy
     }
