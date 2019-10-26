@@ -130,6 +130,14 @@ impl InputSeq {
             alt: false,
         }
     }
+
+    pub fn alt(key: KeySeq) -> Self {
+        Self {
+            key,
+            ctrl: false,
+            alt: true,
+        }
+    }
 }
 
 impl fmt::Display for InputSeq {
