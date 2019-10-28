@@ -56,6 +56,9 @@ impl Row {
         if self.indices.is_empty() {
             return byte_idx;
         }
+        if self.buf.len() == byte_idx {
+            return self.indices.len(); // When the byte index points after the last character
+        }
         self.indices
             .iter()
             .position(|bi| *bi == byte_idx)
