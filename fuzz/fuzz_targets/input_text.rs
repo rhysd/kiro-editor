@@ -2,7 +2,7 @@
 use libfuzzer_sys::fuzz_target;
 extern crate kiro_editor;
 
-use kiro_editor::{Editor, Error, InputSeq, KeySeq, Result};
+use kiro_editor::{Editor, Error, InputSeq, KeySeq, Language, Result};
 use std::io::{self, Write};
 use std::str;
 
@@ -14,13 +14,16 @@ impl AllOperations {
     fn new() -> Self {
         let mut ops = vec![
             // Insert and move cursor
-            InputSeq::new(KeySeq::Key(b'a')),
             InputSeq::new(KeySeq::LeftKey),
             InputSeq::new(KeySeq::RightKey),
-            InputSeq::new(KeySeq::Key(b'\r')),
-            InputSeq::new(KeySeq::Key(b'b')),
             InputSeq::new(KeySeq::UpKey),
             InputSeq::new(KeySeq::DownKey),
+            InputSeq::new(KeySeq::Key(b'\r')),
+            InputSeq::new(KeySeq::Key(b'a')),
+            InputSeq::new(KeySeq::Key(b'b')),
+            InputSeq::new(KeySeq::Utf8Key('あ')),
+            InputSeq::new(KeySeq::Key(b'\r')),
+            InputSeq::new(KeySeq::Key(b'c')),
             // Search
             InputSeq::ctrl(KeySeq::Key(b'g')),
             InputSeq::new(KeySeq::Key(b'a')),
@@ -75,7 +78,10 @@ fuzz_target!(|data: &[u8]| {
     if let Ok(s) = str::from_utf8(data) {
         // Editor may cause an error when the text contains invalid characters
         match Editor::with_lines(s.lines(), AllOperations::new(), Discard, Some((80, 24))) {
-            Ok(mut editor) => editor.edit().unwrap(), // Editor must quit successfully
+            Ok(mut editor) => {
+                editor.set_lang(Language::Rust);
+                editor.edit().unwrap(); // Editor must quit successfully
+            }
             Err(Error::ControlCharInText(_)) => { /* Do nothing since it is a possible error */ }
             Err(err) => assert!(false, "{:?}", err), // Unexpected error
         }
