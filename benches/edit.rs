@@ -6,7 +6,7 @@ use kiro_editor::{Editor, InputSeq, KeySeq, Language, Result, StdinRawMode};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use test::Bencher;
@@ -131,8 +131,21 @@ impl Iterator for RandomInput {
     }
 }
 
+// TODO: Move to helper
+pub struct Discard;
+
+impl Write for Discard {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 #[bench]
-fn bench_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
+fn with_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
     let _stdin = StdinRawMode::new().unwrap();
@@ -144,7 +157,18 @@ fn bench_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_1000_operations_to_editor_rs(b: &mut Bencher) {
+fn no_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
+    let lines = generate_random_text(10000);
+    let input = RandomInput::new(1000);
+    b.iter(|| {
+        let mut editor =
+            Editor::with_lines(lines.iter(), input.clone(), Discard, Some((80, 24))).unwrap();
+        editor.edit().unwrap();
+    });
+}
+
+#[bench]
+fn with_term_1000_operations_to_editor_rs(b: &mut Bencher) {
     let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
     let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
     let input = RandomInput::new(1000);
@@ -152,6 +176,19 @@ fn bench_1000_operations_to_editor_rs(b: &mut Bencher) {
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
+        editor.set_lang(Language::Rust);
+        editor.edit().unwrap();
+    });
+}
+
+#[bench]
+fn no_term_1000_operations_to_editor_rs(b: &mut Bencher) {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
+    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+    let input = RandomInput::new(1000);
+    b.iter(|| {
+        let mut editor =
+            Editor::with_lines(lines.iter(), input.clone(), Discard, Some((80, 24))).unwrap();
         editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });

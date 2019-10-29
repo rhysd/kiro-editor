@@ -18,7 +18,7 @@ impl Iterator for NeverInput {
 }
 
 #[bench]
-fn bench_open_empty_buffer(b: &mut Bencher) {
+fn with_term_open_empty_buffer(b: &mut Bencher) {
     b.iter(|| {
         let _stdin = StdinRawMode::new().unwrap();
         let mut editor = Editor::new(NeverInput, io::stdout(), Some((80, 24))).unwrap();
@@ -27,7 +27,7 @@ fn bench_open_empty_buffer(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_open_plain_text(b: &mut Bencher) {
+fn with_term_open_plain_text(b: &mut Bencher) {
     b.iter(|| {
         let _stdin = StdinRawMode::new().unwrap();
         let files = &[Path::new("README.md")];
@@ -37,7 +37,7 @@ fn bench_open_plain_text(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_open_highlighted_code(b: &mut Bencher) {
+fn with_term_open_highlighted_code(b: &mut Bencher) {
     b.iter(|| {
         let _stdin = StdinRawMode::new().unwrap();
         let files = &[Path::new("src/editor.rs")];
