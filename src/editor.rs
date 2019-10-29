@@ -422,6 +422,9 @@ where
 
     pub fn set_lang(&mut self, lang: Language) {
         let buf = self.buf_mut();
+        if buf.lang() == lang {
+            return;
+        }
         buf.set_lang(lang);
         self.hl = Highlighting::new(lang, buf.rows());
     }
