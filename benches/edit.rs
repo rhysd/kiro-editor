@@ -145,7 +145,7 @@ impl Write for Discard {
 }
 
 #[bench]
-fn with_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
+fn with_term_edit_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
     let _stdin = StdinRawMode::new().unwrap();
@@ -157,7 +157,7 @@ fn with_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
 }
 
 #[bench]
-fn no_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
+fn no_term_edit_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
     b.iter(|| {
@@ -168,7 +168,7 @@ fn no_term_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
 }
 
 #[bench]
-fn with_term_1000_operations_to_editor_rs(b: &mut Bencher) {
+fn with_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) {
     let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
     let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
     let input = RandomInput::new(1000);
@@ -182,7 +182,7 @@ fn with_term_1000_operations_to_editor_rs(b: &mut Bencher) {
 }
 
 #[bench]
-fn no_term_1000_operations_to_editor_rs(b: &mut Bencher) {
+fn no_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) {
     let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
     let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
     let input = RandomInput::new(1000);
