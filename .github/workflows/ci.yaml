@@ -7,11 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
-    - name: Cache rustup
-      uses: actions/cache@preview
-      with:
-        path: ~/.rustup
-        key: ${{ runner.os }}-rust-rustup
     - name: Cache cargo
       uses: actions/cache@preview
       with:
@@ -26,11 +21,6 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v1
-    - name: Cache rustup
-      uses: actions/cache@preview
-      with:
-        path: ~/.rustup
-        key: ${{ runner.os }}-rust-rustup
     - name: Cache cargo
       uses: actions/cache@preview
       with:
@@ -50,11 +40,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v1
-    - name: Cache rustup
-      uses: actions/cache@preview
-      with:
-        path: ~/.rustup
-        key: ${{ runner.os }}-rust-rustup
     - name: Install Toolchain via Rustup
       run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
     - run: cargo fmt -- --check
