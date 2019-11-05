@@ -8,17 +8,17 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: Cache cargo registry
-      uses: actions/cache@preview
+      uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
         key: bench-${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo index
-      uses: actions/cache@preview
+      uses: actions/cache@v1
       with:
         path: ~/.cargo/git
         key: bench-${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
     - name: Cache cargo local build
-      uses: actions/cache@preview
+      uses: actions/cache@v1
       with:
         path: target/debug
         key: bench-${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
