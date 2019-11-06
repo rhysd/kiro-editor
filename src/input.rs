@@ -283,16 +283,18 @@ impl InputSequences {
     fn decode(&mut self, b: u8) -> Result<InputSeq> {
         use KeySeq::*;
         match b {
-            // C0 control characters (0x00..0x1f)
-            // (Maybe) Escape sequence. Ctrl-{ is not available due to this
-            0x1b => self.decode_escape_sequence(),
-            // Ctrl-SPACE and Ctrl-?. 0x40, 0x3f, 0x60, 0x5f are not available
-            0x00 | 0x1f => Ok(InputSeq::ctrl(Key(b | 0b0010_0000))),
-            // Ctrl-\ and Ctrl-]. 0x3c, 0x3d, 0x7c, 0x7d are not available
-            0x01c | 0x01d => Ok(InputSeq::ctrl(Key(b | 0b0100_0000))),
-            // 0x00~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
-            // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
-            0x00..=0x1f => Ok(InputSeq::ctrl(Key(b | 0b0110_0000))),
+            // C0 control characters
+            0x00..=0x1f => match b {
+                // (Maybe) Escape sequence. Ctrl-{ is not available due to this
+                0x1b => self.decode_escape_sequence(),
+                // Ctrl-SPACE and Ctrl-?. 0x40, 0x3f, 0x60, 0x5f are not available
+                0x00 | 0x1f => Ok(InputSeq::ctrl(Key(b | 0b0010_0000))),
+                // Ctrl-\ and Ctrl-]. 0x3c, 0x3d, 0x7c, 0x7d are not available
+                0x01c | 0x01d => Ok(InputSeq::ctrl(Key(b | 0b0100_0000))),
+                // 0x00~0x1f keys are ascii keys with ctrl. Ctrl mod masks key with 0b11111.
+                // Here unmask it with 0b1100000. It only works with 0x61~0x7f.
+                _ => Ok(InputSeq::ctrl(Key(b | 0b0110_0000))),
+            },
             // Printable ASCII characters (0x20..0x7f)
             // Ascii key inputs
             0x20..=0x7f => Ok(InputSeq::new(Key(b))),
