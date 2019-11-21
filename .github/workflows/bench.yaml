@@ -8,34 +8,39 @@ jobs:
     name: Run benchmarks on Linux
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: bench-${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: bench-${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo local build
-      uses: actions/cache@v1
-      with:
-        path: target/debug
-        key: bench-${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Install Rust via Rustup
-      run: rustup update nightly && rustup default nightly
-    - name: Run cargo bench
-      run: cargo +nightly bench no_term | tee output.txt
-    - name: Fetch gh-pages for avoiding conflict
-      run: git fetch 'https://rhysd:${{ secrets.PERSONAL_GITHUB_TOKEN }}@github.com/rhysd/kiro-editor.git' gh-pages:gh-pages
-    - name: Store benchmark result
-      uses: rhysd/github-action-benchmark@v1
-      with:
-        name: Rust Benchmark
-        tool: 'cargo'
-        output-file-path: output.txt
-    - name: Push benchmark result
-      # Use personal access token instead of GITHUB_TOKEN due to https://github.community/t5/GitHub-Actions/Github-action-not-triggering-gh-pages-upon-push/td-p/26869/highlight/false
-      run: git push --no-verify 'https://rhysd:${{ secrets.PERSONAL_GITHUB_TOKEN }}@github.com/rhysd/kiro-editor.git' gh-pages:gh-pages
+      - uses: actions/checkout@v1
+      - name: Cache cargo registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: bench-${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo index
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: bench-${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo local build
+        uses: actions/cache@v1
+        with:
+          path: target/debug
+          key: bench-${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install Rust via Rustup
+        run: rustup update nightly && rustup default nightly
+      - name: Run cargo bench
+        run: cargo +nightly bench no_term | tee output.txt
+      - name: Fetch gh-pages for avoiding conflict
+        run: git fetch 'https://rhysd:${{ secrets.PERSONAL_GITHUB_TOKEN }}@github.com/rhysd/kiro-editor.git' gh-pages:gh-pages
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        with:
+          name: Rust Benchmark
+          tool: 'cargo'
+          output-file-path: output.txt
+          github-token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+          auto-push: true
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: '@rhysd'
+      - name: Push benchmark result
+        # Use personal access token instead of GITHUB_TOKEN due to https://github.community/t5/GitHub-Actions/Github-action-not-triggering-gh-pages-upon-push/td-p/26869/highlight/false
+        run: git push --no-verify 'https://rhysd:${{ secrets.PERSONAL_GITHUB_TOKEN }}@github.com/rhysd/kiro-editor.git' gh-pages:gh-pages
