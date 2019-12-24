@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1577155192656,
+  "lastUpdate": 1577155254706,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -191,6 +191,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 9479885,
             "range": "+/- 926,147",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "ceaee2c3ed0f1c74c3b9ce30359cecb7cbaa1304",
+          "message": "use checkout@v2 action and fix indentation in workflow file",
+          "timestamp": "2019-12-24T11:36:08+09:00",
+          "tree_id": "9d211c01cdd3d5f3d5b1f68aafb62ac08ef18b09",
+          "url": "https://github.com/rhysd/kiro-editor/commit/ceaee2c3ed0f1c74c3b9ce30359cecb7cbaa1304"
+        },
+        "date": 1577155254288,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 21172145,
+            "range": "+/- 2,926,385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 290115074,
+            "range": "+/- 24,351,726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1678523,
+            "range": "+/- 335,779",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 8552297,
+            "range": "+/- 1,494,846",
             "unit": "ns/iter"
           }
         ]
