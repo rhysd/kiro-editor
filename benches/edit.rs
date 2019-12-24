@@ -145,15 +145,16 @@ impl Write for Discard {
 }
 
 #[bench]
-fn with_term_edit_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
+fn with_term_edit_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) -> Result<()> {
     let lines = generate_random_text(10000);
     let input = RandomInput::new(1000);
-    let _stdin = StdinRawMode::new().unwrap();
+    let _stdin = StdinRawMode::new()?;
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.edit().unwrap();
     });
+    Ok(())
 }
 
 #[bench]
@@ -168,23 +169,24 @@ fn no_term_edit_1000_operations_to_10000_chars_plain_text(b: &mut Bencher) {
 }
 
 #[bench]
-fn with_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn with_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = RandomInput::new(1000);
-    let _stdin = StdinRawMode::new().unwrap();
+    let _stdin = StdinRawMode::new()?;
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });
+    Ok(())
 }
 
 #[bench]
-fn no_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn no_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = RandomInput::new(1000);
     b.iter(|| {
         let mut editor =
@@ -192,4 +194,5 @@ fn no_term_edit_1000_operations_to_editor_rs(b: &mut Bencher) {
         editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });
+    Ok(())
 }

@@ -71,48 +71,51 @@ impl Write for Discard {
 }
 
 #[bench]
-fn with_term_scroll_up_down_plain_text(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("README.md")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn with_term_scroll_up_down_plain_text(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("README.md"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = ScrollInput::new(20);
-    let _stdin = StdinRawMode::new().unwrap();
+    let _stdin = StdinRawMode::new()?;
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.edit().unwrap();
     });
+    Ok(())
 }
 
 #[bench]
-fn with_term_scroll_up_down_rust_code(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn with_term_scroll_up_down_rust_code(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = ScrollInput::new(20);
-    let _stdin = StdinRawMode::new().unwrap();
+    let _stdin = StdinRawMode::new()?;
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), io::stdout(), Some((80, 24))).unwrap();
         editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });
+    Ok(())
 }
 
 #[bench]
-fn no_term_scroll_up_down_plain_text(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("README.md")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn no_term_scroll_up_down_plain_text(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("README.md"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = ScrollInput::new(20);
     b.iter(|| {
         let mut editor =
             Editor::with_lines(lines.iter(), input.clone(), Discard, Some((80, 24))).unwrap();
         editor.edit().unwrap();
     });
+    Ok(())
 }
 
 #[bench]
-fn no_term_scroll_up_down_rust_code(b: &mut Bencher) {
-    let f = BufReader::new(File::open(&Path::new("src/editor.rs")).unwrap());
-    let lines = f.lines().map(|r| r.unwrap()).collect::<Vec<_>>();
+fn no_term_scroll_up_down_rust_code(b: &mut Bencher) -> Result<()> {
+    let f = BufReader::new(File::open(&Path::new("src/editor.rs"))?);
+    let lines = f.lines().collect::<io::Result<Vec<_>>>()?;
     let input = ScrollInput::new(20);
     b.iter(|| {
         let mut editor =
@@ -120,4 +123,5 @@ fn no_term_scroll_up_down_rust_code(b: &mut Bencher) {
         editor.set_lang(Language::Rust);
         editor.edit().unwrap();
     });
+    Ok(())
 }
