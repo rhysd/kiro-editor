@@ -6,61 +6,61 @@ jobs:
     name: Test on Linux
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo local build
-      uses: actions/cache@v1
-      with:
-        path: target/debug
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Install Rust via Rustup
-      run: rustup update stable && rustup default stable
-    - run: cargo test
+      - uses: actions/checkout@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo index
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo local build
+        uses: actions/cache@v1
+        with:
+          path: target/debug
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install Rust via Rustup
+        run: rustup update stable && rustup default stable
+      - run: cargo test
 
   test-macos:
     name: Test on macOS
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Cache cargo registry
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo local build
-      uses: actions/cache@v1
-      with:
-        path: target/debug
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-    - name: Add cargo to $PATH
-      run: echo ::add-path::$HOME/.cargo/bin
-    - name: Install Rust via Rustup
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh
-        sh install.sh -y
-        rustup default stable
-    - run: cargo test
+      - uses: actions/checkout@v2
+      - name: Cache cargo registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo index
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - name: Cache cargo local build
+        uses: actions/cache@v1
+        with:
+          path: target/debug
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Add cargo to $PATH
+        run: echo ::add-path::$HOME/.cargo/bin
+      - name: Install Rust via Rustup
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh
+          sh install.sh -y
+          rustup default stable
+      - run: cargo test
 
   lint:
     name: Rustfmt and Clippy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: Install Toolchain via Rustup
-      run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
-    - run: cargo fmt -- --check
-    - run: cargo clippy
+      - uses: actions/checkout@v2
+      - name: Install Toolchain via Rustup
+        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - run: cargo fmt -- --check
+      - run: cargo clippy
