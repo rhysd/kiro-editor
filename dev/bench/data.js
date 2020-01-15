@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1577155254706,
+  "lastUpdate": 1579074959237,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -239,6 +239,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8552297,
             "range": "+/- 1,494,846",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "27dae7e3404de215bb806eecd599d11274bf08ed",
+          "message": "explicitly specify edition for rustfmt\n\nsince rustfmt itself does not look Cargo.toml though `cargo fmt` does.\nALE runs `rustfmt` directly rather than `cargo fmt` because `cargo fmt`\ndoes not support stdin input.",
+          "timestamp": "2020-01-15T16:48:47+09:00",
+          "tree_id": "705f2fc3ce7eef4d8da935532c5dd59df8268bf1",
+          "url": "https://github.com/rhysd/kiro-editor/commit/27dae7e3404de215bb806eecd599d11274bf08ed"
+        },
+        "date": 1579074958951,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 23370554,
+            "range": "+/- 1,435,042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 306651439,
+            "range": "+/- 3,661,032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1900428,
+            "range": "+/- 69,119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9414006,
+            "range": "+/- 421,202",
             "unit": "ns/iter"
           }
         ]
