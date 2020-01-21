@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1579282599643,
+  "lastUpdate": 1579578133122,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -335,6 +335,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 9871905,
             "range": "+/- 1,352,799",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "5696a2534f26e92140dd4aa006b614be5c063d32",
+          "message": "Revert \"use checkout@v1 temporarily for deploying gh-pages\"\n\nBecause github-action-benchmark@v1.7.0 was released and actions/checkout@v2\nissue was fixed\n\nThis reverts commit bb67fc368c3b72848befdcb8c301e666a70a4d60.",
+          "timestamp": "2020-01-21T12:37:03+09:00",
+          "tree_id": "705f2fc3ce7eef4d8da935532c5dd59df8268bf1",
+          "url": "https://github.com/rhysd/kiro-editor/commit/5696a2534f26e92140dd4aa006b614be5c063d32"
+        },
+        "date": 1579578132834,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 20610341,
+            "range": "+/- 4,282,045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 291130355,
+            "range": "+/- 13,857,949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1712125,
+            "range": "+/- 348,038",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 8711420,
+            "range": "+/- 1,757,637",
             "unit": "ns/iter"
           }
         ]
