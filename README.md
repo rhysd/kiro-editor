@@ -21,7 +21,7 @@ section below for more details):
 
 - Support editing UTF-8 characters like '🐶' (kilo only supports ASCII characters)
 - Undo/Redo
-- More userful shortcuts (Alt modifier is supported)
+- More useful shortcuts (Alt modifier is supported)
 - 24bit colors (true colors) and 256 colors support using [gruvbox][] retro color palette with 16
   colors fallback
 - More efficient screen rendering and highlighting (kilo renders entire screen each time)
@@ -50,6 +50,8 @@ Please install [`kiro-editor`][crates-io] package by building from sources using
 ```
 $ cargo install kiro-editor
 ```
+
+Note: Please use a Rust stable toolchain as new as possible.
 
 
 
@@ -275,7 +277,7 @@ rare case, I believe.
 ### Text Editing  as Sequence of Diffs
 
 In Kiro editor, every text edit is represented as diff of text. So text editing means applying diffs to
-current text buffer. Undo is represented as unapplying diffs. Redo is represented as applying diffs
+current text buffer. Undo is represented as 'unapplying' diffs. Redo is represented as applying diffs
 again.
 
 One undo is represented as multiple diffs, not one diff. This is because users usually don't want to
