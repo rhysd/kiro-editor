@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1579578133122,
+  "lastUpdate": 1582794168318,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -383,6 +383,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8711420,
             "range": "+/- 1,757,637",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "bb7e3f94c86aee8fc01850b8e901287b67ab726a",
+          "message": "add note about Rust toolchain for build (fix #4)",
+          "timestamp": "2020-02-27T17:58:11+09:00",
+          "tree_id": "2065bc4b60ba0c608d0e19e7f59d5395bb28561d",
+          "url": "https://github.com/rhysd/kiro-editor/commit/bb7e3f94c86aee8fc01850b8e901287b67ab726a"
+        },
+        "date": 1582794167851,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 20140326,
+            "range": "+/- 3,094,095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 279325434,
+            "range": "+/- 17,762,865",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1569269,
+            "range": "+/- 274,313",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 8256443,
+            "range": "+/- 1,357,161",
             "unit": "ns/iter"
           }
         ]
