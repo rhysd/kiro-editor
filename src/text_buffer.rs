@@ -544,8 +544,8 @@ impl TextBuffer {
 
     pub fn undo(&mut self) -> bool {
         let state = self.history.undo(&mut self.row);
-        if let Some((_, _, _, ongoing)) = state {
-            if !ongoing {
+        if let Some((_, _, _, edited)) = state {
+            if !edited {
                 self.modified_count -= 1;
             }
             self.tmp_modified = false;
@@ -555,8 +555,8 @@ impl TextBuffer {
 
     pub fn redo(&mut self) -> bool {
         let state = self.history.redo(&mut self.row);
-        if let Some((_, _, _, ongoing)) = state {
-            if !ongoing {
+        if let Some((_, _, _, edited)) = state {
+            if !edited {
                 self.modified_count += 1;
             }
             self.tmp_modified = false;

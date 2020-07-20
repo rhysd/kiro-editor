@@ -55,24 +55,24 @@ impl History {
     }
 
     pub fn undo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize, bool)> {
-        let ongoing = self.finish_ongoing_edit();
+        let edited = self.finish_ongoing_edit();
         if self.index == 0 {
             return None;
         }
         self.index -= 1;
         let i = self.entries[self.index].iter().rev();
         let (x, y, dirty_start) = Self::apply_diffs(i, UndoRedo::Undo, rows);
-        Some((x, y, dirty_start, ongoing))
+        Some((x, y, dirty_start, edited))
     }
 
     pub fn redo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize, bool)> {
-        let ongoing = self.finish_ongoing_edit();
+        let edited = self.finish_ongoing_edit();
         if self.index == self.entries.len() {
             return None;
         }
         self.index += 1;
         let i = self.entries[self.index - 1].iter();
         let (x, y, dirty_start) = Self::apply_diffs(i, UndoRedo::Redo, rows);
-        Some((x, y, dirty_start, ongoing))
+        Some((x, y, dirty_start, edited))
     }
 }
