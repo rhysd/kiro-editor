@@ -67,9 +67,9 @@ pub struct TextBuffer {
     // Lines of text buffer
     row: Vec<Row>,
     // Count how many times the buffer is modified after loading a file
-    modified_count: i32,
+    undo_count: i32,
     // Temporal modified flag until diffs are put into history
-    tmp_modified: bool,
+    modified: bool,
     // Language which current buffer belongs to
     lang: Language,
     // History per undo point for undo/redo
@@ -88,8 +88,8 @@ impl TextBuffer {
             cy: 0,
             file: None,
             row: vec![Row::empty()], // Ensure that every text ends with newline
-            modified_count: 0,
-            tmp_modified: false,
+            undo_count: 0,
+            modified: false,
             lang: Language::Plain,
             history: History::default(),
             inserted_undo: false,
@@ -103,8 +103,8 @@ impl TextBuffer {
             cy: 0,
             file: None,
             row: lines.map(|s| Row::new(s.as_ref())).collect::<Result<_>>()?,
-            modified_count: 0,
-            tmp_modified: false,
+            undo_count: 0,
+            modified: false,
             lang: Language::Plain,
             history: History::default(),
             inserted_undo: false,
@@ -119,8 +119,8 @@ impl TextBuffer {
             // When the path does not exist, consider it as a new file
             let mut buf = Self::empty();
             buf.file = file;
-            buf.modified_count = 0;
-            buf.tmp_modified = false;
+            buf.undo_count = 0;
+            buf.modified = false;
             buf.lang = Language::detect(path);
             return Ok(buf);
         }
@@ -135,8 +135,8 @@ impl TextBuffer {
             cy: 0,
             file,
             row,
-            modified_count: 0,
-            tmp_modified: false,
+            undo_count: 0,
+            modified: false,
             lang: Language::detect(path),
             history: History::default(),
             inserted_undo: false,
@@ -161,16 +161,16 @@ impl TextBuffer {
 
     fn new_diff(&mut self, diff: EditDiff) {
         self.apply_diff(&diff, UndoRedo::Redo);
-        self.tmp_modified = true;
+        self.modified = true;
         self.history.push(diff); // Remember diff for undo/redo
     }
 
     fn insert_undo_point(&mut self) {
         if !self.inserted_undo {
             if self.history.finish_ongoing_edit() {
-                self.modified_count += 1;
+                self.undo_count += 1;
             }
-            self.tmp_modified = false;
+            self.modified = false;
             self.inserted_undo = true;
         }
     }
@@ -465,7 +465,7 @@ impl TextBuffer {
     }
 
     pub fn modified(&self) -> bool {
-        self.modified_count != 0 || self.tmp_modified
+        self.undo_count != 0 || self.modified
     }
 
     pub fn lang(&self) -> Language {
@@ -517,8 +517,8 @@ impl TextBuffer {
         f.flush()
             .map_err(|e| format!("Could not flush to file: {}", e))?;
 
-        self.modified_count = 0;
-        self.tmp_modified = false;
+        self.undo_count = 0;
+        self.modified = false;
         Ok(format!("{} bytes written to {}", bytes, &file.display))
     }
 
@@ -546,9 +546,9 @@ impl TextBuffer {
         let state = self.history.undo(&mut self.row);
         if let Some((_, _, _, edited)) = state {
             if !edited {
-                self.modified_count -= 1;
+                self.undo_count -= 1;
             }
-            self.tmp_modified = false;
+            self.modified = false;
         }
         self.after_undoredo(state)
     }
@@ -557,9 +557,9 @@ impl TextBuffer {
         let state = self.history.redo(&mut self.row);
         if let Some((_, _, _, edited)) = state {
             if !edited {
-                self.modified_count += 1;
+                self.undo_count += 1;
             }
-            self.tmp_modified = false;
+            self.modified = false;
         }
         self.after_undoredo(state)
     }
