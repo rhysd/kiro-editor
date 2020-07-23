@@ -20,10 +20,10 @@ impl History {
         self.ongoing.push(diff);
     }
 
-    pub fn finish_ongoing_edit(&mut self) {
+    pub fn finish_ongoing_edit(&mut self) -> bool {
         debug_assert!(self.entries.len() <= MAX_ENTRIES);
         if self.ongoing.is_empty() {
-            return; // Do nothing when no change was added
+            return false; // Do nothing when no change was added
         }
 
         let diffs = mem::replace(&mut self.ongoing, vec![]);
@@ -40,6 +40,7 @@ impl History {
 
         self.index += 1;
         self.entries.push_back(diffs);
+        true
     }
 
     fn apply_diffs<'a, I: Iterator<Item = &'a EditDiff>>(
@@ -53,23 +54,25 @@ impl History {
         })
     }
 
-    pub fn undo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
-        self.finish_ongoing_edit();
+    pub fn undo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize, bool)> {
+        let edited = self.finish_ongoing_edit();
         if self.index == 0 {
             return None;
         }
         self.index -= 1;
         let i = self.entries[self.index].iter().rev();
-        Some(Self::apply_diffs(i, UndoRedo::Undo, rows))
+        let (x, y, dirty_start) = Self::apply_diffs(i, UndoRedo::Undo, rows);
+        Some((x, y, dirty_start, edited))
     }
 
-    pub fn redo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize)> {
-        self.finish_ongoing_edit();
+    pub fn redo(&mut self, rows: &mut Vec<Row>) -> Option<(usize, usize, usize, bool)> {
+        let edited = self.finish_ongoing_edit();
         if self.index == self.entries.len() {
             return None;
         }
         self.index += 1;
         let i = self.entries[self.index - 1].iter();
-        Some(Self::apply_diffs(i, UndoRedo::Redo, rows))
+        let (x, y, dirty_start) = Self::apply_diffs(i, UndoRedo::Redo, rows);
+        Some((x, y, dirty_start, edited))
     }
 }

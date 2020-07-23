@@ -622,6 +622,27 @@ mod tests {
         assert_eq!(msg, "");
     }
 
+    #[test]
+    fn undo_modified() {
+        let input = DummyInputs(vec![
+            key('a'),
+            key('b'),
+            key('c'),
+            ctrl('m'),
+            ctrl('u'),
+            ctrl('u'),
+            ctrl('q'),
+            ctrl('q'),
+        ]);
+        let mut editor = Editor::new(input, Discard, Some((80, 24))).unwrap();
+        editor.edit().unwrap();
+
+        let lines = editor.lines().collect::<Vec<_>>();
+        assert_eq!(lines, vec![""]);
+
+        assert!(!editor.bufs[0].modified());
+    }
+
     macro_rules! test_text_edit {
     ($title:ident, $title_undo:ident, $title_redo:ident {
         before: $before:expr,
