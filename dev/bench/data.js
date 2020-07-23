@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1582794168318,
+  "lastUpdate": 1595514332637,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -431,6 +431,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8256443,
             "range": "+/- 1,357,161",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rhysd@users.noreply.github.com",
+            "name": "Linda_pp",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "399321098802f3d72d69146e2e7e5a81975e6cb4",
+          "message": "Merge pull request #6 from tyfkda/feature/undo-modified\n\nBack to unmodified state with undo",
+          "timestamp": "2020-07-23T23:20:30+09:00",
+          "tree_id": "bbd356ed6487cd49b76f78416a6d415c072d8eba",
+          "url": "https://github.com/rhysd/kiro-editor/commit/399321098802f3d72d69146e2e7e5a81975e6cb4"
+        },
+        "date": 1595514332195,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 23307860,
+            "range": "± 3324936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 319657717,
+            "range": "± 19555310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 2028537,
+            "range": "± 636228",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9649007,
+            "range": "± 1010464",
             "unit": "ns/iter"
           }
         ]
