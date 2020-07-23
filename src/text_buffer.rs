@@ -170,7 +170,7 @@ impl TextBuffer {
     fn insert_undo_point(&mut self) {
         if !self.inserted_undo {
             if self.history.finish_ongoing_edit() {
-                self.undo_count += 1;
+                self.undo_count = self.undo_count.saturating_add(1);
             }
             self.modified = false;
             self.inserted_undo = true;
@@ -550,7 +550,7 @@ impl TextBuffer {
             // If edited is true, it means that undo target is the ongoing change. In the case,
             // undo point is not consumed and undo count should not be decreased
             if !edited {
-                self.undo_count -= 1;
+                self.undo_count = self.undo_count.saturating_sub(1);
             }
             self.modified = false;
         }
@@ -564,7 +564,7 @@ impl TextBuffer {
             // redo does not happen since the new ongoing change is happening and undo count should
             // not be incremented
             if !edited {
-                self.undo_count += 1;
+                self.undo_count = self.undo_count.saturating_add(1);
             }
             self.modified = false;
         }
