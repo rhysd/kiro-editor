@@ -66,9 +66,11 @@ pub struct TextBuffer {
     file: Option<FilePath>,
     // Lines of text buffer
     row: Vec<Row>,
-    // Count how many times the buffer is modified after loading a file
+    // Count how many times undo points are created in the buffer after loading a file
     undo_count: i32,
-    // Temporal modified flag until diffs are put into history
+    // True when this text buffer has unsaved modifications. This flag is necessary in addition to
+    // undo_count field because even if editing is ongoing and undo point is not created yet,
+    // this flag is set to true
     modified: bool,
     // Language which current buffer belongs to
     lang: Language,
@@ -545,6 +547,8 @@ impl TextBuffer {
     pub fn undo(&mut self) -> bool {
         let state = self.history.undo(&mut self.row);
         if let Some((_, _, _, edited)) = state {
+            // If edited is true, it means that undo target is the ongoing change. In the case,
+            // undo point is not consumed and undo count should not be decreased
             if !edited {
                 self.undo_count -= 1;
             }
@@ -556,6 +560,9 @@ impl TextBuffer {
     pub fn redo(&mut self) -> bool {
         let state = self.history.redo(&mut self.row);
         if let Some((_, _, _, edited)) = state {
+            // If edited is true, it means that redo target is the ongoing change. In the case,
+            // redo does not happen since the new ongoing change is happening and undo count should
+            // not be incremented
             if !edited {
                 self.undo_count += 1;
             }
