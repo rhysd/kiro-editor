@@ -1,3 +1,18 @@
+<a name="v0.4.0"></a>
+# [v0.4.0](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.0) - 24 Jul 2020
+
+- **New:** Add Python syntax highlighting
+- **New:** Back to unmodified state when undo-ing to the original text (thanks [@tyfkda](https://github.com/tyfkda) for this contribution)
+- **Fix:** Error message highlighting was broken in message bar
+- **Fix:** Ignore C1 control chars in input
+- **Fix:** Crash when searched text is placed at end of line which includes multi-byte characters
+- **Improve:** Update dependencies
+- **Dev:** Add fuzzing test for editing/highlighting text
+- **Dev:** Add benchmarks
+
+[Changes][v0.4.0]
+
+
 <a name="0.3.5"></a>
 # [0.3.5](https://github.com/rhysd/kiro-editor/releases/tag/0.3.5) - 19 Oct 2019
 
@@ -141,6 +156,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[v0.4.0]: https://github.com/rhysd/kiro-editor/compare/0.3.5...v0.4.0
 [0.3.5]: https://github.com/rhysd/kiro-editor/compare/0.3.4...0.3.5
 [0.3.4]: https://github.com/rhysd/kiro-editor/compare/0.3.3...0.3.4
 [0.3.3]: https://github.com/rhysd/kiro-editor/compare/0.3.2...0.3.3
