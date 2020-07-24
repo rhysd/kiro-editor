@@ -66,7 +66,9 @@ pub struct TextBuffer {
     file: Option<FilePath>,
     // Lines of text buffer
     row: Vec<Row>,
-    // Count how many times undo points are created in the buffer after loading a file
+    // Count how many times undo points are created in the buffer. This value is set to 0 at just
+    // after loading the buffer. When saving the buffer to file, count is reset to 0.
+    // When redo/undo is applied without ongoing changes, this count is +1/-1.
     undo_count: i32,
     // True when this text buffer has unsaved modifications. This flag is necessary in addition to
     // undo_count field because even if editing is ongoing and undo point is not created yet,
