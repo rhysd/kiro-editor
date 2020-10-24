@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1600304419086,
+  "lastUpdate": 1603539577355,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -959,6 +959,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 7827223,
             "range": "± 15171",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "da220a010d4478863e971a0562a48b744bbe7327",
+          "message": "add link to NetBSD package (close #7)",
+          "timestamp": "2020-10-24T20:34:13+09:00",
+          "tree_id": "8c209ff86e4459b889849f13a9f30ad56bdd72a3",
+          "url": "https://github.com/rhysd/kiro-editor/commit/da220a010d4478863e971a0562a48b744bbe7327"
+        },
+        "date": 1603539575876,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 21882791,
+            "range": "± 1254102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 299422457,
+            "range": "± 7559438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1783098,
+            "range": "± 166286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9129204,
+            "range": "± 547636",
             "unit": "ns/iter"
           }
         ]
