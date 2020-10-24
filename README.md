@@ -53,6 +53,10 @@ $ cargo install kiro-editor
 
 Note: Please use a Rust stable toolchain as new as possible.
 
+For NetBSD, `kiro-editor` package is available.
+
+https://pkgsrc.se/editors/kiro-editor
+
 
 
 ## Usage
