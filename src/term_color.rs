@@ -22,10 +22,7 @@ pub enum Color {
 impl Color {
     pub fn has_bg_color(self) -> bool {
         use Color::*;
-        match self {
-            YellowBG | RedBG | OrangeBG => true,
-            _ => false,
-        }
+        matches!(self, YellowBG | RedBG | OrangeBG)
     }
 }
 

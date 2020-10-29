@@ -405,13 +405,13 @@ impl TextBuffer {
         }
 
         fn at_word_start(left: &CharKind, right: &CharKind) -> bool {
-            match (left, right) {
+            matches!(
+                (left, right),
                 (&CharKind::Space, &CharKind::Ident)
-                | (&CharKind::Space, &CharKind::Punc)
-                | (&CharKind::Punc, &CharKind::Ident)
-                | (&CharKind::Ident, &CharKind::Punc) => true,
-                _ => false,
-            }
+                    | (&CharKind::Space, &CharKind::Punc)
+                    | (&CharKind::Punc, &CharKind::Ident)
+                    | (&CharKind::Ident, &CharKind::Punc)
+            )
         }
 
         self.move_cursor_one(dir);
