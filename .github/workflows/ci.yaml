@@ -62,5 +62,5 @@ jobs:
       - uses: actions/checkout@v2
       - name: Install Toolchain via Rustup
         run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
-      - run: cargo fmt -- --check
-      - run: cargo clippy
+      - run: cargo fmt -- --color always --check
+      - run: cargo clippy --color always --all -- -D warnings
