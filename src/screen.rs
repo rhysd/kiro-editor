@@ -189,7 +189,7 @@ impl<W: Write> Screen<W> {
         Ok(())
     }
 
-    fn trim_line<'a, S: AsRef<str>>(&self, line: &'a S) -> String {
+    fn trim_line<S: AsRef<str>>(&self, line: &S) -> String {
         let line = line.as_ref();
         if line.len() <= self.coloff {
             return "".to_string();

@@ -405,7 +405,7 @@ where
 
     pub fn edit(&mut self) -> Result<()> {
         // Map Iterator<Result<T>> to Iterator<Result<()>> for .collect()
-        self.first_paint()?.map(|r| r.map(|_| ())).collect()
+        self.first_paint()?.try_for_each(|r| r.map(|_| ()))
     }
 
     pub fn lines(&self) -> Lines<'_> {
