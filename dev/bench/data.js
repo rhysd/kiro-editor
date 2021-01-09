@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1610201431967,
+  "lastUpdate": 1610202324766,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1199,6 +1199,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 11570300,
             "range": "± 282597",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "5c092459dd335a2c806ef2d112830b8c5d8af722",
+          "message": "Merge branch 'reorg-ci'",
+          "timestamp": "2021-01-09T23:20:46+09:00",
+          "tree_id": "9e214ae62857fb0d808f713a0906ef38cd9ac532",
+          "url": "https://github.com/rhysd/kiro-editor/commit/5c092459dd335a2c806ef2d112830b8c5d8af722"
+        },
+        "date": 1610202324330,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 25319217,
+            "range": "± 1634245",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 337052109,
+            "range": "± 8859681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 2036117,
+            "range": "± 172788",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 10114473,
+            "range": "± 965803",
             "unit": "ns/iter"
           }
         ]
