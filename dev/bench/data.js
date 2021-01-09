@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1609752023673,
+  "lastUpdate": 1610200643602,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1103,6 +1103,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8372158,
             "range": "± 19131",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "a049becb3c7bfd06f1f7e0e4917b15e58f9517c3",
+          "message": "reorganize CI workflows",
+          "timestamp": "2021-01-09T22:52:36+09:00",
+          "tree_id": "805c1a94b44bd29ad06e0a8c02b3c0827e81dd85",
+          "url": "https://github.com/rhysd/kiro-editor/commit/a049becb3c7bfd06f1f7e0e4917b15e58f9517c3"
+        },
+        "date": 1610200643179,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 24143539,
+            "range": "± 2055573",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 303383510,
+            "range": "± 44951408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1836360,
+            "range": "± 185281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9104967,
+            "range": "± 630176",
             "unit": "ns/iter"
           }
         ]
