@@ -9,23 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Cache cargo registry
-        uses: actions/cache@v1
+      - uses: actions-rs/toolchain@v1
         with:
-          path: ~/.cargo/registry
-          key: bench-${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: bench-${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo local build
-        uses: actions/cache@v1
-        with:
-          path: target/debug
-          key: bench-${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install Rust via Rustup
-        run: rustup update nightly && rustup default nightly
+          profile: minimal
+          toolchain: nightly
+          override: true
       - name: Run cargo bench
         run: cargo +nightly bench no_term | tee output.txt
       - name: Fetch gh-pages for avoiding conflict
