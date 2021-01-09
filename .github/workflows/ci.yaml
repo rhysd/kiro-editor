@@ -2,65 +2,45 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  test-linux:
-    name: Test on Linux
-    runs-on: ubuntu-latest
+  tests:
+    name: Unit tests
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
-      - name: Cache cargo registry
-        uses: actions/cache@v1
+      - uses: actions-rs/toolchain@v1
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run unit tests
+        uses: actions-rs/cargo@v1
         with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo local build
-        uses: actions/cache@v1
-        with:
-          path: target/debug
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install Rust via Rustup
-        run: rustup update stable && rustup default stable
-      - run: cargo test
-
-  test-macos:
-    name: Test on macOS
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Cache cargo registry
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo local build
-        uses: actions/cache@v1
-        with:
-          path: target/debug
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-      - name: Add cargo to $PATH
-        run: echo ::add-path::$HOME/.cargo/bin
-      - name: Install Rust via Rustup
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs > install.sh
-          sh install.sh -y
-          rustup default stable
-      - run: cargo test
+          command: test
+          args: --color always
 
   lint:
     name: Rustfmt and Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install Toolchain via Rustup
-        run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
-      - run: cargo fmt -- --color always --check
-      - run: cargo clippy --color always --all -- -D warnings
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - run: rustup component add clippy
+      - name: Clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --color always -- -D warnings
+      - run: rustup component add rustfmt
+      - name: rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -- --check --color always
