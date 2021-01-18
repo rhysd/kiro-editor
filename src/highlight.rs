@@ -428,6 +428,55 @@ const PYTHON_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     definition_keywords: &["def", "class", "global", "nonlocal"],
 };
 
+
+const JULIA_SYNTAX: SyntaxHighlight =
+    SyntaxHighlight {
+    lang: Language::Julia,
+    number: true,
+    hex_number: true,
+    bin_number: true,
+    number_delim: Some('_'),
+    string_quotes: &['"'], // TODO: Multi-line strings """..."""
+    character: false,
+    line_comment: Some("#"),
+    block_comment: Some(("#=", "=#")),
+    keywords: &[
+        "baremodule", "begin", "break", "catch", "const", "continue", "do",
+        "else", "elseif", "end", "export", "finally", "for", "function",
+        "global", "if", "import", "let", "local", "macro", "module", "quote",
+        "return", "struct", "try", "using", "while",
+        "abstract type", "primitive type", "mutable struct",
+    ],
+    control_statements: &[
+        "break", "continue", "elif", "else", "except", "finally", "for", "if", "pass", "raise",
+        "return", "try", "while", "yield",
+    ],
+    builtin_types: &[
+        "AbstractArray",
+        "AbstractChannel",
+        "AbstractChar",
+        "AbstractDict",
+        "AbstractDisplay",
+        "AbstractSet",
+        "AbstractString",
+        "Array",
+        "Any",
+        "Dict",
+        "Bool",
+        "Complex",
+        "Real",
+        "String",
+        "AbstractFloat",
+        "AbstractIrrational",
+        "BigFloat", "Float16", "Float32", "Float64",
+        "Integer", "Int", "Signed", "Unsigned",
+        "Rational",
+    ],
+    boolean_constants: &["true", "false"],
+    special_vars: &["in", "isa", "where", "nothing", "missing"],
+    definition_keywords: &["def", "class", "global", "nonlocal"],
+};
+
 impl SyntaxHighlight {
     fn for_lang(lang: Language) -> &'static SyntaxHighlight {
         use Language::*;
@@ -439,6 +488,7 @@ impl SyntaxHighlight {
             Go => &GO_SYNTAX,
             Cpp => &CPP_SYNTAX,
             Python => &PYTHON_SYNTAX,
+            Julia  => &JULIA_SYNTAX,
         }
     }
 }
