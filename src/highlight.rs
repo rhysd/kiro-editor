@@ -428,9 +428,7 @@ const PYTHON_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     definition_keywords: &["def", "class", "global", "nonlocal"],
 };
 
-
-const JULIA_SYNTAX: SyntaxHighlight =
-    SyntaxHighlight {
+const JULIA_SYNTAX: SyntaxHighlight = SyntaxHighlight {
     lang: Language::Julia,
     number: true,
     hex_number: true,
@@ -441,11 +439,36 @@ const JULIA_SYNTAX: SyntaxHighlight =
     line_comment: Some("#"),
     block_comment: Some(("#=", "=#")),
     keywords: &[
-        "baremodule", "begin", "break", "catch", "const", "continue", "do",
-        "else", "elseif", "end", "export", "finally", "for", "function",
-        "global", "if", "import", "let", "local", "macro", "module", "quote",
-        "return", "struct", "try", "using", "while",
-        "abstract type", "primitive type", "mutable struct",
+        "baremodule",
+        "begin",
+        "break",
+        "catch",
+        "const",
+        "continue",
+        "do",
+        "else",
+        "elseif",
+        "end",
+        "export",
+        "finally",
+        "for",
+        "function",
+        "global",
+        "if",
+        "import",
+        "let",
+        "local",
+        "macro",
+        "module",
+        "quote",
+        "return",
+        "struct",
+        "try",
+        "using",
+        "while",
+        "abstract type",
+        "primitive type",
+        "mutable struct",
     ],
     control_statements: &[
         "break", "continue", "elif", "else", "except", "finally", "for", "if", "pass", "raise",
@@ -468,8 +491,14 @@ const JULIA_SYNTAX: SyntaxHighlight =
         "String",
         "AbstractFloat",
         "AbstractIrrational",
-        "BigFloat", "Float16", "Float32", "Float64",
-        "Integer", "Int", "Signed", "Unsigned",
+        "BigFloat",
+        "Float16",
+        "Float32",
+        "Float64",
+        "Integer",
+        "Int",
+        "Signed",
+        "Unsigned",
         "Rational",
     ],
     boolean_constants: &["true", "false"],
@@ -488,7 +517,7 @@ impl SyntaxHighlight {
             Go => &GO_SYNTAX,
             Cpp => &CPP_SYNTAX,
             Python => &PYTHON_SYNTAX,
-            Julia  => &JULIA_SYNTAX,
+            Julia => &JULIA_SYNTAX,
         }
     }
 }
