@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1610202324766,
+  "lastUpdate": 1611062676257,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1247,6 +1247,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 10114473,
             "range": "± 965803",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rhysd@users.noreply.github.com",
+            "name": "Linda_pp",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0bc932c701b97d682abfdfaeef38778cf7b46a7b",
+          "message": "Merge pull request #10 from matbesancon/julia-syntax\n\nintroduce julia syntax",
+          "timestamp": "2021-01-19T22:16:53+09:00",
+          "tree_id": "66f634af9574b31d00f93243a8ae8957cbe59cae",
+          "url": "https://github.com/rhysd/kiro-editor/commit/0bc932c701b97d682abfdfaeef38778cf7b46a7b"
+        },
+        "date": 1611062675806,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 23054752,
+            "range": "± 1684421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 308821987,
+            "range": "± 12186357",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1876148,
+            "range": "± 239985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9255281,
+            "range": "± 719099",
             "unit": "ns/iter"
           }
         ]
