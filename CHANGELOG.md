@@ -1,3 +1,12 @@
+<a name="v0.4.1"></a>
+# [v0.4.1](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.1) - 19 Jan 2021
+
+- **New:** Add [Julia](https://julialang.org/) language support. Thanks @matbesancon for the contribution!
+- **Doc:** Add link to NetBSD package in README
+
+[Changes][v0.4.1]
+
+
 <a name="v0.4.0"></a>
 # [v0.4.0](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.0) - 24 Jul 2020
 
@@ -156,6 +165,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[v0.4.1]: https://github.com/rhysd/kiro-editor/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/rhysd/kiro-editor/compare/0.3.5...v0.4.0
 [0.3.5]: https://github.com/rhysd/kiro-editor/compare/0.3.4...0.3.5
 [0.3.4]: https://github.com/rhysd/kiro-editor/compare/0.3.3...0.3.4
