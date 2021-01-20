@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1611063066340,
+  "lastUpdate": 1611143262507,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1439,6 +1439,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8463216,
             "range": "± 26079",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "c67b8e980886e5479ef6134cad45b0de833e55c4",
+          "message": "fix signal handling using signal_hook v0.3",
+          "timestamp": "2021-01-20T20:41:51+09:00",
+          "tree_id": "44ec844a580c8a307ef8b3170722f657e6f2ac6f",
+          "url": "https://github.com/rhysd/kiro-editor/commit/c67b8e980886e5479ef6134cad45b0de833e55c4"
+        },
+        "date": 1611143258093,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 25583685,
+            "range": "± 1582480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 324001477,
+            "range": "± 10307054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 2098472,
+            "range": "± 222879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9738795,
+            "range": "± 899092",
             "unit": "ns/iter"
           }
         ]
