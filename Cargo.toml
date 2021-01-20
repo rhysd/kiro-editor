@@ -34,7 +34,7 @@ term_size = "0.3"
 unicode-width = "0.1"
 term = "0.6"
 getopts = "0.2"
-signal-hook = "0.1"
+signal-hook = "0.3"
 jemallocator = "0.3"
 
 [badges]
