@@ -1,5 +1,6 @@
 use crate::error::Result;
-use signal_hook::{self, SigId, SIGWINCH};
+use signal_hook::consts::SIGWINCH;
+use signal_hook::{self, SigId};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -22,6 +23,6 @@ impl SigwinchWatcher {
 
 impl Drop for SigwinchWatcher {
     fn drop(&mut self) {
-        signal_hook::unregister(self.signal_id);
+        signal_hook::low_level::unregister(self.signal_id);
     }
 }
