@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1612007754378,
+  "lastUpdate": 1612008583655,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1535,6 +1535,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 9421320,
             "range": "± 800489",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "efa5561664a555e5d01ce81eba666f0240796088",
+          "message": "update term crate to v0.7.0",
+          "timestamp": "2021-01-30T21:04:30+09:00",
+          "tree_id": "0977e127bb80913e221b8f998af8c8834eeabafa",
+          "url": "https://github.com/rhysd/kiro-editor/commit/efa5561664a555e5d01ce81eba666f0240796088"
+        },
+        "date": 1612008579654,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 23686565,
+            "range": "± 1835212",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 293427957,
+            "range": "± 24490649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1941432,
+            "range": "± 230289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 8798081,
+            "range": "± 1381696",
             "unit": "ns/iter"
           }
         ]
