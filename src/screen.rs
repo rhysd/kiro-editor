@@ -161,7 +161,7 @@ impl<W: Write> Screen<W> {
 
         // Enter alternate screen buffer to restore previous screen on quit
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
-        output.write(b"\x1b[?47h")?;
+        output.write(b"\x1b[?1049h")?;
 
         Ok(Self {
             output,
@@ -631,8 +631,9 @@ impl<W: Write> Drop for Screen<W> {
     fn drop(&mut self) {
         // Back to normal screen buffer from alternate screen buffer
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
-        // Note that we used \x1b[2J\x1b[H previously but it did not erase screen.
-        self.write_flush(b"\x1b[?47l\x1b[H")
+        // Note that we used \x1b[2J\x1b[H previously but it did not erase screen and
+        // \x1b[?47l\x1b[H worked but not in the WSL terminal environment.
+        self.write_flush(b"\x1b[?1049l\x1b[H")
             .expect("Back to normal screen buffer");
     }
 }
