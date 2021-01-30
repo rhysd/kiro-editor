@@ -160,7 +160,9 @@ impl<W: Write> Screen<W> {
         }
 
         // Enter alternate screen buffer to restore previous screen on quit
+        // Note that 'CSI ? 47 h' does not work on WSL environment (#11)
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html (CSI ? Pm h)
         output.write(b"\x1b[?1049h")?;
 
         Ok(Self {
@@ -631,8 +633,16 @@ impl<W: Write> Drop for Screen<W> {
     fn drop(&mut self) {
         // Back to normal screen buffer from alternate screen buffer
         // https://www.xfree86.org/current/ctlseqs.html#The%20Alternate%20Screen%20Buffer
+        //
         // Note that we used \x1b[2J\x1b[H previously but it did not erase screen and
-        // \x1b[?47l\x1b[H worked but not in the WSL terminal environment.
+        // \x1b[?47l\x1b[H worked but not in the WSL terminal environment (#11).
+        //
+        // CSI ? 1049 h
+        // > Save cursor as in DECSC, xterm. After saving the cursor, switch to the Alternate
+        // > Screen Buffer, clearing it first.  This may be disabled by the titeInhibit resource.
+        // > This control combines the effects of the 1 0 4 7 and 1 0 4 8  modes. Use this with
+        // > terminfo-based applications rather than the 4 7  mode.
+        // https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
         self.write_flush(b"\x1b[?1049l\x1b[H")
             .expect("Back to normal screen buffer");
     }
