@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1611143262507,
+  "lastUpdate": 1612007754378,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1487,6 +1487,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 9738795,
             "range": "± 899092",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rhysd@users.noreply.github.com",
+            "name": "Linda_pp",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "be665c9337980175d9c7ca5c8f0fce1b33695cd9",
+          "message": "Merge pull request #11 from E3uka/screen-clear-wsl\n\nFixed screen clearing for WSL Terminal Environment",
+          "timestamp": "2021-01-30T20:51:11+09:00",
+          "tree_id": "986f1d5a0be8b584cad39e628da822741adfd686",
+          "url": "https://github.com/rhysd/kiro-editor/commit/be665c9337980175d9c7ca5c8f0fce1b33695cd9"
+        },
+        "date": 1612007754006,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 28397065,
+            "range": "± 1352327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 307356379,
+            "range": "± 6097351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 2024433,
+            "range": "± 213799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9421320,
+            "range": "± 800489",
             "unit": "ns/iter"
           }
         ]
