@@ -1,3 +1,12 @@
+<a name="v0.4.2"></a>
+# [v0.4.2](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.2) - 30 Jan 2021
+
+- **Fix:** Switching to/from alternate buffer did not work on WSL environment (#11, thanks to @E3uka)
+- **Improve:** Update dependencies (`term` v0.7)
+
+[Changes][v0.4.2]
+
+
 <a name="v0.4.1"></a>
 # [v0.4.1](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.1) - 19 Jan 2021
 
@@ -165,6 +174,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[v0.4.2]: https://github.com/rhysd/kiro-editor/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/rhysd/kiro-editor/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/rhysd/kiro-editor/compare/0.3.5...v0.4.0
 [0.3.5]: https://github.com/rhysd/kiro-editor/compare/0.3.4...0.3.5
