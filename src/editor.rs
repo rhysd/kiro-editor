@@ -248,6 +248,7 @@ where
         Ok(())
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     fn handle_quit(&mut self, s: InputSeq) -> Result<EditStep> {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
