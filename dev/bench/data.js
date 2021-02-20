@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1612009137592,
+  "lastUpdate": 1613828207299,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1727,6 +1727,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 8839423,
             "range": "± 2797326",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rhysd@users.noreply.github.com",
+            "name": "Linda_pp",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cc4306803aa14cd6628f47ba0d68cdfa5e55d965",
+          "message": "Merge pull request #14 from inokawa/patch-1\n\nFix misspelling",
+          "timestamp": "2021-02-20T22:32:02+09:00",
+          "tree_id": "d308469c2f910fcdbf5caa73d0156fbe30ae2116",
+          "url": "https://github.com/rhysd/kiro-editor/commit/cc4306803aa14cd6628f47ba0d68cdfa5e55d965"
+        },
+        "date": 1613828206976,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 23031322,
+            "range": "± 774833",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 325748059,
+            "range": "± 4131200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1896976,
+            "range": "± 75701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 9819070,
+            "range": "± 93760",
             "unit": "ns/iter"
           }
         ]
