@@ -248,16 +248,16 @@ where
         Ok(())
     }
 
-    fn handle_quit(&mut self, s: InputSeq) -> Result<EditStep> {
+    fn handle_quit(&mut self, s: InputSeq) -> EditStep {
         let modified = self.bufs.iter().any(|b| b.modified());
         if !modified || self.quitting {
-            Ok(EditStep::Quit)
+            EditStep::Quit
         } else {
             self.quitting = true;
             self.screen.set_error_message(
                 "At least one file has unsaved changes! Press ^Q again to quit or ^S to save",
             );
-            Ok(EditStep::Continue(s))
+            EditStep::Continue(s)
         }
     }
 
@@ -336,7 +336,7 @@ where
                 RightKey => self.buf_mut().move_cursor_by_word(CursorDir::Right),
                 DownKey => self.buf_mut().move_cursor_paragraph(CursorDir::Down),
                 UpKey => self.buf_mut().move_cursor_paragraph(CursorDir::Up),
-                Key(b'q') => return self.handle_quit(s),
+                Key(b'q') => return Ok(self.handle_quit(s)),
                 _ => self.handle_not_mapped(&s),
             },
             InputSeq { key, .. } => match key {
