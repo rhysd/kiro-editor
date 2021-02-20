@@ -173,7 +173,7 @@ impl InputSequences {
         // not arrive within next tick, it means that it is not an escape sequence.
         // TODO?: Should we consider sequences not starting with '['?
         match self.read_byte()? {
-            Some(b'[') => { /* fall thought */ }
+            Some(b'[') => { /* fall through */ }
             Some(b) if b.is_ascii_control() => return Ok(InputSeq::new(Key(0x1b))), // Ignore control characters after ESC
             Some(b) => {
                 // Alt key is sent as ESC prefix (e.g. Alt-A => \x1b\x61
