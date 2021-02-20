@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1613828207299,
+  "lastUpdate": 1613828283854,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1775,6 +1775,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 9819070,
             "range": "± 93760",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "lin90162@yahoo.co.jp",
+            "name": "rhysd",
+            "username": "rhysd"
+          },
+          "distinct": true,
+          "id": "b5d34c371b71affedfd83131f07b0661e60dd2f8",
+          "message": "fix clippy warning introduced by Rust 1.50",
+          "timestamp": "2021-02-20T22:33:43+09:00",
+          "tree_id": "9e5702dc55c295f174e4b486be8eac90b2bc4139",
+          "url": "https://github.com/rhysd/kiro-editor/commit/b5d34c371b71affedfd83131f07b0661e60dd2f8"
+        },
+        "date": 1613828283383,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 19342456,
+            "range": "± 2711356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 261985730,
+            "range": "± 17100628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1614945,
+            "range": "± 236252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 7974260,
+            "range": "± 1174326",
             "unit": "ns/iter"
           }
         ]
