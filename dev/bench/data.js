@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1613828283854,
+  "lastUpdate": 1614598105947,
   "repoUrl": "https://github.com/rhysd/kiro-editor",
   "entries": {
     "Rust Benchmark": [
@@ -1823,6 +1823,54 @@ window.BENCHMARK_DATA = {
             "name": "no_term_scroll_up_down_rust_code",
             "value": 7974260,
             "range": "± 1174326",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "rhysd@users.noreply.github.com",
+            "name": "Linda_pp",
+            "username": "rhysd"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14edb6020acc6dc5555e2d7e22c55be15cf0f73d",
+          "message": "Merge pull request #13 from E3uka/impl-blocking-read\n\nimpl blocking read",
+          "timestamp": "2021-03-01T20:24:34+09:00",
+          "tree_id": "60b4b4306c186f3154a34df5da4a21670e4ea512",
+          "url": "https://github.com/rhysd/kiro-editor/commit/14edb6020acc6dc5555e2d7e22c55be15cf0f73d"
+        },
+        "date": 1614598105627,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "no_term_edit_1000_operations_to_10000_chars_plain_text",
+            "value": 19273556,
+            "range": "± 33709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_edit_1000_operations_to_editor_rs",
+            "value": 268945874,
+            "range": "± 275739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_plain_text",
+            "value": 1641782,
+            "range": "± 6997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "no_term_scroll_up_down_rust_code",
+            "value": 8347715,
+            "range": "± 12422",
             "unit": "ns/iter"
           }
         ]
