@@ -31,10 +31,9 @@ impl StdinRawMode {
         termios.c_oflag &= !OPOST;
         // Ensure character size is 8bits
         termios.c_cflag |= CS8;
-        // Do not wait for next byte with blocking since reading 0 byte is permitted
-        termios.c_cc[VMIN] = 0;
-        // Set read timeout to 1/10 second it enables 100ms timeout on read()
-        termios.c_cc[VTIME] = 1;
+        // Implement blocking read for efficient reading of input
+        termios.c_cc[VMIN] = 1;
+        termios.c_cc[VTIME] = 0;
         // Apply terminal configurations
         tcsetattr(fd, TCSAFLUSH, &termios)?;
 
@@ -319,8 +318,8 @@ impl InputSequences {
 impl Iterator for InputSequences {
     type Item = Result<InputSeq>;
 
-    // Read next byte from stdin with timeout 100ms. If nothing was read, it returns InputSeq::Unidentified.
-    // This method never returns None so for loop never ends
+    // Read next byte from stdin, if nothing was read, it returns InputSeq::Unidentified.
+    // This method never returns None so for loop never ends.
     fn next(&mut self) -> Option<Self::Item> {
         Some(self.read_seq())
     }
