@@ -1,3 +1,11 @@
+<a name="v0.4.3"></a>
+# [v0.4.3](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.3) - 01 Mar 2021
+
+- **Improve:** Reduce number of syscalls by using blocking read from stdin. This stops polling stdin with 100ms interval (#13, thanks to @E3uka)
+
+[Changes][v0.4.3]
+
+
 <a name="v0.4.2"></a>
 # [v0.4.2](https://github.com/rhysd/kiro-editor/releases/tag/v0.4.2) - 30 Jan 2021
 
@@ -174,6 +182,7 @@ Please read [README file](https://github.com/rhysd/kiro-editor#readme) to know t
 [Changes][0.1.0]
 
 
+[v0.4.3]: https://github.com/rhysd/kiro-editor/compare/v0.4.2...v0.4.3
 [v0.4.2]: https://github.com/rhysd/kiro-editor/compare/v0.4.1...v0.4.2
 [v0.4.1]: https://github.com/rhysd/kiro-editor/compare/v0.4.0...v0.4.1
 [v0.4.0]: https://github.com/rhysd/kiro-editor/compare/0.3.5...v0.4.0
