@@ -1,6 +1,6 @@
 [package]
 name = "kiro-editor"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["rhysd <https://rhysd.github.io>"]
 edition = "2018"
 description = """
