@@ -37,7 +37,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --color always -- -D warnings
+          args: --color always --tests -- -D warnings
       - run: rustup component add rustfmt
       - name: rustfmt
         uses: actions-rs/cargo@v1

@@ -511,7 +511,7 @@ mod tests {
 
     fn sp(k: KeySeq) -> InputSeq {
         if let Key(_) = k {
-            assert!(false, "{:?}", k);
+            panic!("{:?}", k);
         }
         InputSeq::new(k)
     }
