@@ -37,8 +37,8 @@ impl Highlight {
             Statement => Red,
             Boolean => Purple,
             SpecialVar => Cyan,
-            Search => OrangeBG,
-            Match => YellowBG,
+            Search => OrangeBg,
+            Match => YellowBg,
         }
     }
 }

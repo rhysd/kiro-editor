@@ -240,7 +240,7 @@ impl<W: Write> Screen<W> {
         write!(buf, "\x1b[{}H", self.num_rows + 2)?;
 
         if message.kind == StatusMessageKind::Error {
-            buf.write(self.term_color.sequence(Color::RedBG))?;
+            buf.write(self.term_color.sequence(Color::RedBg))?;
         }
 
         buf.write(text.as_bytes())?;

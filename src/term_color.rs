@@ -12,9 +12,9 @@ pub enum Color {
     Blue,
     Purple,
     Cyan,
-    RedBG,
-    YellowBG,
-    OrangeBG,
+    RedBg,
+    YellowBg,
+    OrangeBg,
     NonText,
     Invert,
 }
@@ -22,7 +22,7 @@ pub enum Color {
 impl Color {
     pub fn has_bg_color(self) -> bool {
         use Color::*;
-        matches!(self, YellowBG | RedBG | OrangeBG)
+        matches!(self, YellowBg | RedBg | OrangeBg)
     }
 }
 
@@ -53,17 +53,17 @@ fn true_colors_sequence(color: Color) -> &'static [u8] {
         Blue => rgb_color!(fg, 0x83, 0xa5, 0x98).as_bytes(),
         Purple => rgb_color!(fg, 0xd3, 0x86, 0x9b).as_bytes(),
         Cyan => rgb_color!(fg, 0x8e, 0xc0, 0x7c).as_bytes(),
-        RedBG => concat!(
+        RedBg => concat!(
             rgb_color!(fg, 0xfb, 0xf1, 0xc7),
             rgb_color!(bg, 0xcc, 0x24, 0x1d),
         )
         .as_bytes(),
-        YellowBG => concat!(
+        YellowBg => concat!(
             rgb_color!(fg, 0x28, 0x28, 0x28),
             rgb_color!(bg, 0xd7, 0x99, 0x21),
         )
         .as_bytes(),
-        OrangeBG => concat!(
+        OrangeBg => concat!(
             rgb_color!(fg, 0x28, 0x28, 0x28),
             rgb_color!(bg, 0xd6, 0x5d, 0x0e),
         )
@@ -97,9 +97,9 @@ fn colors_256_sequence(color: Color) -> &'static [u8] {
         Blue => b"\x1b[38;5;109m",
         Purple => b"\x1b[38;5;175m",
         Cyan => b"\x1b[38;5;108m",
-        RedBG => b"\x1b[38;5;230m\x1b[48;5;124m",
-        YellowBG => b"\x1b[38;5;235m\x1b[48;5;214m",
-        OrangeBG => b"\x1b[38;5;235m\x1b[48;5;166m",
+        RedBg => b"\x1b[38;5;230m\x1b[48;5;124m",
+        YellowBg => b"\x1b[38;5;235m\x1b[48;5;214m",
+        OrangeBg => b"\x1b[38;5;235m\x1b[48;5;166m",
         NonText => b"\x1b[38;5;241m",
         Invert => b"\x1b[7m",
     }
@@ -118,9 +118,9 @@ fn colors_16_sequence(color: Color) -> &'static [u8] {
         Blue => b"\x1b[94m",
         Purple => b"\x1b[95m",
         Cyan => b"\x1b[96m",
-        RedBG => b"\x1b[97m\x1b[41m",
-        YellowBG => b"\x1b[103m\x1b[30m",
-        OrangeBG => b"\x1b[107m\x1b[30m", // White BG color is used instead of orange
+        RedBg => b"\x1b[97m\x1b[41m",
+        YellowBg => b"\x1b[103m\x1b[30m",
+        OrangeBg => b"\x1b[107m\x1b[30m", // White BG color is used instead of orange
         NonText => b"\x1b[37m",
         Invert => b"\x1b[7m",
     }
