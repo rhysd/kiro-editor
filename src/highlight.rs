@@ -690,7 +690,7 @@ impl<'a> Highlighter<'a> {
                 }
             });
 
-            if keyword.is_some() && self.syntax.definition_keywords.contains(&ident) {
+            if keyword.is_some() && self.syntax.definition_keywords.contains(ident) {
                 self.after_def_keyword = true;
             }
 
@@ -939,10 +939,10 @@ impl Highlighting {
             return;
         }
 
-        let mut highlighter = Highlighter::new(&self.syntax);
+        let mut highlighter = Highlighter::new(self.syntax);
 
         self.lines.resize_with(rows.len(), Default::default);
-        for (y, ref row) in rows.iter().enumerate().take(bottom_of_screen) {
+        for (y, row) in rows.iter().enumerate().take(bottom_of_screen) {
             let row = row.render_text();
             self.lines[y].resize(row.chars().count(), Highlight::Normal); // TODO: One item per one character
 

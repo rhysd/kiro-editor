@@ -26,7 +26,7 @@ impl History {
             return false; // Do nothing when no change was added
         }
 
-        let diffs = mem::replace(&mut self.ongoing, vec![]);
+        let diffs = mem::take(&mut self.ongoing);
 
         if self.entries.len() == MAX_ENTRIES {
             self.entries.pop_front();

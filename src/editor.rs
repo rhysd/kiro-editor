@@ -232,8 +232,11 @@ where
     fn show_help(&mut self) -> Result<()> {
         self.screen.render_help()?;
 
-        // Consume any key
+        // This `while` loop cannot be replaced with `for seq in &mut self.input` since loop body
+        // borrows self.input.
+        #[allow(clippy::while_let_on_iterator)]
         while let Some(seq) = self.input.next() {
+            // Consume any key
             if self.screen.maybe_resize(&mut self.input)? {
                 self.screen.render_help()?;
                 self.status_bar.redraw = true;

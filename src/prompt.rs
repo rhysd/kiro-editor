@@ -167,7 +167,7 @@ impl TextSearch {
 
         // Set all match highlights in screen
         let matches =
-            self.calculate_matches(input, current_match, &prompt.screen, prompt.buf.rows());
+            self.calculate_matches(input, current_match, prompt.screen, prompt.buf.rows());
         prompt.hl.set_matches(matches);
 
         // Update highlights since matched word was updated
@@ -371,8 +371,8 @@ impl<'a, W: Write> Prompt<'a, W> {
 
     fn render_screen(&mut self, input: &str, template: &PromptTemplate<'_>) -> Result<()> {
         self.screen.set_info_message(template.build(input));
-        self.sb.update_from_buf(&self.buf);
-        self.screen.render(self.buf, &mut self.hl, &self.sb)?;
+        self.sb.update_from_buf(self.buf);
+        self.screen.render(self.buf, &mut self.hl, self.sb)?;
 
         let row = self.screen.rows() + 2;
         let col = template.cursor_col(input);
