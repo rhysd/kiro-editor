@@ -548,10 +548,6 @@ cargo +nightly bench -- --logfile out.txt && cat out.txt
 cargo +nightly fuzz run input_text
 ```
 
-Benchmark results run on GitHub Action is gathered to this page continuously:
-
-https://rhysd.github.io/kiro-editor/dev/bench/
-
 
 
 ## License
