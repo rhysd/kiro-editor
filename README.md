@@ -571,6 +571,6 @@ This project is distributed under [the MIT License](./LICENSE.txt).
 [signal-hook]: https://crates.io/crates/signal-hook
 [getopts]: https://crates.io/crates/getopts
 [clap]: https://crates.io/crates/clap
-[cargo-behch]: https://doc.rust-lang.org/cargo/commands/cargo-bench.html
+[cargo-bench]: https://doc.rust-lang.org/cargo/commands/cargo-bench.html
 [cargo-fuzz]: https://github.com/rust-fuzz/cargo-fuzz
 [libfuzzer]: https://llvm.org/docs/LibFuzzer.html
