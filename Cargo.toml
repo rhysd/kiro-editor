@@ -41,7 +41,7 @@ jemallocator = "0.3"
 maintenance = { status = "actively-developed" }
 
 [dev-dependencies]
-rand = "0.7"
+rand = "0.9"
 
 [dev-dependencies.cargo-husky]
 version = "1"
